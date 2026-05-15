@@ -1,10 +1,10 @@
 const express = require('express');
+require('dotenv').config();
 const http = require('http');           // needed to share server with WebSocket
 const cors = require('cors');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const passport = require('./config/passport');
-require('dotenv').config();
 
 const connectDB = require('./config/db');
 const { setupWebSocket, sendToUser, getWsClients } = require('./services/websocket');

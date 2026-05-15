@@ -10,6 +10,16 @@ const {
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 
+const requireGoogleOAuth = (req, res, next) => {
+  if (!passport._strategy('google')) {
+    return res.status(503).json({
+      error: 'Google OAuth is not configured on the server.'
+    });
+  }
+
+  next();
+};
+
 // Validation rules for signup
 const signupValidation = [
   body('name').trim().notEmpty().withMessage('Name is required'),
@@ -33,11 +43,13 @@ router.get('/me', protect, getMe);          // get logged in user
 // ─── GOOGLE OAUTH ─────────────────────────────────────────────
 // Step 1 — redirect user to Google login page
 router.get('/google',
+  requireGoogleOAuth,
   passport.authenticate('google', { scope: ['profile', 'email'] })
 );
 
 // Step 2 — Google redirects back here after login
 router.get('/google/callback',
+  requireGoogleOAuth,
   passport.authenticate('google', {
     failureRedirect: `${process.env.CLIENT_URL}/login?error=oauth_failed`,
     session: false    // we use JWT not sessions
