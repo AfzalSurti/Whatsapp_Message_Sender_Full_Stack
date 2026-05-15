@@ -5,7 +5,7 @@ const{
     connectWhatsApp,
     getWhatsAppStatus,
     disconnectWhatsApp,
-    sendBulkMessage
+    sendBulkMessages
 }=require('../controllers/whatsappController');
 
 //all routes here are protected — user must be logged in

@@ -6,6 +6,7 @@ require('dotenv').config();
 const connectDB=require('./config/db');
 const passport=require('./config/passport'); // Passport configuration
 const authRoutes=require('./routes/auth');
+const whatsappRoutes=require('./routes/whatsapp');
 const app=express();
 
 const PORT=process.env.PORT || 5000;
@@ -46,6 +47,7 @@ app.get('/health',(req,res)=>{
 
 // Routes
 app.use('/api/auth',authRoutes); // Authentication routes
+app.use('/api/whatsapp',whatsappRoutes); // WhatsApp routes
 
 //global error handler
 //catches any error

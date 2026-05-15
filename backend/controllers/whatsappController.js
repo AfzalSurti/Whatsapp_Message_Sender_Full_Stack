@@ -114,3 +114,4 @@ module.exports={
     disconnectWhatsApp,
     sendBulkMessages
 };
+
