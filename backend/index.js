@@ -1,74 +1,82 @@
-const express=require('express');
-const cors=require('cors'); 
-const morgan=require('morgan'); 
-const rateLimit=require('express-rate-limit');
+const express = require('express');
+const http = require('http');           // needed to share server with WebSocket
+const cors = require('cors');
+const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
+const passport = require('./config/passport');
 require('dotenv').config();
-const connectDB=require('./config/db');
-const passport=require('./config/passport'); // Passport configuration
-const authRoutes=require('./routes/auth');
-const whatsappRoutes=require('./routes/whatsapp');
-const app=express();
 
-const PORT=process.env.PORT || 5000;
+const connectDB = require('./config/db');
+const { setupWebSocket, sendToUser, getWsClients } = require('./services/websocket');
+const verifyToken = require('./utils/verifyToken');
 
-// Connect to MongoDB
+const app = express();
+
+// ─── CREATE HTTP SERVER ───────────────────────────────────────
+// We need raw HTTP server to attach WebSocket on same port
+const server = http.createServer(app);
+
+const PORT = process.env.PORT || 5000;
+
+// ─── CONNECT DATABASE ─────────────────────────────────────────
 connectDB();
 
-// Rate Limiting
-const limiter=rateLimit({
-    windowMs:15*60*1000,
-    max:100,
-    message:{error:'Too many requests. Please try again later.'}
+// ─── RATE LIMITING ────────────────────────────────────────────
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: 'Too many requests. Please try again later.' }
 });
 
-
-// Middleware
+// ─── MIDDLEWARE ───────────────────────────────────────────────
 app.use(cors({
-    origin:process.env.CLIENT_URL,  // Replace with your frontend URL
-    credentials:true
+  origin: process.env.CLIENT_URL,
+  credentials: true
 }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan('dev'));
+app.use('/api', limiter);
+app.use(passport.initialize());
 
-app.use(express.json()); // For parsing application/json
-app.use(express.urlencoded({extended:true}));// For parsing application/x-www-form-urlencoded
-app.use(morgan('dev')); // Logging HTTP requests
-app.use('/api',limiter); // Apply rate limiting to API routes
-app.use(passport.initialize()); // Initialize Passport
-//health check route
+// ─── ATTACH WS CLIENTS TO APP ────────────────────────────────
+// Makes wsClients accessible in controllers via req.app.get('wsClients')
+app.set('wsClients', getWsClients());
+app.set('sendToUser', sendToUser);
 
-app.get('/health',(req,res)=>{
-    res.json({
-        status:'ok',
-        message:'Whatsapp Message Sender API is running',
-        timestamp:new Date().toLocaleString("en-IN",{
-            timeZone:"Asia/Kolkata"
-        })
-    });
+// ─── ROUTES ───────────────────────────────────────────────────
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/whatsapp', require('./routes/whatsapp'));
+
+// ─── HEALTH CHECK ─────────────────────────────────────────────
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'WA Sender API is running',
+    timestamp: new Date().toISOString()
+  });
 });
 
-// Routes
-app.use('/api/auth',authRoutes); // Authentication routes
-app.use('/api/whatsapp',whatsappRoutes); // WhatsApp routes
-
-//global error handler
-//catches any error
-app.use((err,req,res,next)=>{
-    console.error('Error:',err.message);
-    res.status(err.status||500).json({
-        error:err.message||'Internal Server Error'
-    });
+// ─── 404 HANDLER ──────────────────────────────────────────────
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
 });
 
-//404 handler
-app.use((req,res)=>{
-    res.status(404).json({
-        error:'Route not found'
-    });
+// ─── GLOBAL ERROR HANDLER ─────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error('❌ Error:', err.message);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error'
+  });
 });
 
-//start server
+// ─── SETUP WEBSOCKET ──────────────────────────────────────────
+// Must be after server created — attaches to same HTTP server
+setupWebSocket(server, verifyToken);
 
-app.listen(PORT,()=>{
-    console.log(`Server Running On http://localhost:${PORT}`);
+// ─── START SERVER ─────────────────────────────────────────────
+// Use server.listen not app.listen
+// server handles both HTTP and WebSocket
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
-
-
