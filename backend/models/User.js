@@ -54,23 +54,20 @@ const UserSchema = new mongoose.Schema(
 // ─── HASH PASSWORD BEFORE SAVING ──────────────────────────────
 // This runs automatically before every .save() call
 // Only runs if password was changed — prevents double hashing
-UserSchema.pre('save', async function (next) {
-  if (!this.isModified('password') || !this.password) return next();
+UserSchema.pre('save', async function () {
+  if (!this.isModified('password') || !this.password) return;
 
-  // bcrypt salt rounds — 12 is production standard
-  // higher = more secure but slower
   const salt = await bcrypt.genSalt(12);
   this.password = await bcrypt.hash(this.password, salt);
-  next();
 });
 
 // ─── METHOD: Compare password ──────────────────────────────────
 // Called during login to verify entered password
 // Returns true if match, false if not
 UserSchema.methods.comparePassword = async function (enteredPassword) {
+  if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
 };
-
 // ─── METHOD: Return user without password ─────────────────────
 // Never send password to frontend — even hashed
 UserSchema.methods.toJSON = function () {
