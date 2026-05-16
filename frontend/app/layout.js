@@ -14,14 +14,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "WhatsApp Message Sender ",
+  title: "WA Sender",
   description: "Send bulk WhatsApp messages with AI-powered message generation",
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
+      <body className="min-h-full flex flex-col bg-[#070b09] text-white">
         <AuthProvider>
           {children}
           <Toaster
