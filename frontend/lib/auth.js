@@ -21,4 +21,5 @@ export const isAuthenticated = () => {
 };
 
 
-// what commit i do for thsi file ?You can use the following commit message for the changes made in this file: - "Add auth utility functions for token management in frontend"
+
+// what this fiel do ? - This file provides utility functions for managing authentication tokens in the frontend. It allows you to save, retrieve, and remove JWT tokens using cookies, as well as check if a user is authenticated based on the presence of a token.
