@@ -1,4 +1,5 @@
-'use client';
+ 'use client';
+import { useEffect } from 'react';
 import Link from 'next/link';
 import {
   MessageSquare,
@@ -70,6 +71,24 @@ const testimonials = [
 ];
 
 export default function LandingPage() {
+  useEffect(() => {
+    const els = document.querySelectorAll('.pop-up');
+    if (!els || els.length === 0) return;
+
+    const observer = new IntersectionObserver((entries, obs) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          obs.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.14 });
+
+    els.forEach((el) => observer.observe(el));
+
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#070b09] text-white font-sans">
 
@@ -101,7 +120,7 @@ export default function LandingPage() {
           <div className="absolute bottom-0 right-[-8rem] w-[24rem] h-[24rem] bg-[#25D366]/8 rounded-full blur-[140px]" />
         </div>
 
-        <div className="relative z-10 max-w-7xl mx-auto grid gap-14 lg:grid-cols-[1.1fr_0.9fr] items-center">
+          <div className="relative z-10 max-w-7xl mx-auto grid gap-14 lg:grid-cols-[1.1fr_0.9fr] items-center">
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-2 text-xs font-semibold text-[#25D366] bg-[#25D366]/10 border border-[#25D366]/20 px-4 py-2 rounded-full mb-6 tracking-[0.28em] uppercase">
               <Sparkles size={14} /> No API Required
@@ -115,7 +134,7 @@ export default function LandingPage() {
               Write campaigns faster with AI, send them safely with smart pacing, and watch every delivery update live from one clean dashboard.
             </p>
 
-            <div className="flex flex-wrap gap-3 mb-8">
+            <div className="flex flex-wrap gap-3 mb-8 pop-up">
               {stats.map((item) => (
                 <div key={item.label} className="min-w-[150px] rounded-2xl border border-white/8 bg-white/4 px-4 py-3 backdrop-blur-sm">
                   <div className="text-2xl font-black text-white">{item.value}</div>
@@ -124,7 +143,7 @@ export default function LandingPage() {
               ))}
             </div>
 
-            <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-4 flex-wrap pop-up">
               <Link href="/signup" className="inline-flex items-center gap-2 bg-[#25D366] hover:bg-[#1ebe5d] text-black font-bold px-7 py-4 rounded-full transition-all text-base shadow-[0_0_24px_rgba(37,211,102,0.22)]">
                 Start for Free <ArrowRight size={18} />
               </Link>
@@ -133,7 +152,7 @@ export default function LandingPage() {
               </Link>
             </div>
 
-            <div className="mt-8 flex flex-wrap items-center gap-4 text-sm text-white/50">
+            <div className="mt-8 flex flex-wrap items-center gap-4 text-sm text-white/50 pop-up">
               <div className="flex items-center gap-2">
                 <BadgeCheck size={16} className="text-[#25D366]" /> Saved sessions
               </div>
@@ -146,7 +165,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="relative">
+          <div className="relative pop-up">
             <div className="absolute inset-0 bg-[#25D366]/10 blur-3xl rounded-full -z-10" />
             <div className="rounded-[32px] border border-white/8 bg-[#0c120f]/90 backdrop-blur-xl shadow-[0_20px_80px_rgba(0,0,0,0.45)] overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-white/8 bg-white/3">
@@ -160,7 +179,7 @@ export default function LandingPage() {
               </div>
 
               <div className="grid gap-4 p-6">
-                <div className="rounded-3xl border border-white/8 bg-[#0f1713] p-5">
+                <div className="rounded-3xl border border-white/8 bg-[#0f1713] p-5 pop-up">
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <p className="text-xs uppercase tracking-[0.24em] text-white/40 mb-1">AI composer</p>
@@ -176,7 +195,7 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-3 gap-3 pop-up">
                   {[
                     { label: 'Sent', value: '248' },
                     { label: 'Queued', value: '36' },
@@ -189,7 +208,7 @@ export default function LandingPage() {
                   ))}
                 </div>
 
-                <div className="rounded-3xl border border-white/8 bg-[#0f1713] p-5">
+                <div className="rounded-3xl border border-white/8 bg-[#0f1713] p-5 pop-up">
                   <div className="flex items-center justify-between mb-3 text-sm">
                     <span className="text-white/70">Delivery progress</span>
                     <span className="text-[#25D366]">92%</span>
@@ -199,7 +218,7 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-3 md:grid-cols-3 pop-up">
                   {highlights.map((item) => (
                     <div key={item.title} className="rounded-2xl border border-white/8 bg-white/4 p-4">
                       <div className="w-9 h-9 rounded-xl bg-[#25D366]/10 text-[#25D366] flex items-center justify-center mb-3">
@@ -217,7 +236,7 @@ export default function LandingPage() {
       </section>
 
       {/* FEATURES */}
-      <section className="py-20 px-6 md:px-16 max-w-7xl mx-auto">
+      <section className="py-20 px-6 md:px-16 max-w-7xl mx-auto pop-up">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10">
           <div>
             <p className="text-sm uppercase tracking-[0.3em] text-[#25D366] mb-3">Features</p>
@@ -258,7 +277,7 @@ export default function LandingPage() {
           </div>
 
           {features.slice(3).map((feature) => (
-            <div key={feature.title} className="lg:col-span-4 rounded-[28px] border border-white/8 bg-[#0b100d] p-6 hover:border-[#25D366]/30 transition-colors">
+            <div key={feature.title} className="lg:col-span-4 rounded-[28px] border border-white/8 bg-[#0b100d] p-6 hover:border-[#25D366]/30 transition-colors pop-up">
               <div className="w-11 h-11 rounded-2xl bg-[#25D366]/10 text-[#25D366] flex items-center justify-center mb-4">
                 {feature.icon}
               </div>
@@ -292,7 +311,7 @@ export default function LandingPage() {
 
       {/* SOCIAL PROOF */}
       <section className="py-8 px-6 md:px-16 max-w-6xl mx-auto">
-        <div className="rounded-[32px] border border-white/8 bg-[#0d120f] p-6 md:p-8 grid gap-4 md:grid-cols-2">
+        <div className="rounded-[32px] border border-white/8 bg-[#0d120f] p-6 md:p-8 grid gap-4 md:grid-cols-2 pop-up">
           {testimonials.map((item) => (
             <div key={item.name} className="rounded-3xl border border-white/8 bg-white/4 p-5">
               <p className="text-white/80 leading-relaxed mb-4">&ldquo;{item.quote}&rdquo;</p>
