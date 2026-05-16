@@ -48,6 +48,7 @@ app.set('sendToUser', sendToUser);
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/whatsapp', require('./routes/whatsapp'));
 app.use('/api/ai',require('./routes/ai'));
+app.use('/api/logs', require('./routes/logs'));
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────
 app.get('/health', (req, res) => {
