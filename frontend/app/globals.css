@@ -1,17 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 @config "../tailwind.config.js";
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
-  * {
-    font-family: 'Inter', sans-serif;
-  }
-
   body {
+    font-family: var(--font-geist-sans), sans-serif;
     @apply bg-white dark:bg-dark-bg text-gray-900 dark:text-white transition-colors duration-300;
   }
 
