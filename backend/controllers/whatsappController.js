@@ -1,6 +1,7 @@
 const clientManager = require('../services/clientManager');
 const { sendMessages } = require('../services/sender');
 const Session = require('../models/Session');
+const { trackUsage } = require('./keysController');
 
 const connectWhatsApp = async (req, res) => {
   try {
@@ -181,9 +182,50 @@ const sendBulkMessages = async (req, res) => {
   }
 };
 
-module.exports = {
+const sendBulkMessagesViaApiKey = async (req, res) => {
+  try {
+    const { numbers, message } = req.body;
+    const apiKey = req.apiKey;
+    const apiUser = req.apiUser;
+
+    if (!numbers || !numbers.length) {
+      return res.status(400).json({ error: 'No numbers provided' });
+    }
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    const client = clientManager.getClient(apiUser._id);
+    if (!client) {
+      return res.status(400).json({ error: 'WhatsApp not connected. Please connect first via dashboard.' });
+    }
+
+    if (!client.sendMessage || typeof client.sendMessage !== 'function') {
+      return res.status(400).json({ error: 'WhatsApp client not ready. Please scan QR code.' });
+    }
+
+    res.json({ message: 'Sending started', total: numbers.length });
+
+    (async () => {
+      try {
+        await sendMessages(client, apiUser._id, numbers, message, () => {});
+        await trackUsage(apiKey._id, numbers.length);
+        console.log(`API key ${apiKey._id} used to send ${numbers.length} messages`);
+      } catch (err) {
+        console.error('Background send error via API key:', err);
+      }
+    })().catch(err => {
+      console.error('Uncaught error in background send:', err);
+    });
+
+  } catch (err) {
+    console.error('Send via API key error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
   connectWhatsApp,
   getWhatsAppStatus,
   disconnectWhatsApp,
-  sendBulkMessages
+  sendBulkMessages,
+  sendBulkMessagesViaApiKey
 };

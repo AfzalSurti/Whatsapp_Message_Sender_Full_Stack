@@ -51,6 +51,7 @@ app.use('/api/whatsapp', require('./routes/whatsapp'));
 app.use('/api/ai',require('./routes/ai'));
 app.use('/api/logs', require('./routes/logs'));
 app.use('/api/contacts', require('./routes/contacts'));
+app.use('/api/keys', require('./routes/keys'));
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────
 app.get('/health', (req, res) => {
