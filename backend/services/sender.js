@@ -19,6 +19,9 @@ const sendMessages = async (client, userId, numbers, message, onProgress) => {
 
   const results = { sent: 0, failed: 0, skipped: 0 };
 
+  // Wait a moment to ensure client is fully ready
+  await sleep(1000);
+
   for (let i = 0; i < numbers.length; i++) {
     const rawNumber = numbers[i];
 
@@ -35,21 +38,31 @@ const sendMessages = async (client, userId, numbers, message, onProgress) => {
 
       const whatsappId = `${cleanNumber}@c.us`;
 
-      // Check if number is on WhatsApp
-      const isRegistered = await client.isRegisteredUser(whatsappId);
-      if (!isRegistered) {
-        results.skipped++;
-        await logMessage(userId, campaign._id, rawNumber, message, 'skipped', 'Not on WhatsApp');
-        continue;
-      }
-
-      // Make message unique per number
+      // Make message unique per number (to avoid WhatsApp duplicate detection)
       const uniqueMessage = message + '\u200B'.repeat(i + 1);
 
-      // Send message
-      await client.sendMessage(whatsappId, uniqueMessage);
-      results.sent++;
-      await logMessage(userId, campaign._id, rawNumber, message, 'sent', null);
+      // Send message with retry logic
+      let retries = 0;
+      const maxRetries = 2;
+      let sent = false;
+
+      while (retries <= maxRetries && !sent) {
+        try {
+          await client.sendMessage(whatsappId, uniqueMessage);
+          sent = true;
+          results.sent++;
+          await logMessage(userId, campaign._id, rawNumber, message, 'sent', null);
+          console.log(`✅ Message sent to ${rawNumber}`);
+        } catch (err) {
+          retries++;
+          console.error(`❌ Failed to send to ${rawNumber} (attempt ${retries}/${maxRetries + 1}):`, err.message);
+          if (retries > maxRetries) {
+            throw err;
+          }
+          console.warn(`Retrying in 2 seconds...`);
+          await sleep(2000); // Wait before retry
+        }
+      }
 
     } catch (err) {
       results.failed++;

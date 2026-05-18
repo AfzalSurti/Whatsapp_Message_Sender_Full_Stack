@@ -8,6 +8,7 @@ const passport = require('./config/passport');
 
 const connectDB = require('./config/db');
 const { setupWebSocket, sendToUser, getWsClients } = require('./services/websocket');
+const { recoverSessions } = require('./services/clientManager');
 const verifyToken = require('./utils/verifyToken');
 
 const app = express();
@@ -72,6 +73,17 @@ app.use((err, req, res, next) => {
   });
 });
 
+// ─── HANDLE UNCAUGHT EXCEPTIONS ────────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error('💥 Uncaught Exception:', err);
+  // Don't exit - try to keep server running
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit - try to keep server running
+});
+
 // ─── SETUP WEBSOCKET ──────────────────────────────────────────
 // Must be after server created — attaches to same HTTP server
 setupWebSocket(server, verifyToken);
@@ -81,4 +93,9 @@ setupWebSocket(server, verifyToken);
 // server handles both HTTP and WebSocket
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
+
+  // Recover active sessions from database after a short delay
+  setTimeout(() => {
+    recoverSessions(sendToUser);
+  }, 2000);
 });

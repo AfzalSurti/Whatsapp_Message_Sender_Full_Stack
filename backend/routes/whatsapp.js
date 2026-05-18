@@ -10,7 +10,7 @@ const{
 
 //all routes here are protected — user must be logged in
 router.post('/connect',protect,connectWhatsApp);
-router.post('/status',protect,getWhatsAppStatus);
+router.get('/status',protect,getWhatsAppStatus);
 router.post('/disconnect',protect,disconnectWhatsApp);
 router.post('/send',protect,sendBulkMessages);
 

@@ -41,10 +41,20 @@ const getWhatsAppStatus = async (req, res) => {
     const status = clientManager.getStatus(userId);
     const session = await Session.findOne({ userId });
 
+    // Get detailed client info
+    const client = clientManager.getClient(userId);
+    let clientReady = false;
+
+    if (client && status === 'connected') {
+      // Double-check client is actually ready
+      clientReady = (typeof client.sendMessage === 'function');
+    }
+
     res.json({
-      status,
+      status: clientReady ? 'connected' : status,
       isActive: session?.isActive || false,
-      lastSeen: session?.lastSeen || null
+      lastSeen: session?.lastSeen || null,
+      clientReady: clientReady
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -75,21 +85,78 @@ const sendBulkMessages = async (req, res) => {
 
     const client = clientManager.getClient(userId);
     if (!client) {
-      return res.status(400).json({ error: 'WhatsApp not connected' });
+      return res.status(400).json({ error: 'WhatsApp not connected. Please scan QR again.' });
+    }
+
+    // Log detailed client info for debugging
+    console.log(`\n📋 Client check for user ${userId}:`);
+    console.log(`   - sendMessage available: ${typeof client.sendMessage}`);
+    console.log(`   - Client constructor: ${client.constructor.name}`);
+    console.log(`   - Client methods: ${Object.getOwnPropertyNames(Object.getPrototypeOf(client)).filter(m => typeof client[m] === 'function').slice(0, 10).join(', ')}`);
+
+    // Wait for client to be fully ready (max 5 seconds)
+    let attempts = 0;
+    while (!client.sendMessage && attempts < 10) {
+      console.log(`⏳ Waiting for client to be ready... (attempt ${attempts + 1}/10)`);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      attempts++;
+    }
+
+    // Verify client is actually ready and has sendMessage method
+    if (!client.sendMessage || typeof client.sendMessage !== 'function') {
+      console.error(`❌ Client sendMessage not available after waiting for user ${userId}`);
+      console.error(`   Final check - typeof sendMessage: ${typeof client.sendMessage}`);
+      return res.status(400).json({ error: 'WhatsApp client not fully initialized. Please scan QR code again.' });
+    }
+
+    // Additional checks for client health
+    try {
+      // Check if browser page is still open
+      if (client.pupPage) {
+        if (typeof client.pupPage.isClosed === 'function' && client.pupPage.isClosed()) {
+          console.warn(`Browser page closed for user ${userId}`);
+          clientManager.disconnectClient(userId);
+          return res.status(400).json({ error: 'WhatsApp browser connection lost. Reconnecting...' });
+        }
+      }
+
+      // Check if client is actually connected by checking internal state
+      if (!client.pupBrowser || client.pupBrowser.isClosed && client.pupBrowser.isClosed()) {
+        console.warn(`Browser instance closed for user ${userId}`);
+        clientManager.disconnectClient(userId);
+        return res.status(400).json({ error: 'WhatsApp browser crashed. Please reconnect.' });
+      }
+    } catch (err) {
+      console.warn(`Error during pre-send health check for user ${userId}:`, err.message);
     }
 
     // Respond immediately — progress via WebSocket
     res.json({ message: 'Sending started', total: numbers.length });
 
-    // Run in background
-    await sendMessages(client, userId, numbers, message, (progress) => {
-      sendToUser(userId.toString(), { type: 'progress', ...progress });
+    // Run in background with error handling
+    (async () => {
+      try {
+        console.log(`Starting message send for user ${userId} to ${numbers.length} numbers`);
+        await sendMessages(client, userId, numbers, message, (progress) => {
+          sendToUser(userId.toString(), { type: 'progress', ...progress });
+        });
+
+        // Notify frontend when all done
+        console.log(`Message send completed for user ${userId}`);
+        sendToUser(userId.toString(), { type: 'sendingComplete' });
+      } catch (err) {
+        console.error('Background send error for user', userId, ':', err);
+        sendToUser(userId.toString(), {
+          type: 'sendingError',
+          error: err.message
+        });
+      }
+    })().catch(err => {
+      console.error('Uncaught error in background send:', err);
     });
 
-    // Notify frontend when all done
-    sendToUser(userId.toString(), { type: 'sendingComplete' });
-
   } catch (err) {
+    console.error('Send messages error:', err);
     res.status(500).json({ error: err.message });
   }
 };
