@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import {
   MessageSquare, LogOut, Wifi, WifiOff, Upload, X,
   Send, Bot, History, Loader2, CheckCircle, XCircle,
-  SkipForward, User, ChevronRight, Phone, Edit2, Trash2, Plus, Key
+  SkipForward, User, ChevronRight, Phone, Edit2, Trash2, Plus, Key, Clock
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -400,7 +400,15 @@ export default function Dashboard() {
             {waStatus === 'connected' ? 'Connected' : waStatus === 'pending' ? 'Scanning...' : 'Disconnected'}
           </div>
 
-          <Link href="/dashboard/history" className="text-gray-400 hover:text-white transition-colors">
+          <Link href="/dashboard/groups" className="text-gray-400 hover:text-white transition-colors" title="Contact Groups">
+            <Phone size={18} />
+          </Link>
+
+          <Link href="/dashboard/scheduled" className="text-gray-400 hover:text-white transition-colors" title="Scheduled Campaigns">
+            <Clock size={18} />
+          </Link>
+
+          <Link href="/dashboard/history" className="text-gray-400 hover:text-white transition-colors" title="History">
             <History size={18} />
           </Link>
 

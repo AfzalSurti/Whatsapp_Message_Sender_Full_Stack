@@ -74,4 +74,25 @@ export const keysAPI = {
   deleteKey: (id) => api.delete(`/api/keys/${id}`),
 };
 
+// ─── CONTACT GROUPS ────────────────────────────────────────────
+export const groupsAPI = {
+  getGroups: () => api.get('/api/groups'),
+  getGroup: (id) => api.get(`/api/groups/${id}`),
+  createGroup: (data) => api.post('/api/groups', data),
+  updateGroup: (id, data) => api.put(`/api/groups/${id}`, data),
+  deleteGroup: (id) => api.delete(`/api/groups/${id}`),
+  addNumber: (id, data) => api.post(`/api/groups/${id}/numbers`, data),
+  removeNumber: (id, phone) => api.delete(`/api/groups/${id}/numbers/${phone}`),
+  bulkAdd: (id, data) => api.post(`/api/groups/${id}/bulk`, data),
+};
+
+// ─── SCHEDULED CAMPAIGNS ───────────────────────────────────────
+export const scheduledAPI = {
+  getCampaigns: () => api.get('/api/scheduled'),
+  getCampaign: (id) => api.get(`/api/scheduled/${id}`),
+  createCampaign: (data) => api.post('/api/scheduled', data),
+  cancelCampaign: (id) => api.patch(`/api/scheduled/${id}/cancel`),
+  deleteCampaign: (id) => api.delete(`/api/scheduled/${id}`),
+};
+
 export default api;

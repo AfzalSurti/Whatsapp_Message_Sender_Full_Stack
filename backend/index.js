@@ -10,6 +10,9 @@ const connectDB = require('./config/db');
 const { setupWebSocket, sendToUser, getWsClients } = require('./services/websocket');
 const { recoverSessions } = require('./services/clientManager');
 const verifyToken = require('./utils/verifyToken');
+const { startScheduler } = require('./services/scheduler');
+const { sendMessages } = require('./services/sender');
+const clientManager = require('./services/clientManager');
 
 const app = express();
 
@@ -52,6 +55,8 @@ app.use('/api/ai',require('./routes/ai'));
 app.use('/api/logs', require('./routes/logs'));
 app.use('/api/contacts', require('./routes/contacts'));
 app.use('/api/keys', require('./routes/keys'));
+app.use('/api/groups', require('./routes/groups'));
+app.use('/api/scheduled', require('./routes/scheduled'));
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────
 app.get('/health', (req, res) => {
@@ -99,5 +104,9 @@ server.listen(PORT, () => {
   // Recover active sessions from database after a short delay
   setTimeout(() => {
     recoverSessions(sendToUser);
+
+    // Start campaign scheduler after clientManager is ready
+    startScheduler(sendMessages, clientManager);
+    console.log('📅 Campaign scheduler started');
   }, 2000);
 });
