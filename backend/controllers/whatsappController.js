@@ -223,6 +223,8 @@ const sendBulkMessagesViaApiKey = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+module.exports = {
   connectWhatsApp,
   getWhatsAppStatus,
   disconnectWhatsApp,
