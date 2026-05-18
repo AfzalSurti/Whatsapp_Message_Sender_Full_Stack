@@ -43,7 +43,12 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await authAPI.logout();
+    } catch {
+      // Fail silently — still proceed with logout even if API fails
+    }
     removeToken();
     setUser(null);
     window.location.href = '/login';

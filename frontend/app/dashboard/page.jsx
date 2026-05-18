@@ -2,13 +2,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { whatsappAPI, aiAPI } from '@/lib/api';
+import { whatsappAPI, aiAPI, contactsAPI } from '@/lib/api';
 import useWebSocket from '@/hooks/useWebSocket';
 import toast from 'react-hot-toast';
 import {
   MessageSquare, LogOut, Wifi, WifiOff, Upload, X,
   Send, Bot, History, Loader2, CheckCircle, XCircle,
-  SkipForward, User, ChevronRight
+  SkipForward, User, ChevronRight, Phone, Edit2, Trash2, Plus
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [qrStatusText, setQrStatusText] = useState('Waiting for QR code...');
   const [connectError, setConnectError] = useState('');
   const [connectionNotice, setConnectionNotice] = useState('');
+  const [sessionLoading, setSessionLoading] = useState(true);
 
   // Message state
   const [numbers, setNumbers] = useState([]);
@@ -36,6 +37,14 @@ export default function Dashboard() {
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState(null);
 
+  // Contacts state
+  const [savedContacts, setSavedContacts] = useState([]);
+  const [showContactsModal, setShowContactsModal] = useState(false);
+  const [showAddContactForm, setShowAddContactForm] = useState(false);
+  const [editingContact, setEditingContact] = useState(null);
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
+
   // Redirect if not logged in
   useEffect(() => {
     if (!loading && !user) router.push('/login');
@@ -43,16 +52,24 @@ export default function Dashboard() {
 
   // Fetch WhatsApp status on load
   useEffect(() => {
-    if (user) fetchStatus();
+    if (user) {
+      setSessionLoading(true);  // Reset loading state for new user
+      fetchStatus();
+    }
+  }, [user]);
+
+  // Fetch contacts on load
+  useEffect(() => {
+    if (user) fetchContacts();
   }, [user]);
 
   useEffect(() => {
     if (waStatus === 'connected' && showQR) {
-      setTimeout(() => {
-        setShowQR(false);
-        setQrImage(null);
-      }, 500);
+      setShowQR(false);
+      setQrImage(null);
+      setQrStatusText('WhatsApp connected successfully.');
       setConnectionNotice('Yes, WhatsApp connected.');
+      setConnectError('');
       toast.success('Yes, WhatsApp connected successfully!');
     }
   }, [waStatus, showQR]);
@@ -82,7 +99,74 @@ export default function Dashboard() {
         setConnectionNotice('Yes, WhatsApp connected.');
         setConnectError('');
       }
-    } catch {}
+    } catch {} finally {
+      setSessionLoading(false);
+    }
+  };
+
+  const fetchContacts = async () => {
+    try {
+      const res = await contactsAPI.getContacts();
+      setSavedContacts(res.data.contacts || []);
+    } catch {
+      toast.error('Failed to load contacts');
+    }
+  };
+
+  const handleAddContact = async () => {
+    if (!newContactName.trim() || !newContactPhone.trim()) {
+      toast.error('Enter name and phone number');
+      return;
+    }
+
+    try {
+      if (editingContact) {
+        await contactsAPI.updateContact(editingContact._id, {
+          name: newContactName,
+          phoneNumber: newContactPhone
+        });
+        toast.success('Contact updated');
+      } else {
+        await contactsAPI.createContact({
+          name: newContactName,
+          phoneNumber: newContactPhone
+        });
+        toast.success('Contact saved');
+      }
+      setNewContactName('');
+      setNewContactPhone('');
+      setEditingContact(null);
+      setShowAddContactForm(false);
+      await fetchContacts();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to save contact');
+    }
+  };
+
+  const handleDeleteContact = async (id) => {
+    try {
+      await contactsAPI.deleteContact(id);
+      toast.success('Contact deleted');
+      await fetchContacts();
+    } catch (err) {
+      toast.error('Failed to delete contact');
+    }
+  };
+
+  const handleEditContact = (contact) => {
+    setEditingContact(contact);
+    setNewContactName(contact.name);
+    setNewContactPhone(contact.phoneNumber);
+    setShowAddContactForm(true);
+  };
+
+  const handleSelectContact = (contact) => {
+    if (!numbers.includes(contact.phoneNumber)) {
+      setNumbers([...numbers, contact.phoneNumber]);
+      toast.success(`Added ${contact.name}`);
+    } else {
+      toast.error('Number already added');
+    }
   };
 
   // WebSocket message handler
@@ -293,6 +377,14 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Session Loading Message */}
+          {sessionLoading && (
+            <div className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400">
+              <Loader2 size={13} className="animate-spin" />
+              Retrieving your session...
+            </div>
+          )}
+
           {/* WA Status Badge */}
           <div className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border ${
             waStatus === 'connected'
@@ -397,6 +489,117 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* CONTACTS MODAL */}
+        {showContactsModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[#111] border border-white/10 rounded-2xl p-8 text-center max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+              <div className="flex items-center justify-between gap-4 mb-6">
+                <h3 className="font-bold text-lg">Saved Contacts</h3>
+                <button
+                  onClick={() => {
+                    setShowContactsModal(false);
+                    setShowAddContactForm(false);
+                    setEditingContact(null);
+                    setNewContactName('');
+                    setNewContactPhone('');
+                  }}
+                  className="text-gray-500 hover:text-white transition-colors cursor-pointer"
+                  aria-label="Close contacts modal"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {!showAddContactForm ? (
+                <div className="space-y-3">
+                  {savedContacts.length > 0 ? (
+                    <>
+                      {savedContacts.map((contact) => (
+                        <div
+                          key={contact._id}
+                          className="flex items-center justify-between bg-[#0a0a0a] border border-white/10 rounded-xl p-4 hover:border-white/20 transition-colors"
+                        >
+                          <div className="text-left">
+                            <p className="text-sm font-medium text-white">{contact.name}</p>
+                            <p className="text-xs text-gray-500">{contact.phoneNumber}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleSelectContact(contact)}
+                              className="bg-[#25D366]/20 hover:bg-[#25D366]/30 text-[#25D366] px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors"
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={() => handleEditContact(contact)}
+                              className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 p-1.5 rounded-lg text-xs cursor-pointer transition-colors"
+                              aria-label="Edit contact"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteContact(contact._id)}
+                              className="bg-red-500/20 hover:bg-red-500/30 text-red-400 p-1.5 rounded-lg text-xs cursor-pointer transition-colors"
+                              aria-label="Delete contact"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <p className="text-center text-gray-500 text-sm py-8">No saved contacts yet</p>
+                  )}
+
+                  <button
+                    onClick={() => setShowAddContactForm(true)}
+                    className="w-full bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer mt-4"
+                  >
+                    <Plus size={16} /> Add New Contact
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <input
+                    type="text"
+                    placeholder="Contact name (e.g., Mom, Office)"
+                    value={newContactName}
+                    onChange={(e) => setNewContactName(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Phone number (e.g., +1234567890)"
+                    value={newContactPhone}
+                    onChange={(e) => setNewContactPhone(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+                  />
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleAddContact}
+                      className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
+                    >
+                      {editingContact ? 'Update' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowAddContactForm(false);
+                        setEditingContact(null);
+                        setNewContactName('');
+                        setNewContactPhone('');
+                      }}
+                      className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* CONNECT WHATSAPP CARD */}
         {waStatus !== 'connected' && (
           <div className="bg-[#111] border border-white/5 rounded-2xl p-6 flex items-center justify-between">
@@ -440,7 +643,15 @@ export default function Dashboard() {
           <div className="bg-[#111] border border-white/5 rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-sm">Phone Numbers</h2>
-              <span className="text-xs text-gray-500">{numbers.length} added</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">{numbers.length} added</span>
+                <button
+                  onClick={() => setShowContactsModal(true)}
+                  className="text-xs text-[#25D366] hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <Phone size={12} /> Saved
+                </button>
+              </div>
             </div>
 
             {/* Input */}

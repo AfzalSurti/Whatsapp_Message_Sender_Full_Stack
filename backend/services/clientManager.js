@@ -290,8 +290,8 @@ const disconnectClient=async(userId)=>{
                 entry.client._healthCheckCleanup();
             }
 
-            await entry.client.logout(); // logout to clear session
-            await entry.client.destroy(); // destroy puppeteer instance
+            // Destroy client without logging out — preserves session for recovery
+            await entry.client.destroy();
 
         }catch(err){
             console.error(`Error disconnecting client for user: ${userIdStr}`,err);
@@ -300,12 +300,6 @@ const disconnectClient=async(userId)=>{
     }
 
     clientsBeingCreated.delete(userIdStr);
-
-    await Session.findOneAndUpdate(
-        {userId},
-        {isActive:false},
-        {upsert:true}
-    );
 
     console.log(`Client disconnected for user: ${userIdStr}`);
 };

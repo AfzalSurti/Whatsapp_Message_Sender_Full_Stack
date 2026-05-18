@@ -35,6 +35,7 @@ export const authAPI = {
   signup: (data) => api.post('/api/auth/signup', data),
   login: (data) => api.post('/api/auth/login', data),
   getMe: () => api.get('/api/auth/me'),
+  logout: () => api.post('/api/auth/logout'),
 };
 
 // ─── WHATSAPP ─────────────────────────────────────────────────
@@ -54,6 +55,14 @@ export const aiAPI = {
 export const logsAPI = {
   getLogs: (params) => api.get('/api/logs', { params }),
   getCampaigns: () => api.get('/api/logs/campaigns'),
+};
+
+// ─── CONTACTS ──────────────────────────────────────────────────
+export const contactsAPI = {
+  getContacts: () => api.get('/api/contacts'),
+  createContact: (data) => api.post('/api/contacts', data),
+  updateContact: (id, data) => api.put(`/api/contacts/${id}`, data),
+  deleteContact: (id) => api.delete(`/api/contacts/${id}`),
 };
 
 export default api;

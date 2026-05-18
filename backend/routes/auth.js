@@ -6,7 +6,8 @@ const {
   signup,
   login,
   getMe,
-  googleCallback
+  googleCallback,
+  logout
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 
@@ -39,6 +40,7 @@ const loginValidation = [
 router.post('/signup', signupValidation, signup);
 router.post('/login', loginValidation, login);
 router.get('/me', protect, getMe);          // get logged in user
+router.post('/logout', protect, logout);    // logout and disconnect WhatsApp
 
 // ─── GOOGLE OAUTH ─────────────────────────────────────────────
 // Step 1 — redirect user to Google login page

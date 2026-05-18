@@ -96,4 +96,20 @@ const googleCallback = (req, res) => {
   res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${token}`);
 };
 
-module.exports = { signup, login, getMe, googleCallback };
+// ─── LOGOUT ───────────────────────────────────────────────────
+// Disconnects WhatsApp and clears session on server
+const logout = async (req, res) => {
+  try {
+    const clientManager = require('../services/clientManager');
+    const userId = req.user._id;
+
+    // Disconnect WhatsApp client and clear session
+    await clientManager.disconnectClient(userId);
+
+    res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+module.exports = { signup, login, getMe, googleCallback, logout };
