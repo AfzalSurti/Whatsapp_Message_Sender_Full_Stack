@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import {
   MessageSquare, LogOut, Wifi, WifiOff, Upload, X,
   Send, Bot, History, Loader2, CheckCircle, XCircle,
-  SkipForward, User, ChevronRight, Phone, Edit2, Trash2, Plus
+  SkipForward, User, ChevronRight, Phone, Edit2, Trash2, Plus, Key
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -402,6 +402,10 @@ export default function Dashboard() {
 
           <Link href="/dashboard/history" className="text-gray-400 hover:text-white transition-colors">
             <History size={18} />
+          </Link>
+
+          <Link href="/dashboard/api-keys" className="text-gray-400 hover:text-[#25D366] transition-colors" title="API Keys">
+            <Key size={18} />
           </Link>
 
           <div className="flex items-center gap-2 text-sm text-gray-400">

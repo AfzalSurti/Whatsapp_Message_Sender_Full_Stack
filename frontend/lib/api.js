@@ -65,4 +65,13 @@ export const contactsAPI = {
   deleteContact: (id) => api.delete(`/api/contacts/${id}`),
 };
 
+// ─── API KEYS ──────────────────────────────────────────────────
+export const keysAPI = {
+  getKeys: () => api.get('/api/keys'),
+  generateKey: (name) => api.post('/api/keys', { name }),
+  getFullKey: (id) => api.get(`/api/keys/${id}/full`),
+  getKeyStats: (id) => api.get(`/api/keys/${id}/stats`),
+  deleteKey: (id) => api.delete(`/api/keys/${id}`),
+};
+
 export default api;
