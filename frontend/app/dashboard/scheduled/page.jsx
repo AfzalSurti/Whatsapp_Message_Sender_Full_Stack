@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { scheduledAPI, groupsAPI, aiAPI } from '@/lib/api';
@@ -68,18 +68,7 @@ export default function ScheduledPage() {
   // Step 3 & submission
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-  }, [user, loading]);
-
-  useEffect(() => {
-    if (user) {
-      fetchCampaigns();
-      fetchGroups();
-    }
-  }, [user]);
-
-  const fetchCampaigns = async () => {
+  const fetchCampaigns = useCallback(async () => {
     try {
       setFetching(true);
       const res = await scheduledAPI.getCampaigns();
@@ -89,9 +78,9 @@ export default function ScheduledPage() {
     } finally {
       setFetching(false);
     }
-  };
+  }, []);
 
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     try {
       setLoadingGroups(true);
       const res = await groupsAPI.getGroups();
@@ -101,7 +90,18 @@ export default function ScheduledPage() {
     } finally {
       setLoadingGroups(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !user) router.push('/login');
+  }, [user, loading, router]);
+
+  useEffect(() => {
+    if (user) {
+      fetchCampaigns();
+      fetchGroups();
+    }
+  }, [user, fetchCampaigns, fetchGroups]);
 
   const handleAIGenerate = async () => {
     if (!aiPrompt.trim()) {

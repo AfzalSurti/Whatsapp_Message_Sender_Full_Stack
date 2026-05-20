@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { groupsAPI } from '@/lib/api';
@@ -47,15 +47,7 @@ export default function GroupsPage() {
   const [editColor, setEditColor] = useState('');
   const [editingLoading, setEditingLoading] = useState(false);
 
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-  }, [user, loading]);
-
-  useEffect(() => {
-    if (user) fetchGroups();
-  }, [user]);
-
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     try {
       setFetching(true);
       const res = await groupsAPI.getGroups();
@@ -65,7 +57,15 @@ export default function GroupsPage() {
     } finally {
       setFetching(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !user) router.push('/login');
+  }, [user, loading, router]);
+
+  useEffect(() => {
+    if (user) fetchGroups();
+  }, [user, fetchGroups]);
 
   const handleCreateGroup = async () => {
     if (!newGroupName.trim()) {

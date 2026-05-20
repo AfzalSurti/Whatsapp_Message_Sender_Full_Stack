@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { keysAPI } from '@/lib/api';
@@ -25,15 +25,7 @@ export default function ApiKeysPage() {
   const [selectedKeyStats, setSelectedKeyStats] = useState(null);
   const [loadingStats, setLoadingStats] = useState(null);
 
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-  }, [user, loading]);
-
-  useEffect(() => {
-    if (user) fetchKeys();
-  }, [user]);
-
-  const fetchKeys = async () => {
+  const fetchKeys = useCallback(async () => {
     setLoadingKeys(true);
     try {
       const res = await keysAPI.getKeys();
@@ -43,7 +35,15 @@ export default function ApiKeysPage() {
     } finally {
       setLoadingKeys(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !user) router.push('/login');
+  }, [user, loading, router]);
+
+  useEffect(() => {
+    if (user) fetchKeys();
+  }, [user, fetchKeys]);
 
   const handleGenerateKey = async () => {
     if (!newKeyName.trim()) {
@@ -216,7 +216,7 @@ export default function ApiKeysPage() {
 
               <div className="space-y-4">
                 <p className="text-sm text-gray-400">
-                  ⚠️ This is the only time you'll see this key. Store it securely.
+                  ⚠️ This is the only time you&apos;ll see this key. Store it securely.
                 </p>
 
                 <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 flex items-center justify-between">

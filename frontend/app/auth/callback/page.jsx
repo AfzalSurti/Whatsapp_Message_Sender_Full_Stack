@@ -15,7 +15,7 @@ export default function AuthCallback() {
     } else {
       router.push('/login?error=oauth_failed');
     }
-  }, []);
+  }, [router, searchParams]);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">

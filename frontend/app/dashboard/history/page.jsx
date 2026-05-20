@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { logsAPI } from '@/lib/api';
@@ -27,18 +27,7 @@ export default function HistoryPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-  }, [user, loading]);
-
-  useEffect(() => {
-    if (user) {
-      fetchLogs();
-      fetchCampaigns();
-    }
-  }, [user, filter, page]);
-
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     setFetching(true);
     try {
       const params = { page, limit: 50 };
@@ -50,14 +39,25 @@ export default function HistoryPage() {
     } finally {
       setFetching(false);
     }
-  };
+  }, [filter, page]);
 
-  const fetchCampaigns = async () => {
+  const fetchCampaigns = useCallback(async () => {
     try {
       const res = await logsAPI.getCampaigns();
       setCampaigns(res.data.campaigns);
     } catch {}
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !user) router.push('/login');
+  }, [user, loading, router]);
+
+  useEffect(() => {
+    if (user) {
+      fetchLogs();
+      fetchCampaigns();
+    }
+  }, [user, fetchLogs, fetchCampaigns]);
 
   // Export logs as CSV
   const exportCSV = () => {

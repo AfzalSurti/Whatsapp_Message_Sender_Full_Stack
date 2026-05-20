@@ -3,9 +3,10 @@ import { getToken } from '@/lib/auth';
 
 const useWebSocket = (onMessage) => {
   const ws = useRef(null);
+  const connectRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const shouldReconnectRef = useRef(true);
-  let reconnectAttempts = 0;
+  const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
   const baseReconnectDelay = 2000;
 
@@ -24,7 +25,7 @@ const useWebSocket = (onMessage) => {
 
       ws.current.onopen = () => {
         console.log('✅ WebSocket connected');
-        reconnectAttempts = 0;
+        reconnectAttemptsRef.current = 0;
       };
 
       ws.current.onmessage = (e) => {
@@ -38,12 +39,12 @@ const useWebSocket = (onMessage) => {
 
       ws.current.onclose = () => {
         console.log('👋 WebSocket disconnected');
-        if (shouldReconnectRef.current && reconnectAttempts < maxReconnectAttempts) {
-          const delay = baseReconnectDelay * Math.pow(2, reconnectAttempts);
-          console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+        if (shouldReconnectRef.current && reconnectAttemptsRef.current < maxReconnectAttempts) {
+          const delay = baseReconnectDelay * Math.pow(2, reconnectAttemptsRef.current);
+          console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})`);
           reconnectTimeoutRef.current = setTimeout(() => {
-            reconnectAttempts++;
-            connect();
+            reconnectAttemptsRef.current += 1;
+            connectRef.current?.();
           }, delay);
         }
       };
@@ -55,6 +56,10 @@ const useWebSocket = (onMessage) => {
       console.error('WebSocket connection error:', err);
     }
   }, [onMessage]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
     shouldReconnectRef.current = false;

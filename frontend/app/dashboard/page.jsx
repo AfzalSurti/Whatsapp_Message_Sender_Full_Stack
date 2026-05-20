@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 import { whatsappAPI, aiAPI, contactsAPI } from '@/lib/api';
 import useWebSocket from '@/hooks/useWebSocket';
@@ -45,48 +46,7 @@ export default function Dashboard() {
   const [newContactName, setNewContactName] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
 
-  // Redirect if not logged in
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-  }, [user, loading]);
-
-  // Fetch WhatsApp status on load
-  useEffect(() => {
-    if (user) {
-      setSessionLoading(true);  // Reset loading state for new user
-      fetchStatus();
-    }
-  }, [user]);
-
-  // Fetch contacts on load
-  useEffect(() => {
-    if (user) fetchContacts();
-  }, [user]);
-
-  useEffect(() => {
-    if (waStatus === 'connected' && showQR) {
-      setShowQR(false);
-      setQrImage(null);
-      setQrStatusText('WhatsApp connected successfully.');
-      setConnectionNotice('Yes, WhatsApp connected.');
-      setConnectError('');
-      toast.success('Yes, WhatsApp connected successfully!');
-    }
-  }, [waStatus, showQR]);
-
-  useEffect(() => {
-    if (!showQR || waStatus !== 'pending') {
-      return;
-    }
-
-    const intervalId = setInterval(() => {
-      fetchStatus();
-    }, 2000);
-
-    return () => clearInterval(intervalId);
-  }, [showQR, waStatus]);
-
-  const fetchStatus = async () => {
+  const fetchStatus = useCallback(async () => {
     try {
       const res = await whatsappAPI.getStatus();
       const nextStatus = res.data.status === 'connected' ? 'connected' : 'disconnected';
@@ -102,16 +62,45 @@ export default function Dashboard() {
     } catch {} finally {
       setSessionLoading(false);
     }
-  };
+  }, []);
 
-  const fetchContacts = async () => {
+  const fetchContacts = useCallback(async () => {
     try {
       const res = await contactsAPI.getContacts();
       setSavedContacts(res.data.contacts || []);
     } catch {
       toast.error('Failed to load contacts');
     }
-  };
+  }, []);
+
+  // Redirect if not logged in
+  useEffect(() => {
+    if (!loading && !user) router.push('/login');
+  }, [user, loading, router]);
+
+  // Fetch WhatsApp status on load
+  useEffect(() => {
+    if (user) {
+      fetchStatus();
+    }
+  }, [user, fetchStatus]);
+
+  // Fetch contacts on load
+  useEffect(() => {
+    if (user) fetchContacts();
+  }, [user, fetchContacts]);
+
+  useEffect(() => {
+    if (!showQR || waStatus !== 'pending') {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      fetchStatus();
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, [showQR, waStatus, fetchStatus]);
 
   const handleAddContact = async () => {
     if (!newContactName.trim() || !newContactPhone.trim()) {
@@ -451,7 +440,14 @@ export default function Dashboard() {
               <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-5 mb-5 min-h-[17rem] flex flex-col items-center justify-center">
                 {qrImage ? (
                   <div className="bg-white p-4 rounded-xl inline-block mb-4">
-                    <img src={qrImage} alt="QR Code" className="w-48 h-48" />
+                    <Image
+                      src={qrImage}
+                      alt="QR Code"
+                      width={192}
+                      height={192}
+                      unoptimized
+                      className="w-48 h-48"
+                    />
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-10 text-center">
