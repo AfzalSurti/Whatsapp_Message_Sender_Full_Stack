@@ -48,7 +48,7 @@ export const whatsappAPI = {
 
 // ─── AI ───────────────────────────────────────────────────────
 export const aiAPI = {
-  generate: (prompt) => api.post('/api/ai/generate', { prompt }),
+  generate: (data) => api.post('/api/ai/generate', typeof data === 'string' ? { prompt: data } : data),
 };
 
 // ─── LOGS ─────────────────────────────────────────────────────

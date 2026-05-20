@@ -13,6 +13,11 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent'];
+const AI_LANGUAGES = ['English', 'Hindi', 'Gujarati', 'English + Urdu'];
+const AI_FESTIVALS = ['General', 'Diwali', 'Eid al-Fitr', 'New Year', 'Holi'];
+const AI_AUDIENCES = ['Customers', 'VIP Clients', 'Leads', 'Local Shoppers'];
+
 export default function Dashboard() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
@@ -31,8 +36,15 @@ export default function Dashboard() {
   const [numberInput, setNumberInput] = useState('');
   const [message, setMessage] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
+  const [aiTone, setAiTone] = useState('Friendly');
+  const [aiLanguage, setAiLanguage] = useState('English');
+  const [aiFestival, setAiFestival] = useState('General');
+  const [aiAudience, setAiAudience] = useState('Customers');
+  const [aiGuidance, setAiGuidance] = useState('');
+  const [aiRefineLoading, setAiRefineLoading] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [messageMode, setMessageMode] = useState('manual'); // manual | ai
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // Sending state
   const [sending, setSending] = useState(false);
@@ -306,15 +318,63 @@ export default function Dashboard() {
     }
     setAiLoading(true);
     try {
-      const res = await aiAPI.generate(aiPrompt);
+      const res = await aiAPI.generate({
+        prompt: aiPrompt,
+        tone: aiTone,
+        language: aiLanguage,
+        festival: aiFestival,
+        audience: aiAudience,
+        guidance: aiGuidance
+      });
       setMessage(res.data.message);
-      setMessageMode('manual'); // show in textarea
-      toast.success('Message generated!');
+      toast.success('AI message generated');
     } catch (err) {
-      toast.error('AI generation failed');
+      toast.error(err.response?.data?.error || 'AI generation failed');
     } finally {
       setAiLoading(false);
     }
+  };
+
+  const handleAIRefine = async (mode) => {
+    const currentMessage = message;
+    if (!currentMessage?.trim()) {
+      toast.error('Generate or write a message first');
+      return;
+    }
+
+    setAiRefineLoading(mode);
+    try {
+      const res = await aiAPI.generate({
+        prompt: aiPrompt || 'Improve this WhatsApp campaign message',
+        tone: aiTone,
+        language: aiLanguage,
+        festival: aiFestival,
+        audience: aiAudience,
+        guidance: aiGuidance,
+        mode,
+        currentMessage
+      });
+      setMessage(res.data.message);
+      toast.success('Message updated');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'AI refinement failed');
+    } finally {
+      setAiRefineLoading('');
+    }
+  };
+
+  const handleUseAIMessage = () => {
+    if (!message.trim()) {
+      toast.error('Generate a message first');
+      return;
+    }
+    setMessageMode('manual');
+    toast.success('Message added to campaign');
+  };
+
+  const handleLogoutClick = async () => {
+    setShowLogoutConfirm(false);
+    await logout();
   };
 
   // Send messages
@@ -410,7 +470,11 @@ export default function Dashboard() {
             <span className="hidden md:inline">{user?.name}</span>
           </div>
 
-          <button onClick={logout} className="text-gray-500 hover:text-red-400 transition-colors cursor-pointer">
+          <button
+            onClick={() => setShowLogoutConfirm(true)}
+            className="text-gray-500 hover:text-red-400 transition-colors cursor-pointer"
+            aria-label="Logout"
+          >
             <LogOut size={17} />
           </button>
         </div>
@@ -418,6 +482,28 @@ export default function Dashboard() {
 
       {/* MAIN */}
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[#111] border border-white/10 rounded-2xl p-6 max-w-sm w-full">
+              <h3 className="font-bold text-lg mb-2">Are you sure you want to logout?</h3>
+              <p className="text-sm text-gray-400 mb-6">Your current dashboard session will close and you will need to sign in again.</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleLogoutClick}
+                  className="flex-1 bg-red-500 hover:bg-red-400 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
+                >
+                  Yes, Logout
+                </button>
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* QR MODAL */}
         {showQR && (
@@ -749,31 +835,123 @@ export default function Dashboard() {
 
             {/* AI */}
             {messageMode === 'ai' && (
-              <div className="space-y-3">
-                <textarea
-                  placeholder='Describe your message... e.g. "Diwali offer, casual friendly tone"'
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  rows={3}
-                  className="w-full px-4 py-3 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors resize-none"
-                />
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-[0.18em] text-gray-500 mb-1.5">Tone</label>
+                    <select
+                      value={aiTone}
+                      onChange={(e) => setAiTone(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366]"
+                    >
+                      {AI_TONES.map(item => <option key={item}>{item}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-[0.18em] text-gray-500 mb-1.5">Language</label>
+                    <select
+                      value={aiLanguage}
+                      onChange={(e) => setAiLanguage(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366]"
+                    >
+                      {AI_LANGUAGES.map(item => <option key={item}>{item}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-[0.18em] text-gray-500 mb-1.5">Festival</label>
+                    <select
+                      value={aiFestival}
+                      onChange={(e) => setAiFestival(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366]"
+                    >
+                      {AI_FESTIVALS.map(item => <option key={item}>{item}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-[0.18em] text-gray-500 mb-1.5">Audience</label>
+                    <select
+                      value={aiAudience}
+                      onChange={(e) => setAiAudience(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366]"
+                    >
+                      {AI_AUDIENCES.map(item => <option key={item}>{item}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase tracking-[0.18em] text-gray-500 mb-1.5">Campaign prompt</label>
+                  <textarea
+                    placeholder='e.g. "Festive offer for salon customers with {{name}} placeholder"'
+                    value={aiPrompt}
+                    onChange={(e) => setAiPrompt(e.target.value)}
+                    rows={3}
+                    className="w-full px-4 py-3 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase tracking-[0.18em] text-gray-500 mb-1.5">AI guidance optional</label>
+                  <textarea
+                    placeholder='e.g. "Keep it premium, add urgency, include a clear CTA"'
+                    value={aiGuidance}
+                    onChange={(e) => setAiGuidance(e.target.value)}
+                    rows={2}
+                    className="w-full px-4 py-3 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors resize-none"
+                  />
+                </div>
+
                 <button
                   onClick={handleAIGenerate}
                   disabled={aiLoading}
                   className="w-full flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold py-2.5 rounded-xl transition-colors text-sm"
                 >
                   {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Bot size={14} />}
-                  {aiLoading ? 'Generating...' : 'Generate Message'}
+                  {aiLoading ? 'Generating...' : 'Generate'}
                 </button>
+
                 {message && (
-                  <div className="bg-[#0a0a0a] border border-[#25D366]/20 rounded-xl p-3">
-                    <p className="text-xs text-gray-400 mb-1">Generated message:</p>
-                    <p className="text-sm text-white">{message}</p>
+                  <div className="space-y-3">
+                    <div className="rounded-xl border border-[#25D366]/20 bg-[#0a0a0a] p-3">
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-gray-500 mb-2">Generated message</p>
+                      <p className="text-sm text-white whitespace-pre-wrap">{message}</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={handleUseAIMessage}
+                        className="bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-3 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
+                      >
+                        Use This
+                      </button>
+                      <button
+                        onClick={() => handleAIRefine('rewrite')}
+                        disabled={!!aiRefineLoading}
+                        className="border border-white/10 hover:border-white/20 text-white font-semibold px-3 py-2.5 rounded-xl transition-colors text-sm cursor-pointer disabled:opacity-50"
+                      >
+                        {aiRefineLoading === 'rewrite' ? 'Rewriting...' : 'Rewrite'}
+                      </button>
+                      <button
+                        onClick={() => handleAIRefine('translate')}
+                        disabled={!!aiRefineLoading}
+                        className="border border-white/10 hover:border-white/20 text-white font-semibold px-3 py-2.5 rounded-xl transition-colors text-sm cursor-pointer disabled:opacity-50"
+                      >
+                        {aiRefineLoading === 'translate' ? 'Translating...' : 'Translate'}
+                      </button>
+                      <button
+                        onClick={() => handleAIRefine('shorten')}
+                        disabled={!!aiRefineLoading}
+                        className="border border-white/10 hover:border-white/20 text-white font-semibold px-3 py-2.5 rounded-xl transition-colors text-sm cursor-pointer disabled:opacity-50"
+                      >
+                        {aiRefineLoading === 'shorten' ? 'Shortening...' : 'Shorten'}
+                      </button>
+                    </div>
+
                     <button
-                      onClick={() => { setMessage(''); setAiPrompt(''); }}
-                      className="text-xs text-gray-600 hover:text-red-400 mt-2"
+                      onClick={() => { setMessage(''); setAiPrompt(''); setAiGuidance(''); }}
+                      className="text-xs text-gray-600 hover:text-red-400"
                     >
-                      Clear
+                      Clear AI draft
                     </button>
                   </div>
                 )}

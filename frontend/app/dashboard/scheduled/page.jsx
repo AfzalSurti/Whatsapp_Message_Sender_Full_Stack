@@ -37,6 +37,11 @@ const getStatusBadge = (status) => {
   return badges[status] || badges.pending;
 };
 
+const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent'];
+const AI_LANGUAGES = ['English', 'Hindi', 'Gujarati', 'English + Urdu'];
+const AI_FESTIVALS = ['General', 'Diwali', 'Eid al-Fitr', 'New Year', 'Holi'];
+const AI_AUDIENCES = ['Customers', 'VIP Clients', 'Leads', 'Local Shoppers'];
+
 export default function ScheduledPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -54,6 +59,11 @@ export default function ScheduledPage() {
   const [campaignName, setCampaignName] = useState('');
   const [message, setMessage] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
+  const [aiTone, setAiTone] = useState('Friendly');
+  const [aiLanguage, setAiLanguage] = useState('English');
+  const [aiFestival, setAiFestival] = useState('General');
+  const [aiAudience, setAiAudience] = useState('Customers');
+  const [aiGuidance, setAiGuidance] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
@@ -111,11 +121,18 @@ export default function ScheduledPage() {
 
     setAiLoading(true);
     try {
-      const res = await aiAPI.generate(aiPrompt);
+      const res = await aiAPI.generate({
+        prompt: aiPrompt,
+        tone: aiTone,
+        language: aiLanguage,
+        festival: aiFestival,
+        audience: aiAudience,
+        guidance: aiGuidance
+      });
       setMessage(res.data.message);
       toast.success('Message generated!');
     } catch (err) {
-      toast.error('AI generation failed');
+      toast.error(err.response?.data?.error || 'AI generation failed');
     } finally {
       setAiLoading(false);
     }
@@ -232,6 +249,7 @@ export default function ScheduledPage() {
     setCampaignName('');
     setMessage('');
     setAiPrompt('');
+    setAiGuidance('');
     setScheduleDate('');
     setScheduleTime('');
     setSelectedGroupIds([]);
@@ -456,10 +474,47 @@ export default function ScheduledPage() {
 
                   <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 space-y-3">
                     <p className="text-xs font-medium text-gray-400">Or Generate with AI</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <select
+                        value={aiTone}
+                        onChange={(e) => setAiTone(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
+                      >
+                        {AI_TONES.map(item => <option key={item}>{item}</option>)}
+                      </select>
+                      <select
+                        value={aiLanguage}
+                        onChange={(e) => setAiLanguage(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
+                      >
+                        {AI_LANGUAGES.map(item => <option key={item}>{item}</option>)}
+                      </select>
+                      <select
+                        value={aiFestival}
+                        onChange={(e) => setAiFestival(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
+                      >
+                        {AI_FESTIVALS.map(item => <option key={item}>{item}</option>)}
+                      </select>
+                      <select
+                        value={aiAudience}
+                        onChange={(e) => setAiAudience(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
+                      >
+                        {AI_AUDIENCES.map(item => <option key={item}>{item}</option>)}
+                      </select>
+                    </div>
                     <textarea
-                      placeholder='e.g., "Friendly message about Diwali sale"'
+                      placeholder='Campaign prompt, e.g. "Friendly message about Diwali sale"'
                       value={aiPrompt}
                       onChange={(e) => setAiPrompt(e.target.value)}
+                      rows={2}
+                      className="w-full px-4 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors resize-none"
+                    />
+                    <textarea
+                      placeholder='Optional AI guidance, e.g. "Use {{name}}, keep it premium, add urgency"'
+                      value={aiGuidance}
+                      onChange={(e) => setAiGuidance(e.target.value)}
                       rows={2}
                       className="w-full px-4 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors resize-none"
                     />
