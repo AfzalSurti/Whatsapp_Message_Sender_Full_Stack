@@ -1,5 +1,7 @@
 const {Client,LocalAuth}=require('whatsapp-web.js');
 const path=require('path');
+const fs=require('fs');
+const os=require('os');
 const qrcode=require('qrcode');
 const Session=require('../models/Session');
 
@@ -57,6 +59,50 @@ const getStatus=(userId)=>{
         return 'disconnected';
     }
     return entry.status;
+};
+
+const resolveExecutablePath = () => {
+    if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+        return process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
+    if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
+        return process.env.CHROME_PATH;
+    }
+
+    if (process.env.EDGE_PATH && fs.existsSync(process.env.EDGE_PATH)) {
+        return process.env.EDGE_PATH;
+    }
+
+    const platform = os.platform();
+    const candidates = [];
+
+    if (platform === 'win32') {
+        candidates.push(
+            'C:/Program Files/Google/Chrome/Application/chrome.exe',
+            'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+            'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+            'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+        );
+    }
+
+    if (platform === 'darwin') {
+        candidates.push(
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+        );
+    }
+
+    if (platform === 'linux') {
+        candidates.push(
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser'
+        );
+    }
+
+    return candidates.find(candidate => fs.existsSync(candidate)) || null;
 };
 
 //create client
@@ -119,11 +165,18 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
 
 
     // Create new client with LocalAuth (file-based sessions, per user)
-    const authDir = path.join(__dirname, '../.wwebjs_auth', userIdStr);
+    const executablePath = resolveExecutablePath();
+    if (executablePath) {
+        console.log(`Using browser executable for user ${userIdStr}: ${executablePath}`);
+    } else {
+        console.warn(`No browser executable path found for user ${userIdStr}; falling back to puppeteer default`);
+    }
+
     const client=new Client({
         authStrategy: new LocalAuth({ clientId: userIdStr }),
         puppeteer:{
             headless:true,
+            executablePath: executablePath || undefined,
             args:[
                 '--no-sandbox',
                 '--disable-setuid-sandbox',

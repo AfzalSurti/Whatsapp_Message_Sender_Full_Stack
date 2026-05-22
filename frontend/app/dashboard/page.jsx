@@ -221,12 +221,17 @@ export default function Dashboard() {
     }
     if (data.type === 'disconnected') {
       setWaStatus('disconnected');
-      setShowQR(false);
-      setQrImage(null);
-      setQrStatusText('Connection closed. Click Connect to start again.');
+      if (typeof data.reason === 'string' && /failed to launch|browser failed to start|initialization failed/i.test(data.reason)) {
+        setShowQR(true);
+        setQrStatusText('WhatsApp could not start the browser. Check the backend terminal for the Chrome launch error.');
+      } else {
+        setShowQR(false);
+        setQrImage(null);
+        setQrStatusText('Connection closed. Click Connect to start again.');
+      }
       setConnectionNotice('');
       setSending(false);
-      toast.error('WhatsApp disconnected');
+      toast.error(typeof data.reason === 'string' && data.reason ? data.reason : 'WhatsApp disconnected');
     }
     if (data.type === 'progress') {
       setProgress(data);
