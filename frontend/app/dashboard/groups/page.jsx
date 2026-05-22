@@ -1,23 +1,29 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { groupsAPI } from '@/lib/api';
-import toast from 'react-hot-toast';
+import InternationalPhoneInput from '@/components/InternationalPhoneInput';
 import {
-  ChevronLeft, Plus, Trash2, Edit2, X, Loader2,
-  ChevronDown, ChevronUp, Copy
+  DEFAULT_PHONE_COUNTRY,
+  formatPhoneNumber,
+  normalizePhoneNumber
+} from '@/lib/phone';
+import {
+  ChevronLeft,
+  Loader2,
+  Plus,
+  X,
+  Filter,
+  UserPlus,
+  Tags
 } from 'lucide-react';
-import Link from 'next/link';
 
-const COLORS = [
-  '#25D366',
-  '#3B82F6',
-  '#F59E0B',
-  '#EF4444',
-  '#8B5CF6',
-  '#EC4899'
-];
+const DEFAULT_COUNTRY = DEFAULT_PHONE_COUNTRY;
+const GROUP_COLORS = ['#25D366', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
 export default function GroupsPage() {
   const { user, loading } = useAuth();
@@ -25,38 +31,31 @@ export default function GroupsPage() {
 
   const [groups, setGroups] = useState([]);
   const [fetching, setFetching] = useState(true);
-  const [showNewGroupModal, setShowNewGroupModal] = useState(false);
-  const [showAddNumberModal, setShowAddNumberModal] = useState(false);
-  const [showBulkAddModal, setShowBulkAddModal] = useState(false);
-  const [expandedGroupId, setExpandedGroupId] = useState(null);
-  const [editingGroupId, setEditingGroupId] = useState(null);
-  const [tagFilter, setTagFilter] = useState('all');
 
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupColor, setNewGroupColor] = useState('#25D366');
   const [creatingGroup, setCreatingGroup] = useState(false);
 
-  const [bulkGroupId, setBulkGroupId] = useState(null);
-  const [bulkInput, setBulkInput] = useState('');
-  const [bulkLoading, setBulkLoading] = useState(false);
+  const [showAddContactModal, setShowAddContactModal] = useState(false);
+  const [contactName, setContactName] = useState('');
+  const [contactCountry, setContactCountry] = useState(DEFAULT_COUNTRY);
+  const [contactPhone, setContactPhone] = useState('');
+  const [selectedGroupIds, setSelectedGroupIds] = useState([]);
+  const [inlineGroupName, setInlineGroupName] = useState('');
+  const [inlineGroupColor, setInlineGroupColor] = useState('#25D366');
+  const [addingContact, setAddingContact] = useState(false);
 
-  const [selectedGroup, setSelectedGroup] = useState(null);
-  const [numberName, setNumberName] = useState('');
-  const [numberPhone, setNumberPhone] = useState('');
-  const [numberTags, setNumberTags] = useState('');
-  const [addingNumber, setAddingNumber] = useState(false);
-
-  const [editName, setEditName] = useState('');
-  const [editColor, setEditColor] = useState('');
-  const [editingLoading, setEditingLoading] = useState(false);
+  const [groupFilter, setGroupFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('name-asc');
 
   const fetchGroups = useCallback(async () => {
     try {
       setFetching(true);
       const res = await groupsAPI.getGroups();
       setGroups(res.data.groups || []);
-    } catch (err) {
-      toast.error('Failed to load groups');
+    } catch {
+      toast.error('Failed to load contacts');
     } finally {
       setFetching(false);
     }
@@ -70,6 +69,11 @@ export default function GroupsPage() {
     if (user) fetchGroups();
   }, [user, fetchGroups]);
 
+  const createGroup = async ({ name, color }) => {
+    const res = await groupsAPI.createGroup({ name: name.trim(), color });
+    return res.data.group;
+  };
+
   const handleCreateGroup = async () => {
     if (!newGroupName.trim()) {
       toast.error('Enter a group name');
@@ -78,14 +82,11 @@ export default function GroupsPage() {
 
     setCreatingGroup(true);
     try {
-      await groupsAPI.createGroup({
-        name: newGroupName,
-        color: newGroupColor
-      });
-      toast.success('Group created!');
+      await createGroup({ name: newGroupName, color: newGroupColor });
+      toast.success('Group created');
+      setShowCreateGroupModal(false);
       setNewGroupName('');
       setNewGroupColor('#25D366');
-      setShowNewGroupModal(false);
       await fetchGroups();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to create group');
@@ -94,116 +95,143 @@ export default function GroupsPage() {
     }
   };
 
-  const handleDeleteGroup = async (id) => {
-    if (!confirm('Delete this group?')) return;
+  const groupedContacts = useMemo(() => {
+    const byPhone = new Map();
 
-    try {
-      await groupsAPI.deleteGroup(id);
-      toast.success('Group deleted');
-      await fetchGroups();
-    } catch (err) {
-      toast.error('Failed to delete group');
-    }
-  };
+    groups.forEach((group) => {
+      (group.numbers || []).forEach((entry) => {
+        const phoneKey = String(entry.phone || '').replace(/\D/g, '');
+        if (!phoneKey) return;
 
-  const handleEditGroup = async (group) => {
-    setSelectedGroup(group);
-    setEditName(group.name);
-    setEditColor(group.color);
-    setEditingGroupId(group._id);
-  };
+        if (!byPhone.has(phoneKey)) {
+          byPhone.set(phoneKey, {
+            id: phoneKey,
+            name: entry.name || '',
+            phone: phoneKey,
+            groups: []
+          });
+        }
 
-  const handleSaveEdit = async () => {
-    if (!editName.trim()) {
-      toast.error('Enter a name');
-      return;
-    }
+        const contact = byPhone.get(phoneKey);
+        if (!contact.name && entry.name) {
+          contact.name = entry.name;
+        }
 
-    setEditingLoading(true);
-    try {
-      await groupsAPI.updateGroup(editingGroupId, {
-        name: editName,
-        color: editColor
+        const alreadyInGroup = contact.groups.some((item) => item.id === group._id);
+        if (!alreadyInGroup) {
+          contact.groups.push({
+            id: group._id,
+            name: group.name,
+            color: group.color || '#25D366'
+          });
+        }
       });
-      toast.success('Group updated');
-      setEditingGroupId(null);
-      setSelectedGroup(null);
-      await fetchGroups();
-    } catch (err) {
-      toast.error('Failed to update group');
-    } finally {
-      setEditingLoading(false);
-    }
-  };
-
-  const handleAddNumber = async () => {
-    if (!numberName.trim() || !numberPhone.trim() || !numberTags.trim()) {
-      toast.error('Enter name, phone number, and at least one tag');
-      return;
-    }
-
-    setAddingNumber(true);
-    try {
-      await groupsAPI.addNumber(selectedGroup._id, {
-        name: numberName,
-        phone: numberPhone,
-        tags: numberTags.split(',').map(tag => tag.trim()).filter(Boolean)
-      });
-      toast.success('Number added');
-      setNumberName('');
-      setNumberPhone('');
-      setNumberTags('');
-      setShowAddNumberModal(false);
-      await fetchGroups();
-      const updated = await groupsAPI.getGroup(selectedGroup._id);
-      setSelectedGroup(updated.data.group);
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to add number');
-    } finally {
-      setAddingNumber(false);
-    }
-  };
-
-  const handleRemoveNumber = async (phone) => {
-    try {
-      await groupsAPI.removeNumber(selectedGroup._id, phone);
-      toast.success('Number removed');
-      await fetchGroups();
-      const updated = await groupsAPI.getGroup(selectedGroup._id);
-      setSelectedGroup(updated.data.group);
-    } catch (err) {
-      toast.error('Failed to remove number');
-    }
-  };
-
-  const handleBulkAdd = async () => {
-    if (!bulkInput.trim()) {
-      toast.error('Paste numbers first');
-      return;
-    }
-
-    const lines = bulkInput.split('\n').map(l => l.trim()).filter(l => l);
-    const numbers = lines.map(line => {
-      const parts = line.split(',').map(p => p.trim());
-      return {
-        phone: parts[0],
-        name: parts[1] || '',
-        tags: parts.slice(2).filter(Boolean)
-      };
     });
 
-    setBulkLoading(true);
+    return Array.from(byPhone.values());
+  }, [groups]);
+
+  const filteredAndSortedContacts = useMemo(() => {
+    const filtered = groupFilter === 'all'
+      ? groupedContacts
+      : groupedContacts.filter((contact) => contact.groups.some((g) => g.id === groupFilter));
+
+    const sorted = [...filtered].sort((a, b) => {
+      const firstGroupA = [...a.groups].sort((x, y) => x.name.localeCompare(y.name))[0]?.name || '';
+      const firstGroupB = [...b.groups].sort((x, y) => x.name.localeCompare(y.name))[0]?.name || '';
+
+      if (sortBy === 'name-asc') return a.name.localeCompare(b.name);
+      if (sortBy === 'name-desc') return b.name.localeCompare(a.name);
+      if (sortBy === 'group-asc') return firstGroupA.localeCompare(firstGroupB);
+      if (sortBy === 'group-desc') return firstGroupB.localeCompare(firstGroupA);
+      return 0;
+    });
+
+    return sorted;
+  }, [groupFilter, groupedContacts, sortBy]);
+
+  const sortedGroups = useMemo(
+    () => [...groups].sort((a, b) => a.name.localeCompare(b.name)),
+    [groups]
+  );
+
+  const toggleGroupSelection = (groupId) => {
+    setSelectedGroupIds((prev) => (
+      prev.includes(groupId)
+        ? prev.filter((id) => id !== groupId)
+        : [...prev, groupId]
+    ));
+  };
+
+  const resetAddContactForm = () => {
+    setContactName('');
+    setContactCountry(DEFAULT_COUNTRY);
+    setContactPhone('');
+    setSelectedGroupIds([]);
+    setInlineGroupName('');
+    setInlineGroupColor('#25D366');
+    setShowAddContactModal(false);
+  };
+
+  const handleAddContact = async () => {
+    if (!contactName.trim() || !contactPhone.trim()) {
+      toast.error('Enter contact name and phone number');
+      return;
+    }
+
+    const normalized = normalizePhoneNumber(contactPhone, contactCountry);
+    if (!normalized) {
+      toast.error('Enter a valid international phone number');
+      return;
+    }
+
+    setAddingContact(true);
     try {
-      const res = await groupsAPI.bulkAdd(bulkGroupId, { numbers });
-      toast.success(`Added ${res.data.stats.added}, skipped ${res.data.stats.skipped}`);
-      setBulkInput('');
-      setShowBulkAddModal(false);
-      setBulkGroupId(null);
+      const targetGroupIds = [...selectedGroupIds];
+
+      if (inlineGroupName.trim()) {
+        const createdGroup = await createGroup({
+          name: inlineGroupName,
+          color: inlineGroupColor
+        });
+        targetGroupIds.push(createdGroup._id);
+      }
+
+      const uniqueTargetGroupIds = [...new Set(targetGroupIds)];
+      if (uniqueTargetGroupIds.length === 0) {
+        toast.error('Select at least one group or create a new one');
+        return;
+      }
+
+      const addResults = await Promise.allSettled(
+        uniqueTargetGroupIds.map((groupId) => groupsAPI.addNumber(groupId, {
+          name: contactName,
+          phone: normalized.e164,
+          tags: []
+        }))
+      );
+
+      const successful = addResults.filter((item) => item.status === 'fulfilled').length;
+      const failed = addResults.length - successful;
+
+      if (successful === 0) {
+        const firstError = addResults.find((item) => item.status === 'rejected');
+        toast.error(firstError?.reason?.response?.data?.error || 'Failed to add contact');
+        return;
+      }
+
+      if (failed > 0) {
+        toast.success(`Added to ${successful} group(s), skipped ${failed}`);
+      } else {
+        toast.success(`Contact added to ${successful} group(s)`);
+      }
+
+      resetAddContactForm();
       await fetchGroups();
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Bulk add failed');
+      toast.error(err.response?.data?.error || 'Failed to add contact');
     } finally {
-      setBulkLoading(false);
+      setAddingContact(false);
     }
   };
 
@@ -215,208 +243,116 @@ export default function GroupsPage() {
     );
   }
 
-  const allTags = [...new Set(groups.flatMap(group =>
-    (group.numbers || []).flatMap(num => num.tags || [])
-  ))].sort((a, b) => a.localeCompare(b));
-
-  const filterNumbersByTag = (numbers = []) => {
-    if (tagFilter === 'all') return numbers;
-    return numbers.filter(num => (num.tags || []).includes(tagFilter));
-  };
-
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
-      {/* NAVBAR */}
-      <nav className="border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between">
+      <nav className="border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between gap-3">
         <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-70 transition-opacity">
           <ChevronLeft size={20} />
-          <span className="font-semibold">Contact Groups</span>
+          <span className="font-semibold">Contacts</span>
         </Link>
-        <button
-          onClick={() => setShowNewGroupModal(true)}
-          className="bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-4 py-2 rounded-xl transition-colors text-sm flex items-center gap-2 cursor-pointer"
-        >
-          <Plus size={16} /> New Group
-        </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCreateGroupModal(true)}
+            className="border border-white/15 hover:border-white/30 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+          >
+            <Tags size={16} /> Create Group
+          </button>
+          <button
+            onClick={() => setShowAddContactModal(true)}
+            className="bg-[#25D366] hover:bg-[#1ebe5d] text-black text-sm font-semibold px-4 py-2 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+          >
+            <UserPlus size={16} /> Add Contact
+          </button>
+        </div>
       </nav>
 
-      {/* MAIN */}
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        {groups.length > 0 && (
-          <div className="mb-5 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-gray-500">Filter contacts by tag</span>
+      <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <h1 className="text-xl font-bold">Contact Directory</h1>
+
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <Filter size={14} />
+              <span>Filter by group</span>
+            </div>
             <select
-              value={tagFilter}
-              onChange={(e) => setTagFilter(e.target.value)}
+              value={groupFilter}
+              onChange={(e) => setGroupFilter(e.target.value)}
               className="px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
             >
-              <option value="all">All tags</option>
-              {allTags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
+              <option value="all">All groups</option>
+              {sortedGroups.map((group) => (
+                <option key={group._id} value={group._id}>{group.name}</option>
+              ))}
+            </select>
+
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
+            >
+              <option value="name-asc">Name A-Z</option>
+              <option value="name-desc">Name Z-A</option>
+              <option value="group-asc">Group A-Z</option>
+              <option value="group-desc">Group Z-A</option>
             </select>
           </div>
-        )}
+        </div>
 
         {fetching ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="animate-spin text-[#25D366]" size={28} />
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="animate-spin text-[#25D366]" size={30} />
           </div>
-        ) : groups.length === 0 ? (
-          <div className="text-center py-16">
-            <p className="text-gray-500 mb-4">No groups yet. Create one to get started.</p>
-            <button
-              onClick={() => setShowNewGroupModal(true)}
-              className="inline-flex items-center gap-2 bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-6 py-2.5 rounded-xl transition-colors cursor-pointer"
-            >
-              <Plus size={16} /> Create First Group
-            </button>
+        ) : filteredAndSortedContacts.length === 0 ? (
+          <div className="bg-[#111] border border-white/10 rounded-2xl p-10 text-center">
+            <p className="text-gray-400">No contacts found for this selection.</p>
+            <p className="text-xs text-gray-500 mt-2">Use Add Contact to save names and numbers with one or more groups.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {groups.map(group => (
-              <div key={group._id} className="border border-white/10 rounded-xl overflow-hidden">
-                {/* Card Header */}
-                <div
-                  className="h-1 transition-all"
-                  style={{ backgroundColor: group.color }}
-                />
-                <div className="bg-[#111] p-4 space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-white">{group.name}</h3>
-                      <p className="text-xs text-gray-500 mt-1">{group.count} contacts</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          setSelectedGroup(group);
-                          setNumberName('');
-                          setNumberPhone('');
-                          setNumberTags('');
-                          setShowAddNumberModal(true);
-                        }}
-                        className="p-2 hover:bg-[#25D366]/20 rounded-lg transition-colors cursor-pointer"
-                        title="Add contact"
-                      >
-                        <Plus size={14} className="text-[#25D366]" />
-                      </button>
-                      <button
-                        onClick={() => handleEditGroup(group)}
-                        className="p-2 hover:bg-blue-500/20 rounded-lg transition-colors cursor-pointer"
-                        title="Edit"
-                      >
-                        <Edit2 size={14} className="text-blue-400" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteGroup(group._id)}
-                        className="p-2 hover:bg-red-500/20 rounded-lg transition-colors cursor-pointer"
-                        title="Delete"
-                      >
-                        <Trash2 size={14} className="text-red-400" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Expand/Collapse */}
-                  <button
-                    onClick={() => {
-                      if (expandedGroupId === group._id) {
-                        setExpandedGroupId(null);
-                      } else {
-                        setExpandedGroupId(group._id);
-                        setSelectedGroup(group);
-                      }
-                    }}
-                    className="w-full text-left text-xs text-[#25D366] hover:underline flex items-center gap-1 cursor-pointer py-1"
-                  >
-                    {expandedGroupId === group._id ? (
-                      <><ChevronUp size={14} /> Hide numbers</>
-                    ) : (
-                      <><ChevronDown size={14} /> View numbers</>
-                    )}
-                  </button>
-
-                  {/* Expanded Content */}
-                  {expandedGroupId === group._id && selectedGroup && (
-                    <div className="border-t border-white/5 pt-4 space-y-3">
-                      {/* Numbers List */}
-                      {filterNumbersByTag(selectedGroup.numbers).length > 0 && (
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {filterNumbersByTag(selectedGroup.numbers).map((num, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-center justify-between bg-[#0a0a0a] border border-white/5 rounded-lg p-2.5 text-xs"
-                            >
-                              <div className="flex-1 min-w-0">
-                                {num.name && (
-                                  <p className="text-white truncate">{num.name}</p>
-                                )}
-                                <p className="text-gray-500 truncate">{num.phone}</p>
-                                {(num.tags || []).length > 0 && (
-                                  <div className="flex flex-wrap gap-1 mt-1">
-                                    {num.tags.map(tag => (
-                                      <span key={tag} className="px-1.5 py-0.5 rounded bg-white/5 text-[10px] text-gray-300">
-                                        {tag}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              <button
-                                onClick={() => handleRemoveNumber(num.phone)}
-                                className="ml-2 p-1 hover:bg-red-500/20 rounded transition-colors cursor-pointer flex-shrink-0"
-                                title="Remove"
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[680px] text-sm">
+                <thead className="bg-white/5 text-gray-300">
+                  <tr>
+                    <th className="text-left font-semibold px-4 py-3">Name</th>
+                    <th className="text-left font-semibold px-4 py-3">Number</th>
+                    <th className="text-left font-semibold px-4 py-3">Tag (Groups)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAndSortedContacts.map((contact) => (
+                    <tr key={contact.id} className="border-t border-white/5">
+                      <td className="px-4 py-3 text-white">{contact.name || '-'}</td>
+                      <td className="px-4 py-3 text-gray-300">{formatPhoneNumber(contact.phone)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          {[...contact.groups]
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map((group) => (
+                              <span
+                                key={`${contact.id}-${group.id}`}
+                                className="text-xs px-2.5 py-1 rounded-full border"
+                                style={{ borderColor: `${group.color}66`, color: group.color }}
                               >
-                                <X size={12} className="text-red-400" />
-                              </button>
-                            </div>
-                          ))}
+                                {group.name}
+                              </span>
+                            ))}
                         </div>
-                      )}
-
-                      {filterNumbersByTag(selectedGroup.numbers).length === 0 && (
-                        <p className="text-center text-gray-500 text-xs py-4">
-                          No contacts match this tag
-                        </p>
-                      )}
-
-                      {/* Bulk Add Button */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedGroup(group);
-                            setNumberName('');
-                            setNumberPhone('');
-                            setNumberTags('');
-                            setShowAddNumberModal(true);
-                          }}
-                          className="w-full text-xs text-[#25D366] hover:bg-[#25D366]/10 px-3 py-2 rounded transition-colors cursor-pointer"
-                        >
-                          Add Contact
-                        </button>
-                        <button
-                          onClick={() => {
-                            setBulkGroupId(selectedGroup._id);
-                            setShowBulkAddModal(true);
-                          }}
-                          className="w-full text-xs text-[#25D366] hover:bg-[#25D366]/10 px-3 py-2 rounded transition-colors cursor-pointer"
-                        >
-                          Bulk Add
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
 
-      {/* NEW GROUP MODAL */}
-      {showNewGroupModal && (
+      {showCreateGroupModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#111] border border-white/10 rounded-2xl p-8 w-full max-w-sm">
-            <h3 className="font-bold text-lg mb-6">Create New Group</h3>
+            <h3 className="font-bold text-lg mb-5">Create Group</h3>
 
             <div className="space-y-4">
               <input
@@ -424,10 +360,24 @@ export default function GroupsPage() {
                 placeholder="Group name"
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
               />
 
-              <div className="flex gap-3 pt-4">
+              <div>
+                <p className="text-xs text-gray-400 mb-2">Color</p>
+                <div className="grid grid-cols-6 gap-2">
+                  {GROUP_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => setNewGroupColor(color)}
+                      className={`h-9 rounded-lg border-2 ${newGroupColor === color ? 'border-white' : 'border-transparent'} cursor-pointer`}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
                 <button
                   onClick={handleCreateGroup}
                   disabled={creatingGroup}
@@ -437,7 +387,7 @@ export default function GroupsPage() {
                 </button>
                 <button
                   onClick={() => {
-                    setShowNewGroupModal(false);
+                    setShowCreateGroupModal(false);
                     setNewGroupName('');
                     setNewGroupColor('#25D366');
                   }}
@@ -451,152 +401,106 @@ export default function GroupsPage() {
         </div>
       )}
 
-      {/* ADD CONTACT MODAL */}
-      {showAddNumberModal && selectedGroup && (
+      {showAddContactModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#111] border border-white/10 rounded-2xl p-8 w-full max-w-md">
-            <h3 className="font-bold text-lg mb-2">Add Contact</h3>
-            <p className="text-xs text-gray-500 mb-6">{selectedGroup.name}</p>
-
-            <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="Name"
-                value={numberName}
-                onChange={(e) => setNumberName(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
-              />
-              <input
-                type="tel"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="Phone number"
-                value={numberPhone}
-                onChange={(e) => setNumberPhone(e.target.value.replace(/\D/g, ''))}
-                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
-              />
-              <input
-                type="text"
-                placeholder="Tags, comma separated (family, friends)"
-                value={numberTags}
-                onChange={(e) => setNumberTags(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
-              />
-
-              <div className="flex gap-3 pt-3">
-                <button
-                  onClick={handleAddNumber}
-                  disabled={addingNumber}
-                  className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-                >
-                  {addingNumber ? 'Adding...' : 'Add'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowAddNumberModal(false);
-                    setNumberName('');
-                    setNumberPhone('');
-                    setNumberTags('');
-                  }}
-                  className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
+          <div className="bg-[#111] border border-white/10 rounded-2xl p-7 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between gap-2 mb-5">
+              <h3 className="font-bold text-lg">Add Contact</h3>
+              <button
+                onClick={resetAddContactForm}
+                className="p-1.5 rounded-md hover:bg-white/10 transition-colors cursor-pointer"
+                aria-label="Close"
+              >
+                <X size={16} />
+              </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* EDIT GROUP MODAL */}
-      {editingGroupId && selectedGroup && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#111] border border-white/10 rounded-2xl p-8 w-full max-w-sm">
-            <h3 className="font-bold text-lg mb-6">Edit Group</h3>
 
             <div className="space-y-4">
               <input
                 type="text"
-                placeholder="Group name"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+                placeholder="Contact name"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
+              />
+
+              <InternationalPhoneInput
+                value={contactPhone}
+                defaultCountry={contactCountry}
+                onChange={(phone, meta) => {
+                  setContactPhone(phone);
+                  setContactCountry(meta?.country?.iso2?.toUpperCase() || contactCountry);
+                }}
+                onCountryChange={setContactCountry}
+                placeholder="Phone number"
               />
 
               <div>
-                <p className="text-xs text-gray-400 mb-2">Color</p>
-                <div className="grid grid-cols-6 gap-2">
-                  {COLORS.map(color => (
+                <p className="text-sm font-medium text-gray-300 mb-2">Select existing group(s)</p>
+                {sortedGroups.length === 0 ? (
+                  <p className="text-xs text-gray-500">No groups available yet. Create one below.</p>
+                ) : (
+                  <div className="max-h-36 overflow-y-auto border border-white/10 rounded-xl p-2 space-y-1">
+                    {sortedGroups.map((group) => (
+                      <label
+                        key={group._id}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedGroupIds.includes(group._id)}
+                          onChange={() => toggleGroupSelection(group._id)}
+                          className="accent-[#25D366]"
+                        />
+                        <span
+                          className="inline-block w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: group.color || '#25D366' }}
+                        />
+                        <span className="text-sm text-gray-200">{group.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border border-dashed border-white/15 rounded-xl p-3 space-y-3">
+                <p className="text-sm font-medium text-gray-300">Or create a new group for this contact</p>
+                <input
+                  type="text"
+                  placeholder="New group name"
+                  value={inlineGroupName}
+                  onChange={(e) => setInlineGroupName(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
+                />
+
+                <div className="flex gap-2">
+                  {GROUP_COLORS.map((color) => (
                     <button
-                      key={color}
-                      onClick={() => setEditColor(color)}
-                      className={`w-full h-10 rounded-lg border-2 transition-all cursor-pointer ${
-                        editColor === color
-                          ? 'border-white'
-                          : 'border-transparent'
-                      }`}
+                      key={`inline-${color}`}
+                      onClick={() => setInlineGroupColor(color)}
+                      className={`w-7 h-7 rounded-full border-2 ${inlineGroupColor === color ? 'border-white' : 'border-transparent'} cursor-pointer`}
                       style={{ backgroundColor: color }}
                     />
                   ))}
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-3 pt-1">
                 <button
-                  onClick={handleSaveEdit}
-                  disabled={editingLoading}
-                  className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
+                  onClick={handleAddContact}
+                  disabled={addingContact}
+                  className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer flex items-center justify-center gap-2"
                 >
-                  {editingLoading ? 'Saving...' : 'Save'}
+                  {addingContact ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                  {addingContact ? 'Saving...' : 'Save Contact'}
                 </button>
                 <button
-                  onClick={() => {
-                    setEditingGroupId(null);
-                    setSelectedGroup(null);
-                  }}
+                  onClick={resetAddContactForm}
                   className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
                 >
                   Cancel
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* BULK ADD MODAL */}
-      {showBulkAddModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#111] border border-white/10 rounded-2xl p-8 w-full max-w-2xl">
-            <h3 className="font-bold text-lg mb-2">Bulk Add Numbers</h3>
-            <p className="text-xs text-gray-400 mb-4">One per line or CSV format: phone,name,tag1,tag2</p>
-
-            <textarea
-              placeholder="Enter numbers&#10;Or: +91XXXXXXXXXX,Name&#10;One per line"
-              value={bulkInput}
-              onChange={(e) => setBulkInput(e.target.value)}
-              rows={10}
-              className="w-full px-4 py-3 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors resize-none"
-            />
-
-            <div className="flex gap-3 pt-4">
-              <button
-                onClick={handleBulkAdd}
-                disabled={bulkLoading}
-                className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-              >
-                {bulkLoading ? 'Adding...' : 'Add All'}
-              </button>
-              <button
-                onClick={() => {
-                  setShowBulkAddModal(false);
-                  setBulkInput('');
-                  setBulkGroupId(null);
-                }}
-                className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-              >
-                Cancel
-              </button>
             </div>
           </div>
         </div>

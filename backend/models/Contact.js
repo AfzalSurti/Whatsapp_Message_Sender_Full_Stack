@@ -15,7 +15,8 @@ const ContactSchema = new mongoose.Schema(
     phoneNumber: {
       type: String,
       required: [true, 'Phone number is required'],
-      trim: true
+      trim: true,
+      match: [/^\+[1-9]\d{7,14}$/, 'Phone number must be in E.164 format']
     }
   },
   {

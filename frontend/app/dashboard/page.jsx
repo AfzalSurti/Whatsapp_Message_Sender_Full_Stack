@@ -6,11 +6,13 @@ import { useAuth } from '@/context/AuthContext';
 import { whatsappAPI, aiAPI, contactsAPI } from '@/lib/api';
 import useWebSocket from '@/hooks/useWebSocket';
 import toast from 'react-hot-toast';
+import InternationalPhoneInput from '@/components/InternationalPhoneInput';
 import {
-  getCountries,
-  getCountryCallingCode,
-  parsePhoneNumberFromString
-} from 'libphonenumber-js/min';
+  DEFAULT_PHONE_COUNTRY,
+  digitsOnly,
+  normalizePhoneNumber,
+  formatPhoneNumber
+} from '@/lib/phone';
 import {
   MessageSquare, LogOut, Wifi, WifiOff, Upload, X,
   Send, Bot, History, Loader2, CheckCircle, XCircle,
@@ -22,42 +24,7 @@ const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent', 'Other'];
 const AI_LANGUAGES = ['English', 'Hindi', 'Gujarati', 'English + Urdu', 'Other'];
 const AI_FESTIVALS = ['General', 'Diwali', 'Eid al-Fitr', 'New Year', 'Holi', 'Other'];
 const AI_AUDIENCES = ['Customers', 'VIP Clients', 'Leads', 'Local Shoppers', 'Other'];
-const DEFAULT_COUNTRY = 'IN';
-const regionNames = typeof Intl !== 'undefined' && Intl.DisplayNames
-  ? new Intl.DisplayNames(['en'], { type: 'region' })
-  : null;
-const COUNTRY_OPTIONS = getCountries()
-  .map((code) => ({
-    code,
-    name: regionNames?.of(code) || code,
-    dialCode: getCountryCallingCode(code)
-  }))
-  .sort((a, b) => {
-    if (a.code === DEFAULT_COUNTRY) return -1;
-    if (b.code === DEFAULT_COUNTRY) return 1;
-    return a.name.localeCompare(b.name);
-  });
-
-const digitsOnly = (value) => String(value || '').replace(/\D/g, '');
-
-const normalizePhoneNumber = (value, country) => {
-  const raw = String(value || '').trim();
-  const digits = digitsOnly(raw);
-  if (!digits) return null;
-
-  const phone = raw.startsWith('+')
-    ? parsePhoneNumberFromString(`+${digits}`)
-    : parsePhoneNumberFromString(digits, country);
-
-  if (!phone?.isValid()) return null;
-
-  return {
-    country: phone.country || country,
-    nationalNumber: phone.nationalNumber,
-    whatsappNumber: phone.number.replace(/\D/g, ''),
-    displayNumber: phone.formatInternational()
-  };
-};
+const DEFAULT_COUNTRY = DEFAULT_PHONE_COUNTRY;
 
 export default function Dashboard() {
   const { user, loading, logout } = useAuth();
@@ -169,8 +136,7 @@ export default function Dashboard() {
 
     const normalized = normalizePhoneNumber(newContactPhone, newContactCountry);
     if (!normalized) {
-      const selected = COUNTRY_OPTIONS.find(item => item.code === newContactCountry);
-      toast.error(`Enter a valid ${selected?.name || 'phone'} number`);
+      toast.error('Enter a valid international phone number');
       return;
     }
 
@@ -178,13 +144,13 @@ export default function Dashboard() {
       if (editingContact) {
         await contactsAPI.updateContact(editingContact._id, {
           name: newContactName,
-          phoneNumber: normalized.whatsappNumber
+          phoneNumber: normalized.e164
         });
         toast.success('Contact updated');
       } else {
         await contactsAPI.createContact({
           name: newContactName,
-          phoneNumber: normalized.whatsappNumber
+          phoneNumber: normalized.e164
         });
         toast.success('Contact saved');
       }
@@ -214,7 +180,7 @@ export default function Dashboard() {
     setEditingContact(contact);
     setNewContactName(contact.name);
     setNewContactCountry(normalized?.country || DEFAULT_COUNTRY);
-    setNewContactPhone(normalized?.nationalNumber || digitsOnly(contact.phoneNumber));
+    setNewContactPhone(normalized?.e164 || contact.phoneNumber);
     setShowAddContactForm(true);
   };
 
@@ -225,8 +191,8 @@ export default function Dashboard() {
       return;
     }
 
-    if (!numbers.includes(normalized.whatsappNumber)) {
-      setNumbers([...numbers, normalized.whatsappNumber]);
+    if (!numbers.includes(normalized.e164)) {
+      setNumbers([...numbers, normalized.e164]);
       toast.success(`Added ${contact.name}`);
     } else {
       toast.error('Number already added');
@@ -340,16 +306,15 @@ export default function Dashboard() {
   const addNumber = (num, country = selectedCountry) => {
     const normalized = normalizePhoneNumber(num, country);
     if (!normalized) {
-      const selected = COUNTRY_OPTIONS.find(item => item.code === country);
-      toast.error(`Enter a valid ${selected?.name || 'phone'} number`);
+      toast.error('Enter a valid international phone number');
       return;
     }
 
-    if (numbers.includes(normalized.whatsappNumber)) {
+    if (numbers.includes(normalized.e164)) {
       toast.error('Number already added');
       return;
     }
-    setNumbers([...numbers, normalized.whatsappNumber]);
+    setNumbers([...numbers, normalized.e164]);
     setNumberInput('');
   };
 
@@ -369,8 +334,8 @@ export default function Dashboard() {
       lines.forEach((line, i) => {
         if (i === 0 && line.toLowerCase().includes('number')) return; // skip header
         const normalized = normalizePhoneNumber(line.split(',')[0], selectedCountry);
-        if (normalized && !numbers.includes(normalized.whatsappNumber) && !newNums.includes(normalized.whatsappNumber)) {
-          newNums.push(normalized.whatsappNumber);
+        if (normalized && !numbers.includes(normalized.e164) && !newNums.includes(normalized.e164)) {
+          newNums.push(normalized.e164);
         }
       });
       setNumbers(prev => [...prev, ...newNums]);
@@ -515,7 +480,7 @@ export default function Dashboard() {
             {waStatus === 'connected' ? 'Connected' : waStatus === 'pending' ? 'Scanning...' : 'Disconnected'}
           </div>
 
-          <Link href="/dashboard/groups" className="text-gray-400 hover:text-white transition-colors" title="Contact Groups">
+          <Link href="/dashboard/groups" className="text-gray-400 hover:text-white transition-colors" title="Contacts">
             <Phone size={18} />
           </Link>
 
@@ -681,7 +646,7 @@ export default function Dashboard() {
                         >
                           <div className="text-left">
                             <p className="text-sm font-medium text-white">{contact.name}</p>
-                            <p className="text-xs text-gray-500">{contact.phoneNumber}</p>
+                            <p className="text-xs text-gray-500">{formatPhoneNumber(contact.phoneNumber)}</p>
                           </div>
                           <div className="flex items-center gap-2">
                             <button
@@ -735,25 +700,16 @@ export default function Dashboard() {
                     className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
                   />
                   <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-2">
-                    <select
-                      value={newContactCountry}
-                      onChange={(e) => setNewContactCountry(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366] transition-colors"
-                    >
-                      {COUNTRY_OPTIONS.map(country => (
-                        <option key={country.code} value={country.code}>
-                          {country.name} +{country.dialCode}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="tel"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      placeholder="Phone number"
+                    <InternationalPhoneInput
                       value={newContactPhone}
-                      onChange={(e) => setNewContactPhone(digitsOnly(e.target.value))}
-                      className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+                      defaultCountry={newContactCountry}
+                      onChange={(phone, meta) => {
+                        setNewContactPhone(phone);
+                        setNewContactCountry(meta?.country?.iso2?.toUpperCase() || newContactCountry);
+                      }}
+                      onCountryChange={setNewContactCountry}
+                      placeholder="Phone number"
+                      label={null}
                     />
                   </div>
                   <div className="flex gap-3">
@@ -838,27 +794,16 @@ export default function Dashboard() {
 
             {/* Input */}
             <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)_auto] gap-2">
-              <select
-                value={selectedCountry}
-                onChange={(e) => setSelectedCountry(e.target.value)}
-                className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366] transition-colors"
-                aria-label="Country code"
-              >
-                {COUNTRY_OPTIONS.map(country => (
-                  <option key={country.code} value={country.code}>
-                    {country.name} +{country.dialCode}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="tel"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="Phone number"
+              <InternationalPhoneInput
                 value={numberInput}
-                onChange={(e) => setNumberInput(digitsOnly(e.target.value))}
-                onKeyDown={(e) => e.key === 'Enter' && addNumber(numberInput)}
-                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+                defaultCountry={selectedCountry}
+                onChange={(phone, meta) => {
+                  setNumberInput(phone);
+                  setSelectedCountry(meta?.country?.iso2?.toUpperCase() || selectedCountry);
+                }}
+                onCountryChange={setSelectedCountry}
+                placeholder="Phone number"
+                label={null}
               />
               <button
                 onClick={() => addNumber(numberInput)}

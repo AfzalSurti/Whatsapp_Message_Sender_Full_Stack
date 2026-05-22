@@ -1,12 +1,8 @@
 const { validationResult } = require('express-validator');
 const ContactGroup = require('../models/ContactGroup');
+const { normalizePhoneNumber } = require('../utils/phone');
 
 const stripNumber = (num) => num.replace(/\D/g, '');
-
-const validatePhone = (phone) => {
-  const cleaned = stripNumber(phone);
-  return cleaned.length >= 10;
-};
 
 const normalizeTags = (tags) => {
   if (Array.isArray(tags)) {
@@ -128,12 +124,13 @@ const addNumber = async (req, res) => {
 
     const { id } = req.params;
     const { name, phone, tags } = req.body;
+    const normalized = normalizePhoneNumber(phone);
 
-    if (!validatePhone(phone)) {
-      return res.status(400).json({ error: 'Phone number must have at least 10 digits' });
+    if (!normalized) {
+      return res.status(400).json({ error: 'Enter a valid international phone number' });
     }
 
-    const cleanPhone = stripNumber(phone);
+    const cleanPhone = normalized.e164;
 
     const group = await ContactGroup.findOne({
       _id: id,
@@ -144,7 +141,7 @@ const addNumber = async (req, res) => {
       return res.status(404).json({ error: 'Group not found' });
     }
 
-    const exists = group.numbers.some(n => stripNumber(n.phone) === cleanPhone);
+    const exists = group.numbers.some(n => stripNumber(n.phone) === stripNumber(cleanPhone));
     if (exists) {
       return res.status(400).json({ error: 'Number already exists in this group' });
     }
@@ -213,12 +210,13 @@ const bulkAddNumbers = async (req, res) => {
       const name = typeof item === 'object' ? (item.name || '') : '';
       const tags = typeof item === 'object' ? normalizeTags(item.tags) : [];
 
-      if (!validatePhone(phone)) {
+      const normalized = normalizePhoneNumber(phone);
+      if (!normalized) {
         skipped++;
         return;
       }
 
-      const cleanPhone = stripNumber(phone);
+      const cleanPhone = normalized.e164;
       if (existingPhones.has(cleanPhone)) {
         skipped++;
         return;

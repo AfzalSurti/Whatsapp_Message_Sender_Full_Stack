@@ -1,5 +1,6 @@
 const { validationResult } = require('express-validator');
 const Contact = require('../models/Contact');
+const { normalizePhoneNumber } = require('../utils/phone');
 
 const getContacts = async (req, res) => {
   try {
@@ -18,11 +19,16 @@ const createContact = async (req, res) => {
     }
 
     const { name, phoneNumber } = req.body;
+    const normalized = normalizePhoneNumber(phoneNumber);
+
+    if (!normalized) {
+      return res.status(400).json({ error: 'Enter a valid international phone number' });
+    }
 
     const contact = await Contact.create({
       userId: req.user._id,
       name,
-      phoneNumber
+      phoneNumber: normalized.e164
     });
 
     res.status(201).json({ contact });
@@ -40,10 +46,15 @@ const updateContact = async (req, res) => {
 
     const { id } = req.params;
     const { name, phoneNumber } = req.body;
+    const normalized = normalizePhoneNumber(phoneNumber);
+
+    if (!normalized) {
+      return res.status(400).json({ error: 'Enter a valid international phone number' });
+    }
 
     const contact = await Contact.findOneAndUpdate(
       { _id: id, userId: req.user._id },
-      { name, phoneNumber },
+      { name, phoneNumber: normalized.e164 },
       { new: true, runValidators: true }
     );
 

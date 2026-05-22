@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
 const { protect } = require('../middleware/auth');
+const { validateAndNormalizePhoneField } = require('../middleware/validatePhoneNumber');
 const {
   getContacts,
   createContact,
@@ -11,12 +12,12 @@ const {
 
 const createValidation = [
   body('name').trim().notEmpty().withMessage('Name is required'),
-  body('phoneNumber').trim().notEmpty().withMessage('Phone number is required')
+  validateAndNormalizePhoneField({ field: 'phoneNumber' })
 ];
 
 const updateValidation = [
   body('name').trim().notEmpty().withMessage('Name is required'),
-  body('phoneNumber').trim().notEmpty().withMessage('Phone number is required')
+  validateAndNormalizePhoneField({ field: 'phoneNumber' })
 ];
 
 router.get('/', protect, getContacts);

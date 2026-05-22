@@ -95,3 +95,8 @@ Creating turbopack project {
  GET /dashboard/groups 200 in 225ms (next.js: 16ms, application-code: 208ms)
  GET /dashboard 200 in 3.2s (next.js: 293ms, application-code: 2.9s)
  GET /dashboard/groups 200 in 1600ms (next.js: 332ms, application-code: 1268ms)
+✓ Compiled in 6.9s
+✓ Compiled in 2.8s
+✓ Finished filesystem cache database compaction in 12.8s
+ GET /dashboard 200 in 8.3s (next.js: 6.1s, application-code: 2.3s)
+ GET /login 200 in 800ms (next.js: 649ms, application-code: 151ms)
