@@ -1,0 +1,183 @@
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)
+⚠ Fast Refresh had to perform a full reload when ./context/AuthContext.jsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+⚠ Fast Refresh had to perform a full reload when ./context/AuthContext.jsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+[browser] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <ErrorBoundary errorComponent={undefined} errorStyles={undefined} errorScripts={undefined}>
+      <LoadingBoundary name="login/" loading={null}>
+        <HTTPAccessFallbackBoundary notFound={undefined} forbidden={undefined} unauthorized={undefined}>
+          <RedirectBoundary>
+            <RedirectErrorBoundary router={{...}}>
+              <InnerLayoutRouter url="/login" tree={[...]} params={{}} cacheNode={{rsc:{...}, ...}} segmentPath={[...]} ...>
+                <SegmentViewNode type="page" pagePath="login/page...">
+                  <SegmentTrieNode>
+                  <ClientPageRoot Component={function LoginPage} serverProvidedParams={{...}}>
+                    <LoginPage params={Promise} searchParams={Promise}>
+                      <div className="min-h-scre...">
+                        <div>
+                        <div className="relative z...">
+                          <div>
+                          <div className="bg-[#111] ...">
+                            <form onSubmit={function handleSubmit} className="space-y-5">
+                              <div>
+                                <label>
+                                <div className="relative">
+                                  <Mail>
+                                  <input
+                                    type="email"
+                                    placeholder="you@example.com"
+                                    value=""
+                                    onChange={function onChange}
+                                    required={true}
+                                    className="w-full pl-10 pr-4 py-3 bg-[#0a0a0a] border border-white/10 rounded-xl t..."
+-                                   fdprocessedid="09b6qa"
+                                  >
+                              <div>
+                                <label>
+                                <div className="relative">
+                                  <Lock>
+                                  <input
+                                    type="password"
+                                    placeholder="••••••••"
+                                    value=""
+                                    onChange={function onChange}
+                                    required={true}
+                                    className="w-full pl-10 pr-10 py-3 bg-[#0a0a0a] border border-white/10 rounded-xl ..."
+-                                   fdprocessedid="fmzzwg"
+                                  >
+                                  <button
+                                    type="button"
+                                    onClick={function onClick}
+                                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gr..."
+-                                   fdprocessedid="zbgtg"
+                                  >
+                              <button
+                                type="submit"
+                                disabled={false}
+                                className="w-full bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 disabled:cursor-..."
+-                               fdprocessedid="grw7av"
+                              >
++                               Sign In
+                            ...
+                          ...
+                ...
+              ...
+ 
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)
+[browser] ❌ WebSocket error: [object Event] 
+    at useWebSocket.useCallback[connect] (hooks/useWebSocket.js:53:17)
+  51 |
+  52 |       ws.current.onerror = (err) => {
+> 53 |         console.error('❌ WebSocket error:', err);
+     |                 ^
+  54 |       };
+  55 |     } catch (err) {
+  56 |       console.error('WebSocket connection error:', err); (hooks/useWebSocket.js:53:17)

@@ -19,7 +19,8 @@ const ContactGroupSchema = new mongoose.Schema(
     numbers: [
       {
         name: { type: String, default: '' },
-        phone: { type: String, required: true }
+        phone: { type: String, required: true },
+        tags: [{ type: String, trim: true }]
       }
     ]
   },

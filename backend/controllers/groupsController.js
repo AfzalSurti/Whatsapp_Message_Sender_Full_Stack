@@ -8,6 +8,17 @@ const validatePhone = (phone) => {
   return cleaned.length >= 10;
 };
 
+const normalizeTags = (tags) => {
+  if (Array.isArray(tags)) {
+    return [...new Set(tags.map(tag => String(tag).trim()).filter(Boolean))];
+  }
+
+  return [...new Set(String(tags || '')
+    .split(',')
+    .map(tag => tag.trim())
+    .filter(Boolean))];
+};
+
 const createGroup = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -116,7 +127,7 @@ const addNumber = async (req, res) => {
     }
 
     const { id } = req.params;
-    const { name, phone } = req.body;
+    const { name, phone, tags } = req.body;
 
     if (!validatePhone(phone)) {
       return res.status(400).json({ error: 'Phone number must have at least 10 digits' });
@@ -138,7 +149,7 @@ const addNumber = async (req, res) => {
       return res.status(400).json({ error: 'Number already exists in this group' });
     }
 
-    group.numbers.push({ name: name || '', phone: cleanPhone });
+    group.numbers.push({ name: name || '', phone: cleanPhone, tags: normalizeTags(tags) });
     await group.save();
 
     res.json({ group });
@@ -200,6 +211,7 @@ const bulkAddNumbers = async (req, res) => {
     numbers.forEach(item => {
       const phone = typeof item === 'string' ? item : item.phone;
       const name = typeof item === 'object' ? (item.name || '') : '';
+      const tags = typeof item === 'object' ? normalizeTags(item.tags) : [];
 
       if (!validatePhone(phone)) {
         skipped++;
@@ -212,7 +224,7 @@ const bulkAddNumbers = async (req, res) => {
         return;
       }
 
-      group.numbers.push({ name, phone: cleanPhone });
+      group.numbers.push({ name, phone: cleanPhone, tags });
       existingPhones.add(cleanPhone);
       added++;
     });

@@ -37,10 +37,10 @@ const getStatusBadge = (status) => {
   return badges[status] || badges.pending;
 };
 
-const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent'];
-const AI_LANGUAGES = ['English', 'Hindi', 'Gujarati', 'English + Urdu'];
-const AI_FESTIVALS = ['General', 'Diwali', 'Eid al-Fitr', 'New Year', 'Holi'];
-const AI_AUDIENCES = ['Customers', 'VIP Clients', 'Leads', 'Local Shoppers'];
+const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent', 'Other'];
+const AI_LANGUAGES = ['English', 'Hindi', 'Gujarati', 'English + Urdu', 'Other'];
+const AI_FESTIVALS = ['General', 'Diwali', 'Eid al-Fitr', 'New Year', 'Holi', 'Other'];
+const AI_AUDIENCES = ['Customers', 'VIP Clients', 'Leads', 'Local Shoppers', 'Other'];
 
 export default function ScheduledPage() {
   const { user, loading } = useAuth();
@@ -63,6 +63,10 @@ export default function ScheduledPage() {
   const [aiLanguage, setAiLanguage] = useState('English');
   const [aiFestival, setAiFestival] = useState('General');
   const [aiAudience, setAiAudience] = useState('Customers');
+  const [customAiTone, setCustomAiTone] = useState('');
+  const [customAiLanguage, setCustomAiLanguage] = useState('');
+  const [customAiFestival, setCustomAiFestival] = useState('');
+  const [customAiAudience, setCustomAiAudience] = useState('');
   const [aiGuidance, setAiGuidance] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [scheduleDate, setScheduleDate] = useState('');
@@ -70,6 +74,7 @@ export default function ScheduledPage() {
 
   // Step 2 state
   const [selectedGroupIds, setSelectedGroupIds] = useState([]);
+  const [selectedGroupContacts, setSelectedGroupContacts] = useState([]);
   const [individualNumberInput, setIndividualNumberInput] = useState('');
   const [selectedIndividuals, setSelectedIndividuals] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -114,19 +119,14 @@ export default function ScheduledPage() {
   }, [user, fetchCampaigns, fetchGroups]);
 
   const handleAIGenerate = async () => {
-    if (!aiPrompt.trim()) {
-      toast.error('Enter a prompt');
-      return;
-    }
-
     setAiLoading(true);
     try {
       const res = await aiAPI.generate({
         prompt: aiPrompt,
-        tone: aiTone,
-        language: aiLanguage,
-        festival: aiFestival,
-        audience: aiAudience,
+        tone: aiTone === 'Other' ? customAiTone : aiTone,
+        language: aiLanguage === 'Other' ? customAiLanguage : aiLanguage,
+        festival: aiFestival === 'Other' ? customAiFestival : aiFestival,
+        audience: aiAudience === 'Other' ? customAiAudience : aiAudience,
         guidance: aiGuidance
       });
       setMessage(res.data.message);
@@ -151,6 +151,14 @@ export default function ScheduledPage() {
             count++;
           }
         });
+      }
+    });
+
+    selectedGroupContacts.forEach(num => {
+      const clean = num.replace(/\D/g, '');
+      if (!phoneSet.has(clean)) {
+        phoneSet.add(clean);
+        count++;
       }
     });
 
@@ -198,6 +206,13 @@ export default function ScheduledPage() {
     setSearchResults([]);
   };
 
+  const toggleGroupContact = (phone) => {
+    const clean = phone.replace(/\D/g, '');
+    setSelectedGroupContacts(prev =>
+      prev.includes(clean) ? prev.filter(item => item !== clean) : [...prev, clean]
+    );
+  };
+
   const handleRemoveIndividual = (phone) => {
     setSelectedIndividuals(selectedIndividuals.filter(n => n !== phone));
   };
@@ -230,7 +245,7 @@ export default function ScheduledPage() {
         scheduledAt: dateTime.toISOString(),
         timezone: 'Asia/Kolkata',
         groupIds: selectedGroupIds,
-        individualNumbers: selectedIndividuals.map(phone => ({ phone }))
+        individualNumbers: [...selectedGroupContacts, ...selectedIndividuals].map(phone => ({ phone }))
       });
 
       toast.success('Campaign scheduled!');
@@ -253,6 +268,7 @@ export default function ScheduledPage() {
     setScheduleDate('');
     setScheduleTime('');
     setSelectedGroupIds([]);
+    setSelectedGroupContacts([]);
     setSelectedIndividuals([]);
     setSearchQuery('');
     setSearchResults([]);
@@ -504,8 +520,48 @@ export default function ScheduledPage() {
                         {AI_AUDIENCES.map(item => <option key={item}>{item}</option>)}
                       </select>
                     </div>
+                    {(aiTone === 'Other' || aiLanguage === 'Other' || aiFestival === 'Other' || aiAudience === 'Other') && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {aiTone === 'Other' && (
+                          <input
+                            type="text"
+                            placeholder="Custom tone"
+                            value={customAiTone}
+                            onChange={(e) => setCustomAiTone(e.target.value)}
+                            className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
+                          />
+                        )}
+                        {aiLanguage === 'Other' && (
+                          <input
+                            type="text"
+                            placeholder="Custom language"
+                            value={customAiLanguage}
+                            onChange={(e) => setCustomAiLanguage(e.target.value)}
+                            className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
+                          />
+                        )}
+                        {aiFestival === 'Other' && (
+                          <input
+                            type="text"
+                            placeholder="Custom festival or context"
+                            value={customAiFestival}
+                            onChange={(e) => setCustomAiFestival(e.target.value)}
+                            className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
+                          />
+                        )}
+                        {aiAudience === 'Other' && (
+                          <input
+                            type="text"
+                            placeholder="Custom audience"
+                            value={customAiAudience}
+                            onChange={(e) => setCustomAiAudience(e.target.value)}
+                            className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
+                          />
+                        )}
+                      </div>
+                    )}
                     <textarea
-                      placeholder='Campaign prompt, e.g. "Friendly message about Diwali sale"'
+                      placeholder='Optional campaign prompt, e.g. "Friendly message about Diwali sale"'
                       value={aiPrompt}
                       onChange={(e) => setAiPrompt(e.target.value)}
                       rows={2}
@@ -565,24 +621,51 @@ export default function ScheduledPage() {
                     ) : (
                       <div className="space-y-2">
                         {allGroups.map(group => (
-                          <label key={group._id} className="flex items-center gap-3 p-3 bg-[#0a0a0a] border border-white/10 rounded-lg hover:border-white/20 cursor-pointer transition-colors">
-                            <input
-                              type="checkbox"
-                              checked={selectedGroupIds.includes(group._id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedGroupIds([...selectedGroupIds, group._id]);
-                                } else {
-                                  setSelectedGroupIds(selectedGroupIds.filter(id => id !== group._id));
-                                }
-                              }}
-                              className="cursor-pointer"
-                            />
-                            <div className="flex-1">
-                              <p className="text-sm text-white">{group.name}</p>
-                              <p className="text-xs text-gray-500">{group.count} contacts</p>
-                            </div>
-                          </label>
+                          <div key={group._id} className="p-3 bg-[#0a0a0a] border border-white/10 rounded-lg space-y-3">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedGroupIds.includes(group._id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedGroupIds([...selectedGroupIds, group._id]);
+                                    setSelectedGroupContacts(selectedGroupContacts.filter(phone =>
+                                      !(group.numbers || []).some(num => num.phone.replace(/\D/g, '') === phone)
+                                    ));
+                                  } else {
+                                    setSelectedGroupIds(selectedGroupIds.filter(id => id !== group._id));
+                                  }
+                                }}
+                                className="cursor-pointer"
+                              />
+                              <div className="flex-1">
+                                <p className="text-sm text-white">{group.name}</p>
+                                <p className="text-xs text-gray-500">{group.count} contacts</p>
+                              </div>
+                            </label>
+
+                            {!selectedGroupIds.includes(group._id) && (group.numbers || []).length > 0 && (
+                              <div className="pl-6 space-y-2 max-h-40 overflow-y-auto">
+                                {group.numbers.map((num, idx) => {
+                                  const clean = num.phone.replace(/\D/g, '');
+                                  return (
+                                    <label key={`${clean}-${idx}`} className="flex items-start gap-2 text-xs cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedGroupContacts.includes(clean)}
+                                        onChange={() => toggleGroupContact(clean)}
+                                        className="mt-0.5 cursor-pointer"
+                                      />
+                                      <span className="min-w-0">
+                                        <span className="block text-white truncate">{num.name || 'Unnamed'}</span>
+                                        <span className="block text-gray-500 truncate">{num.phone}</span>
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     )}

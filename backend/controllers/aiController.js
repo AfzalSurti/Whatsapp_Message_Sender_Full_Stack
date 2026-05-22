@@ -36,7 +36,7 @@ const buildUserPrompt = ({
   })();
 
   const contextLines = [
-    prompt ? `Message goal: ${prompt}` : null,
+    prompt ? `Message goal: ${prompt}` : 'Message goal: Generate a useful WhatsApp campaign message from the selected preset fields. Include a clear call to action.',
     tone ? `Tone: ${tone}` : null,
     language ? `Selected language: ${language}` : null,
     languageInstruction,
@@ -95,8 +95,8 @@ const generateAIMessage = async (req, res) => {
       currentMessage
     } = req.body;
 
-    if (!prompt && !currentMessage) {
-      return res.status(400).json({ error: 'Prompt is required' });
+    if (mode !== 'generate' && !currentMessage) {
+      return res.status(400).json({ error: 'Current message is required' });
     }
 
     const systemPrompt = `You are a WhatsApp message writer.

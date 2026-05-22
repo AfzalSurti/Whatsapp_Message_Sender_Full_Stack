@@ -24,7 +24,8 @@ const updateValidation = [
 
 const addNumberValidation = [
   body('phone').trim().notEmpty().withMessage('Phone number is required'),
-  body('name').trim().optional()
+  body('name').trim().optional(),
+  body('tags').optional()
 ];
 
 const bulkAddValidation = [

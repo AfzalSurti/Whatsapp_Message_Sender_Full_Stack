@@ -8,6 +8,41 @@ const clients=new Map();
 // Track clients being created to prevent duplicates
 const clientsBeingCreated=new Set();
 
+const cleanupClient = async (client) => {
+    if (!client) return;
+
+    try {
+        if (client._healthCheckCleanup) {
+            client._healthCheckCleanup();
+        }
+    } catch (err) {
+        console.error(`Error cleaning health check: ${err.message}`);
+    }
+
+    try {
+        await client.destroy();
+    } catch (err) {
+        console.error(`Error destroying client: ${err.message}`);
+    }
+
+    try {
+        if (client.pupBrowser && client.pupBrowser.isConnected && client.pupBrowser.isConnected()) {
+            await client.pupBrowser.close();
+        }
+    } catch (err) {
+        console.error(`Error closing browser: ${err.message}`);
+    }
+
+    try {
+        const browserProcess = client.pupBrowser?.process?.();
+        if (browserProcess && !browserProcess.killed) {
+            browserProcess.kill();
+        }
+    } catch (err) {
+        console.error(`Error killing browser process: ${err.message}`);
+    }
+};
+
 //get clinet by id
 const getClient=(id)=>{
     const entry = clients.get(id.toString());
@@ -53,12 +88,7 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
             const pendingDuration = Date.now() - existing.pendingStartTime;
             if(pendingDuration > 60000){
                 console.warn(`Client stuck in pending state for ${pendingDuration}ms, destroying and creating new`);
-                try {
-                    if(existing.client._healthCheckCleanup) existing.client._healthCheckCleanup();
-                    await existing.client.destroy();
-                } catch(err) {
-                    console.error(`Error destroying stuck client: ${err.message}`);
-                }
+                await cleanupClient(existing.client);
                 clients.delete(userIdStr);
                 clientsBeingCreated.delete(userIdStr);
                 // Fall through to create new client
@@ -75,10 +105,7 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
     if(existing && existing.client){
         try {
             console.log(`Destroying old client for user: ${userIdStr}`);
-            if(existing.client._healthCheckCleanup){
-                existing.client._healthCheckCleanup();
-            }
-            await existing.client.destroy();
+            await cleanupClient(existing.client);
             clients.delete(userIdStr);
         } catch(err){
             console.error(`Error destroying old client for user: ${userIdStr}:`, err.message);
@@ -238,7 +265,26 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
         onDisconnected(reason); // notify frontend
     });
 
-    client.initialize(); // start the client
+    client.initialize()
+        .then(() => {
+            clientsBeingCreated.delete(userIdStr);
+        })
+        .catch(async(err) => {
+            console.error(`Client initialization failed for user: ${userIdStr}:`, err.message);
+            const entry = clients.get(userIdStr);
+            if(entry && entry.client === client){
+                if(entry.qrTimeoutHandle) clearTimeout(entry.qrTimeoutHandle);
+                await cleanupClient(client);
+                clients.delete(userIdStr);
+            }
+            clientsBeingCreated.delete(userIdStr);
+            await Session.findOneAndUpdate(
+                {userId},
+                {isActive:false},
+                {upsert:true}
+            );
+            onDisconnected(`WhatsApp browser failed to start: ${err.message}`);
+        }); // start the client
 
     // Timeout if QR not received within 30 seconds
     const qrTimeoutHandle = setTimeout(() => {
@@ -272,9 +318,6 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
         }
     });
 
-    // Mark creation complete
-    clientsBeingCreated.delete(userIdStr);
-
     return client;
 };
 
@@ -291,7 +334,7 @@ const disconnectClient=async(userId)=>{
             }
 
             // Destroy client without logging out — preserves session for recovery
-            await entry.client.destroy();
+            await cleanupClient(entry.client);
 
         }catch(err){
             console.error(`Error disconnecting client for user: ${userIdStr}`,err);

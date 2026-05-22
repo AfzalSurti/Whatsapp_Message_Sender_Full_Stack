@@ -26,9 +26,11 @@ export default function GroupsPage() {
   const [groups, setGroups] = useState([]);
   const [fetching, setFetching] = useState(true);
   const [showNewGroupModal, setShowNewGroupModal] = useState(false);
+  const [showAddNumberModal, setShowAddNumberModal] = useState(false);
   const [showBulkAddModal, setShowBulkAddModal] = useState(false);
   const [expandedGroupId, setExpandedGroupId] = useState(null);
   const [editingGroupId, setEditingGroupId] = useState(null);
+  const [tagFilter, setTagFilter] = useState('all');
 
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupColor, setNewGroupColor] = useState('#25D366');
@@ -41,6 +43,7 @@ export default function GroupsPage() {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [numberName, setNumberName] = useState('');
   const [numberPhone, setNumberPhone] = useState('');
+  const [numberTags, setNumberTags] = useState('');
   const [addingNumber, setAddingNumber] = useState(false);
 
   const [editName, setEditName] = useState('');
@@ -134,8 +137,8 @@ export default function GroupsPage() {
   };
 
   const handleAddNumber = async () => {
-    if (!numberPhone.trim()) {
-      toast.error('Enter a phone number');
+    if (!numberName.trim() || !numberPhone.trim() || !numberTags.trim()) {
+      toast.error('Enter name, phone number, and at least one tag');
       return;
     }
 
@@ -143,11 +146,14 @@ export default function GroupsPage() {
     try {
       await groupsAPI.addNumber(selectedGroup._id, {
         name: numberName,
-        phone: numberPhone
+        phone: numberPhone,
+        tags: numberTags.split(',').map(tag => tag.trim()).filter(Boolean)
       });
       toast.success('Number added');
       setNumberName('');
       setNumberPhone('');
+      setNumberTags('');
+      setShowAddNumberModal(false);
       await fetchGroups();
       const updated = await groupsAPI.getGroup(selectedGroup._id);
       setSelectedGroup(updated.data.group);
@@ -181,7 +187,8 @@ export default function GroupsPage() {
       const parts = line.split(',').map(p => p.trim());
       return {
         phone: parts[0],
-        name: parts[1] || ''
+        name: parts[1] || '',
+        tags: parts.slice(2).filter(Boolean)
       };
     });
 
@@ -208,6 +215,15 @@ export default function GroupsPage() {
     );
   }
 
+  const allTags = [...new Set(groups.flatMap(group =>
+    (group.numbers || []).flatMap(num => num.tags || [])
+  ))].sort((a, b) => a.localeCompare(b));
+
+  const filterNumbersByTag = (numbers = []) => {
+    if (tagFilter === 'all') return numbers;
+    return numbers.filter(num => (num.tags || []).includes(tagFilter));
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       {/* NAVBAR */}
@@ -226,6 +242,20 @@ export default function GroupsPage() {
 
       {/* MAIN */}
       <div className="max-w-6xl mx-auto px-6 py-8">
+        {groups.length > 0 && (
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-gray-500">Filter contacts by tag</span>
+            <select
+              value={tagFilter}
+              onChange={(e) => setTagFilter(e.target.value)}
+              className="px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
+            >
+              <option value="all">All tags</option>
+              {allTags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
+            </select>
+          </div>
+        )}
+
         {fetching ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="animate-spin text-[#25D366]" size={28} />
@@ -256,6 +286,19 @@ export default function GroupsPage() {
                       <p className="text-xs text-gray-500 mt-1">{group.count} contacts</p>
                     </div>
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setSelectedGroup(group);
+                          setNumberName('');
+                          setNumberPhone('');
+                          setNumberTags('');
+                          setShowAddNumberModal(true);
+                        }}
+                        className="p-2 hover:bg-[#25D366]/20 rounded-lg transition-colors cursor-pointer"
+                        title="Add contact"
+                      >
+                        <Plus size={14} className="text-[#25D366]" />
+                      </button>
                       <button
                         onClick={() => handleEditGroup(group)}
                         className="p-2 hover:bg-blue-500/20 rounded-lg transition-colors cursor-pointer"
@@ -296,9 +339,9 @@ export default function GroupsPage() {
                   {expandedGroupId === group._id && selectedGroup && (
                     <div className="border-t border-white/5 pt-4 space-y-3">
                       {/* Numbers List */}
-                      {selectedGroup.numbers.length > 0 && (
+                      {filterNumbersByTag(selectedGroup.numbers).length > 0 && (
                         <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {selectedGroup.numbers.map((num, idx) => (
+                          {filterNumbersByTag(selectedGroup.numbers).map((num, idx) => (
                             <div
                               key={idx}
                               className="flex items-center justify-between bg-[#0a0a0a] border border-white/5 rounded-lg p-2.5 text-xs"
@@ -308,6 +351,15 @@ export default function GroupsPage() {
                                   <p className="text-white truncate">{num.name}</p>
                                 )}
                                 <p className="text-gray-500 truncate">{num.phone}</p>
+                                {(num.tags || []).length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {num.tags.map(tag => (
+                                      <span key={tag} className="px-1.5 py-0.5 rounded bg-white/5 text-[10px] text-gray-300">
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                               <button
                                 onClick={() => handleRemoveNumber(num.phone)}
@@ -321,44 +373,36 @@ export default function GroupsPage() {
                         </div>
                       )}
 
-                      {/* Add Number Form */}
-                      <div className="space-y-2 bg-[#0a0a0a] border border-white/5 rounded-lg p-3">
-                        <p className="text-xs font-medium text-gray-400">Add Number</p>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            placeholder="Name (optional)"
-                            value={numberName}
-                            onChange={(e) => setNumberName(e.target.value)}
-                            className="flex-1 px-2.5 py-1.5 bg-[#111] border border-white/10 rounded text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Phone"
-                            value={numberPhone}
-                            onChange={(e) => setNumberPhone(e.target.value)}
-                            className="flex-1 px-2.5 py-1.5 bg-[#111] border border-white/10 rounded text-xs text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
-                          />
-                        </div>
-                        <button
-                          onClick={handleAddNumber}
-                          disabled={addingNumber}
-                          className="w-full bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-3 py-1.5 rounded text-xs cursor-pointer transition-colors"
-                        >
-                          {addingNumber ? 'Adding...' : 'Add'}
-                        </button>
-                      </div>
+                      {filterNumbersByTag(selectedGroup.numbers).length === 0 && (
+                        <p className="text-center text-gray-500 text-xs py-4">
+                          No contacts match this tag
+                        </p>
+                      )}
 
                       {/* Bulk Add Button */}
-                      <button
-                        onClick={() => {
-                          setBulkGroupId(selectedGroup._id);
-                          setShowBulkAddModal(true);
-                        }}
-                        className="w-full text-xs text-[#25D366] hover:bg-[#25D366]/10 px-3 py-2 rounded transition-colors cursor-pointer"
-                      >
-                        Bulk Add
-                      </button>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedGroup(group);
+                            setNumberName('');
+                            setNumberPhone('');
+                            setNumberTags('');
+                            setShowAddNumberModal(true);
+                          }}
+                          className="w-full text-xs text-[#25D366] hover:bg-[#25D366]/10 px-3 py-2 rounded transition-colors cursor-pointer"
+                        >
+                          Add Contact
+                        </button>
+                        <button
+                          onClick={() => {
+                            setBulkGroupId(selectedGroup._id);
+                            setShowBulkAddModal(true);
+                          }}
+                          className="w-full text-xs text-[#25D366] hover:bg-[#25D366]/10 px-3 py-2 rounded transition-colors cursor-pointer"
+                        >
+                          Bulk Add
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -383,24 +427,6 @@ export default function GroupsPage() {
                 className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
               />
 
-              <div>
-                <p className="text-xs text-gray-400 mb-2">Color</p>
-                <div className="grid grid-cols-6 gap-2">
-                  {COLORS.map(color => (
-                    <button
-                      key={color}
-                      onClick={() => setNewGroupColor(color)}
-                      className={`w-full h-10 rounded-lg border-2 transition-all cursor-pointer ${
-                        newGroupColor === color
-                          ? 'border-white'
-                          : 'border-transparent'
-                      }`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </div>
-
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={handleCreateGroup}
@@ -414,6 +440,63 @@ export default function GroupsPage() {
                     setShowNewGroupModal(false);
                     setNewGroupName('');
                     setNewGroupColor('#25D366');
+                  }}
+                  className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD CONTACT MODAL */}
+      {showAddNumberModal && selectedGroup && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#111] border border-white/10 rounded-2xl p-8 w-full max-w-md">
+            <h3 className="font-bold text-lg mb-2">Add Contact</h3>
+            <p className="text-xs text-gray-500 mb-6">{selectedGroup.name}</p>
+
+            <div className="space-y-3">
+              <input
+                type="text"
+                placeholder="Name"
+                value={numberName}
+                onChange={(e) => setNumberName(e.target.value)}
+                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+              />
+              <input
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="Phone number"
+                value={numberPhone}
+                onChange={(e) => setNumberPhone(e.target.value.replace(/\D/g, ''))}
+                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+              />
+              <input
+                type="text"
+                placeholder="Tags, comma separated (family, friends)"
+                value={numberTags}
+                onChange={(e) => setNumberTags(e.target.value)}
+                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+              />
+
+              <div className="flex gap-3 pt-3">
+                <button
+                  onClick={handleAddNumber}
+                  disabled={addingNumber}
+                  className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
+                >
+                  {addingNumber ? 'Adding...' : 'Add'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAddNumberModal(false);
+                    setNumberName('');
+                    setNumberPhone('');
+                    setNumberTags('');
                   }}
                   className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
                 >
@@ -486,7 +569,7 @@ export default function GroupsPage() {
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#111] border border-white/10 rounded-2xl p-8 w-full max-w-2xl">
             <h3 className="font-bold text-lg mb-2">Bulk Add Numbers</h3>
-            <p className="text-xs text-gray-400 mb-4">One per line or CSV format (phone,name)</p>
+            <p className="text-xs text-gray-400 mb-4">One per line or CSV format: phone,name,tag1,tag2</p>
 
             <textarea
               placeholder="Enter numbers&#10;Or: +91XXXXXXXXXX,Name&#10;One per line"

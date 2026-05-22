@@ -7,16 +7,57 @@ import { whatsappAPI, aiAPI, contactsAPI } from '@/lib/api';
 import useWebSocket from '@/hooks/useWebSocket';
 import toast from 'react-hot-toast';
 import {
+  getCountries,
+  getCountryCallingCode,
+  parsePhoneNumberFromString
+} from 'libphonenumber-js/min';
+import {
   MessageSquare, LogOut, Wifi, WifiOff, Upload, X,
   Send, Bot, History, Loader2, CheckCircle, XCircle,
   SkipForward, User, ChevronRight, Phone, Edit2, Trash2, Plus, Key, Clock
 } from 'lucide-react';
 import Link from 'next/link';
 
-const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent'];
-const AI_LANGUAGES = ['English', 'Hindi', 'Gujarati', 'English + Urdu'];
-const AI_FESTIVALS = ['General', 'Diwali', 'Eid al-Fitr', 'New Year', 'Holi'];
-const AI_AUDIENCES = ['Customers', 'VIP Clients', 'Leads', 'Local Shoppers'];
+const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent', 'Other'];
+const AI_LANGUAGES = ['English', 'Hindi', 'Gujarati', 'English + Urdu', 'Other'];
+const AI_FESTIVALS = ['General', 'Diwali', 'Eid al-Fitr', 'New Year', 'Holi', 'Other'];
+const AI_AUDIENCES = ['Customers', 'VIP Clients', 'Leads', 'Local Shoppers', 'Other'];
+const DEFAULT_COUNTRY = 'IN';
+const regionNames = typeof Intl !== 'undefined' && Intl.DisplayNames
+  ? new Intl.DisplayNames(['en'], { type: 'region' })
+  : null;
+const COUNTRY_OPTIONS = getCountries()
+  .map((code) => ({
+    code,
+    name: regionNames?.of(code) || code,
+    dialCode: getCountryCallingCode(code)
+  }))
+  .sort((a, b) => {
+    if (a.code === DEFAULT_COUNTRY) return -1;
+    if (b.code === DEFAULT_COUNTRY) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+const digitsOnly = (value) => String(value || '').replace(/\D/g, '');
+
+const normalizePhoneNumber = (value, country) => {
+  const raw = String(value || '').trim();
+  const digits = digitsOnly(raw);
+  if (!digits) return null;
+
+  const phone = raw.startsWith('+')
+    ? parsePhoneNumberFromString(`+${digits}`)
+    : parsePhoneNumberFromString(digits, country);
+
+  if (!phone?.isValid()) return null;
+
+  return {
+    country: phone.country || country,
+    nationalNumber: phone.nationalNumber,
+    whatsappNumber: phone.number.replace(/\D/g, ''),
+    displayNumber: phone.formatInternational()
+  };
+};
 
 export default function Dashboard() {
   const { user, loading, logout } = useAuth();
@@ -33,6 +74,7 @@ export default function Dashboard() {
 
   // Message state
   const [numbers, setNumbers] = useState([]);
+  const [selectedCountry, setSelectedCountry] = useState(DEFAULT_COUNTRY);
   const [numberInput, setNumberInput] = useState('');
   const [message, setMessage] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
@@ -40,6 +82,10 @@ export default function Dashboard() {
   const [aiLanguage, setAiLanguage] = useState('English');
   const [aiFestival, setAiFestival] = useState('General');
   const [aiAudience, setAiAudience] = useState('Customers');
+  const [customAiTone, setCustomAiTone] = useState('');
+  const [customAiLanguage, setCustomAiLanguage] = useState('');
+  const [customAiFestival, setCustomAiFestival] = useState('');
+  const [customAiAudience, setCustomAiAudience] = useState('');
   const [aiGuidance, setAiGuidance] = useState('');
   const [aiRefineLoading, setAiRefineLoading] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -56,6 +102,7 @@ export default function Dashboard() {
   const [showAddContactForm, setShowAddContactForm] = useState(false);
   const [editingContact, setEditingContact] = useState(null);
   const [newContactName, setNewContactName] = useState('');
+  const [newContactCountry, setNewContactCountry] = useState(DEFAULT_COUNTRY);
   const [newContactPhone, setNewContactPhone] = useState('');
 
   const fetchStatus = useCallback(async () => {
@@ -120,21 +167,29 @@ export default function Dashboard() {
       return;
     }
 
+    const normalized = normalizePhoneNumber(newContactPhone, newContactCountry);
+    if (!normalized) {
+      const selected = COUNTRY_OPTIONS.find(item => item.code === newContactCountry);
+      toast.error(`Enter a valid ${selected?.name || 'phone'} number`);
+      return;
+    }
+
     try {
       if (editingContact) {
         await contactsAPI.updateContact(editingContact._id, {
           name: newContactName,
-          phoneNumber: newContactPhone
+          phoneNumber: normalized.whatsappNumber
         });
         toast.success('Contact updated');
       } else {
         await contactsAPI.createContact({
           name: newContactName,
-          phoneNumber: newContactPhone
+          phoneNumber: normalized.whatsappNumber
         });
         toast.success('Contact saved');
       }
       setNewContactName('');
+      setNewContactCountry(DEFAULT_COUNTRY);
       setNewContactPhone('');
       setEditingContact(null);
       setShowAddContactForm(false);
@@ -155,15 +210,23 @@ export default function Dashboard() {
   };
 
   const handleEditContact = (contact) => {
+    const normalized = normalizePhoneNumber(contact.phoneNumber, DEFAULT_COUNTRY);
     setEditingContact(contact);
     setNewContactName(contact.name);
-    setNewContactPhone(contact.phoneNumber);
+    setNewContactCountry(normalized?.country || DEFAULT_COUNTRY);
+    setNewContactPhone(normalized?.nationalNumber || digitsOnly(contact.phoneNumber));
     setShowAddContactForm(true);
   };
 
   const handleSelectContact = (contact) => {
-    if (!numbers.includes(contact.phoneNumber)) {
-      setNumbers([...numbers, contact.phoneNumber]);
+    const normalized = normalizePhoneNumber(contact.phoneNumber, selectedCountry);
+    if (!normalized) {
+      toast.error('Saved contact has an invalid phone number');
+      return;
+    }
+
+    if (!numbers.includes(normalized.whatsappNumber)) {
+      setNumbers([...numbers, normalized.whatsappNumber]);
       toast.success(`Added ${contact.name}`);
     } else {
       toast.error('Number already added');
@@ -274,14 +337,19 @@ export default function Dashboard() {
   };
 
   // Add number chip
-  const addNumber = (num) => {
-    const clean = num.trim();
-    if (!clean) return;
-    if (numbers.includes(clean)) {
+  const addNumber = (num, country = selectedCountry) => {
+    const normalized = normalizePhoneNumber(num, country);
+    if (!normalized) {
+      const selected = COUNTRY_OPTIONS.find(item => item.code === country);
+      toast.error(`Enter a valid ${selected?.name || 'phone'} number`);
+      return;
+    }
+
+    if (numbers.includes(normalized.whatsappNumber)) {
       toast.error('Number already added');
       return;
     }
-    setNumbers([...numbers, clean]);
+    setNumbers([...numbers, normalized.whatsappNumber]);
     setNumberInput('');
   };
 
@@ -300,8 +368,10 @@ export default function Dashboard() {
       const newNums = [];
       lines.forEach((line, i) => {
         if (i === 0 && line.toLowerCase().includes('number')) return; // skip header
-        const num = line.split(',')[0].trim();
-        if (num && !numbers.includes(num)) newNums.push(num);
+        const normalized = normalizePhoneNumber(line.split(',')[0], selectedCountry);
+        if (normalized && !numbers.includes(normalized.whatsappNumber) && !newNums.includes(normalized.whatsappNumber)) {
+          newNums.push(normalized.whatsappNumber);
+        }
       });
       setNumbers(prev => [...prev, ...newNums]);
       toast.success(`${newNums.length} numbers imported`);
@@ -312,18 +382,14 @@ export default function Dashboard() {
 
   // Generate AI message
   const handleAIGenerate = async () => {
-    if (!aiPrompt.trim()) {
-      toast.error('Enter a prompt first');
-      return;
-    }
     setAiLoading(true);
     try {
       const res = await aiAPI.generate({
         prompt: aiPrompt,
-        tone: aiTone,
-        language: aiLanguage,
-        festival: aiFestival,
-        audience: aiAudience,
+        tone: aiTone === 'Other' ? customAiTone : aiTone,
+        language: aiLanguage === 'Other' ? customAiLanguage : aiLanguage,
+        festival: aiFestival === 'Other' ? customAiFestival : aiFestival,
+        audience: aiAudience === 'Other' ? customAiAudience : aiAudience,
         guidance: aiGuidance
       });
       setMessage(res.data.message);
@@ -346,10 +412,10 @@ export default function Dashboard() {
     try {
       const res = await aiAPI.generate({
         prompt: aiPrompt || 'Improve this WhatsApp campaign message',
-        tone: aiTone,
-        language: aiLanguage,
-        festival: aiFestival,
-        audience: aiAudience,
+        tone: aiTone === 'Other' ? customAiTone : aiTone,
+        language: aiLanguage === 'Other' ? customAiLanguage : aiLanguage,
+        festival: aiFestival === 'Other' ? customAiFestival : aiFestival,
+        audience: aiAudience === 'Other' ? customAiAudience : aiAudience,
         guidance: aiGuidance,
         mode,
         currentMessage
@@ -647,7 +713,13 @@ export default function Dashboard() {
                   )}
 
                   <button
-                    onClick={() => setShowAddContactForm(true)}
+                    onClick={() => {
+                      setEditingContact(null);
+                      setNewContactName('');
+                      setNewContactCountry(DEFAULT_COUNTRY);
+                      setNewContactPhone('');
+                      setShowAddContactForm(true);
+                    }}
                     className="w-full bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer mt-4"
                   >
                     <Plus size={16} /> Add New Contact
@@ -662,13 +734,28 @@ export default function Dashboard() {
                     onChange={(e) => setNewContactName(e.target.value)}
                     className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
                   />
-                  <input
-                    type="text"
-                    placeholder="Phone number (e.g., +1234567890)"
-                    value={newContactPhone}
-                    onChange={(e) => setNewContactPhone(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
-                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-2">
+                    <select
+                      value={newContactCountry}
+                      onChange={(e) => setNewContactCountry(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366] transition-colors"
+                    >
+                      {COUNTRY_OPTIONS.map(country => (
+                        <option key={country.code} value={country.code}>
+                          {country.name} +{country.dialCode}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      placeholder="Phone number"
+                      value={newContactPhone}
+                      onChange={(e) => setNewContactPhone(digitsOnly(e.target.value))}
+                      className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+                    />
+                  </div>
                   <div className="flex gap-3">
                     <button
                       onClick={handleAddContact}
@@ -681,6 +768,7 @@ export default function Dashboard() {
                         setShowAddContactForm(false);
                         setEditingContact(null);
                         setNewContactName('');
+                        setNewContactCountry(DEFAULT_COUNTRY);
                         setNewContactPhone('');
                       }}
                       className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
@@ -749,14 +837,28 @@ export default function Dashboard() {
             </div>
 
             {/* Input */}
-            <div className="flex gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)_auto] gap-2">
+              <select
+                value={selectedCountry}
+                onChange={(e) => setSelectedCountry(e.target.value)}
+                className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366] transition-colors"
+                aria-label="Country code"
+              >
+                {COUNTRY_OPTIONS.map(country => (
+                  <option key={country.code} value={country.code}>
+                    {country.name} +{country.dialCode}
+                  </option>
+                ))}
+              </select>
               <input
-                type="text"
-                placeholder="+91XXXXXXXXXX"
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="Phone number"
                 value={numberInput}
-                onChange={(e) => setNumberInput(e.target.value)}
+                onChange={(e) => setNumberInput(digitsOnly(e.target.value))}
                 onKeyDown={(e) => e.key === 'Enter' && addNumber(numberInput)}
-                className="flex-1 px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
               />
               <button
                 onClick={() => addNumber(numberInput)}
@@ -879,8 +981,49 @@ export default function Dashboard() {
                   </div>
                 </div>
 
+                {(aiTone === 'Other' || aiLanguage === 'Other' || aiFestival === 'Other' || aiAudience === 'Other') && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {aiTone === 'Other' && (
+                      <input
+                        type="text"
+                        placeholder="Custom tone"
+                        value={customAiTone}
+                        onChange={(e) => setCustomAiTone(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
+                      />
+                    )}
+                    {aiLanguage === 'Other' && (
+                      <input
+                        type="text"
+                        placeholder="Custom language"
+                        value={customAiLanguage}
+                        onChange={(e) => setCustomAiLanguage(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
+                      />
+                    )}
+                    {aiFestival === 'Other' && (
+                      <input
+                        type="text"
+                        placeholder="Custom festival or context"
+                        value={customAiFestival}
+                        onChange={(e) => setCustomAiFestival(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
+                      />
+                    )}
+                    {aiAudience === 'Other' && (
+                      <input
+                        type="text"
+                        placeholder="Custom audience"
+                        value={customAiAudience}
+                        onChange={(e) => setCustomAiAudience(e.target.value)}
+                        className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
+                      />
+                    )}
+                  </div>
+                )}
+
                 <div>
-                  <label className="block text-[10px] uppercase tracking-[0.18em] text-gray-500 mb-1.5">Campaign prompt</label>
+                  <label className="block text-[10px] uppercase tracking-[0.18em] text-gray-500 mb-1.5">Campaign prompt optional</label>
                   <textarea
                     placeholder='e.g. "Festive offer for salon customers with {{name}} placeholder"'
                     value={aiPrompt}
