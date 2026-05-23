@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import InternationalPhoneInput from '@/components/InternationalPhoneInput';
 import { scheduledAPI, groupsAPI, aiAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import {
@@ -9,6 +10,7 @@ import {
   CheckCircle, AlertCircle, Zap, Bot, ChevronRight
 } from 'lucide-react';
 import Link from 'next/link';
+import { DEFAULT_PHONE_COUNTRY, formatPhoneNumber, normalizePhoneNumber } from '@/lib/phone';
 
 const formatDate = (dateStr) => {
   const date = new Date(dateStr);
@@ -75,7 +77,8 @@ export default function ScheduledPage() {
   // Step 2 state
   const [selectedGroupIds, setSelectedGroupIds] = useState([]);
   const [selectedGroupContacts, setSelectedGroupContacts] = useState([]);
-  const [individualNumberInput, setIndividualNumberInput] = useState('');
+  const [individualPhone, setIndividualPhone] = useState('');
+  const [individualPhoneCountry, setIndividualPhoneCountry] = useState(DEFAULT_PHONE_COUNTRY);
   const [selectedIndividuals, setSelectedIndividuals] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -206,6 +209,25 @@ export default function ScheduledPage() {
     setSearchResults([]);
   };
 
+  const handleAddManualNumber = () => {
+    const normalized = normalizePhoneNumber(individualPhone, individualPhoneCountry);
+
+    if (!normalized) {
+      toast.error('Enter a valid international phone number');
+      return;
+    }
+
+    const clean = normalized.e164.replace(/\D/g, '');
+    if (selectedIndividuals.some(number => number.replace(/\D/g, '') === clean)) {
+      toast.error('Already added');
+      return;
+    }
+
+    setSelectedIndividuals([...selectedIndividuals, clean]);
+    setIndividualPhone('');
+    setIndividualPhoneCountry(normalized.country || individualPhoneCountry);
+  };
+
   const toggleGroupContact = (phone) => {
     const clean = phone.replace(/\D/g, '');
     setSelectedGroupContacts(prev =>
@@ -269,6 +291,8 @@ export default function ScheduledPage() {
     setScheduleTime('');
     setSelectedGroupIds([]);
     setSelectedGroupContacts([]);
+    setIndividualPhone('');
+    setIndividualPhoneCountry(DEFAULT_PHONE_COUNTRY);
     setSelectedIndividuals([]);
     setSearchQuery('');
     setSearchResults([]);
@@ -591,7 +615,9 @@ export default function ScheduledPage() {
                         type="date"
                         value={scheduleDate}
                         onChange={(e) => setScheduleDate(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366] transition-colors"
+                        onClick={(e) => e.currentTarget.showPicker?.()}
+                        onFocus={(e) => e.currentTarget.showPicker?.()}
+                        className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366] transition-colors cursor-pointer"
                       />
                     </div>
                     <div>
@@ -675,40 +701,61 @@ export default function ScheduledPage() {
                     <p className="text-sm font-medium text-gray-300 mb-3">Add Individual Numbers</p>
 
                     <div className="space-y-3">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="Search or enter number"
-                          value={searchQuery}
-                          onChange={(e) => handleSearch(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && searchQuery.trim()) {
-                              handleAddIndividual(searchQuery, '');
-                            }
-                          }}
-                          className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
-                        />
-                        {searchResults.length > 0 && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-[#0a0a0a] border border-white/10 rounded-lg overflow-hidden z-10 max-h-48 overflow-y-auto">
-                            {searchResults.map((result, idx) => (
-                              <button
-                                key={idx}
-                                onClick={() => handleAddIndividual(result.phone, result.name)}
-                                className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm border-b border-white/5 last:border-0 transition-colors cursor-pointer"
-                              >
-                                {result.name && <p className="text-white">{result.name}</p>}
-                                <p className="text-xs text-gray-500">{result.phone}</p>
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                      <div>
+                        <label className="text-xs text-gray-500 block mb-2">Search saved contacts</label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Search by name or number"
+                            value={searchQuery}
+                            onChange={(e) => handleSearch(e.target.value)}
+                            className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
+                          />
+                          {searchResults.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-[#0a0a0a] border border-white/10 rounded-lg overflow-hidden z-10 max-h-48 overflow-y-auto">
+                              {searchResults.map((result, idx) => (
+                                <button
+                                  key={idx}
+                                  onClick={() => handleAddIndividual(result.phone, result.name)}
+                                  className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm border-b border-white/5 last:border-0 transition-colors cursor-pointer"
+                                >
+                                  {result.name && <p className="text-white">{result.name}</p>}
+                                  <p className="text-xs text-gray-500">{result.phone}</p>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs text-gray-500 block mb-2">Add manual number</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2 items-start">
+                          <InternationalPhoneInput
+                            value={individualPhone}
+                            defaultCountry={individualPhoneCountry}
+                            onChange={(phone, meta) => {
+                              setIndividualPhone(phone);
+                              setIndividualPhoneCountry(meta?.country?.iso2?.toUpperCase() || individualPhoneCountry);
+                            }}
+                            onCountryChange={setIndividualPhoneCountry}
+                            placeholder="Phone number"
+                            label={null}
+                          />
+                          <button
+                            onClick={handleAddManualNumber}
+                            className="bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
+                          >
+                            Add
+                          </button>
+                        </div>
                       </div>
 
                       {selectedIndividuals.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                           {selectedIndividuals.map((phone, idx) => (
                             <div key={idx} className="flex items-center gap-1.5 bg-[#25D366]/10 border border-[#25D366]/30 rounded-full px-3 py-1 text-xs text-[#25D366]">
-                              {phone}
+                              {formatPhoneNumber(phone)}
                               <button
                                 onClick={() => handleRemoveIndividual(phone)}
                                 className="hover:text-red-400 transition-colors cursor-pointer"
