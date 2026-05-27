@@ -346,6 +346,9 @@ export default function Dashboard() {
     setNumberInput('');
   };
 
+  // derived validity for the input (used by Add button)
+  const isNumberValid = Boolean(normalizePhoneNumber(numberInput, selectedCountry));
+
   // Remove number chip
   const removeNumber = (num) => {
     setNumbers(numbers.filter(n => n !== num));
@@ -823,7 +826,7 @@ export default function Dashboard() {
             </div>
 
             {/* Input */}
-            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)_auto] gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2 items-center">
               <InternationalPhoneInput
                 value={numberInput}
                 defaultCountry={selectedCountry}
@@ -839,13 +842,13 @@ export default function Dashboard() {
                 onClick={() => addNumber(numberInput)}
                 aria-label="Add phone number"
                 title="Add phone number"
-                disabled={!normalizePhoneNumber(numberInput, selectedCountry)}
-                className={`flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm ${!normalizePhoneNumber(numberInput, selectedCountry) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                disabled={!isNumberValid}
+                className={`inline-flex items-center justify-center bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-3 py-1.5 rounded-lg transition-colors text-xs ${!isNumberValid ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
-                <span>Add</span>
+                <span className="ml-1">Add</span>
               </button>
             </div>
 
