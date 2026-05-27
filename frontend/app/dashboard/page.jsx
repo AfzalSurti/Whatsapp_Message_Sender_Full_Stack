@@ -24,6 +24,28 @@ const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent', 'Other'];
 const AI_LANGUAGES = ['English', 'Hindi', 'Gujarati', 'English + Urdu', 'Other'];
 const AI_FESTIVALS = ['General', 'Diwali', 'Eid al-Fitr', 'New Year', 'Holi', 'Other'];
 const AI_AUDIENCES = ['Customers', 'VIP Clients', 'Leads', 'Local Shoppers', 'Other'];
+const AI_PRESETS = [
+  {
+    value: 'best',
+    label: 'Best Overall',
+    description: 'Balanced, high-converting copy for promos, reminders, updates, follow-ups, and support.'
+  },
+  {
+    value: 'sales',
+    label: 'Sales / Promo',
+    description: 'Sharper offer-first messaging for promotions and conversions.'
+  },
+  {
+    value: 'reminder',
+    label: 'Reminder',
+    description: 'Cleaner, direct messaging for bookings, payments, and follow-ups.'
+  },
+  {
+    value: 'support',
+    label: 'Support / Update',
+    description: 'Helpful, calm messaging for service notices and customer care.'
+  }
+];
 const DEFAULT_COUNTRY = DEFAULT_PHONE_COUNTRY;
 
 export default function Dashboard() {
@@ -44,6 +66,7 @@ export default function Dashboard() {
   const [selectedCountry, setSelectedCountry] = useState(DEFAULT_COUNTRY);
   const [numberInput, setNumberInput] = useState('');
   const [message, setMessage] = useState('');
+  const [aiPreset, setAiPreset] = useState('best');
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiTone, setAiTone] = useState('Friendly');
   const [aiLanguage, setAiLanguage] = useState('English');
@@ -355,6 +378,7 @@ export default function Dashboard() {
     setAiLoading(true);
     try {
       const res = await aiAPI.generate({
+        preset: aiPreset,
         prompt: aiPrompt,
         tone: aiTone === 'Other' ? customAiTone : aiTone,
         language: aiLanguage === 'Other' ? customAiLanguage : aiLanguage,
@@ -381,6 +405,7 @@ export default function Dashboard() {
     setAiRefineLoading(mode);
     try {
       const res = await aiAPI.generate({
+        preset: aiPreset,
         prompt: aiPrompt || 'Improve this WhatsApp campaign message',
         tone: aiTone === 'Other' ? customAiTone : aiTone,
         language: aiLanguage === 'Other' ? customAiLanguage : aiLanguage,
@@ -812,9 +837,15 @@ export default function Dashboard() {
               />
               <button
                 onClick={() => addNumber(numberInput)}
-                className="bg-[#25D366] hover:bg-[#1ebe5d] text-black font-bold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
+                aria-label="Add phone number"
+                title="Add phone number"
+                disabled={!normalizePhoneNumber(numberInput, selectedCountry)}
+                className={`flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm ${!normalizePhoneNumber(numberInput, selectedCountry) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               >
-                Add
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Add</span>
               </button>
             </div>
 
@@ -888,6 +919,22 @@ export default function Dashboard() {
             {/* AI */}
             {messageMode === 'ai' && (
               <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] uppercase tracking-[0.18em] text-gray-500 mb-1.5">Preset</label>
+                  <select
+                    value={aiPreset}
+                    onChange={(e) => setAiPreset(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366]"
+                  >
+                    {AI_PRESETS.map(item => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {AI_PRESETS.find(item => item.value === aiPreset)?.description}
+                  </p>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[10px] uppercase tracking-[0.18em] text-gray-500 mb-1.5">Tone</label>
@@ -1041,7 +1088,7 @@ export default function Dashboard() {
                     </div>
 
                     <button
-                      onClick={() => { setMessage(''); setAiPrompt(''); setAiGuidance(''); }}
+                      onClick={() => { setMessage(''); setAiPreset('best'); setAiPrompt(''); setAiGuidance(''); }}
                       className="text-xs text-gray-600 hover:text-red-400"
                     >
                       Clear AI draft

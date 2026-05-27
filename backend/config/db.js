@@ -13,7 +13,7 @@ const connectDB = async (opts = {}) => {
     const tryConnect = async () => {
         attempt += 1;
         try {
-            const conn = await mongoose.connect(process.env.MONGODB_URI, { keepAlive: true });
+            const conn = await mongoose.connect(process.env.MONGODB_URI);
             console.log(`MongoDB Connected: ${conn.connection.host}`);
             return;
         } catch (err) {

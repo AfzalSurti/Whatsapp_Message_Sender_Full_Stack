@@ -11,7 +11,36 @@ const hasRequiredLanguageScript = (message, language) => {
   return range.test(message);
 };
 
+const PRESET_GUIDANCE = {
+  best: {
+    label: 'Best Overall',
+    description: 'Balanced, high-converting WhatsApp copy for promotions, reminders, follow-ups, updates, and support.',
+    instruction: 'Optimise for clarity, warmth, trust, and conversion. Write a message that feels human, specific, and useful even when the campaign goal is broad or underspecified. Prefer one strong hook, one clear benefit, and one direct call to action. Keep it concise and easy to scan on mobile.'
+  },
+  sales: {
+    label: 'Sales / Promo',
+    description: 'Focused on offers, urgency, and conversion.',
+    instruction: 'Optimise for response and conversion. Highlight the offer early, keep urgency natural, and end with a clear call to action.'
+  },
+  reminder: {
+    label: 'Reminder',
+    description: 'Useful for bookings, payments, and follow-ups.',
+    instruction: 'Optimise for clarity and action. Be polite, direct, and include exactly what the user needs to do next.'
+  },
+  support: {
+    label: 'Support / Update',
+    description: 'Good for service updates and customer care.',
+    instruction: 'Optimise for reassurance and clarity. Keep the tone calm, helpful, and specific. Avoid sales language unless requested.'
+  },
+  festival: {
+    label: 'Festival / Event',
+    description: 'Good for greetings, seasonal offers, and event announcements.',
+    instruction: 'Optimise for a warm, celebratory tone while still including a practical reason to act or reply.'
+  }
+};
+
 const buildUserPrompt = ({
+  preset,
   prompt,
   tone,
   language,
@@ -21,6 +50,8 @@ const buildUserPrompt = ({
   mode,
   currentMessage
 }) => {
+  const selectedPreset = PRESET_GUIDANCE[preset] || PRESET_GUIDANCE.best;
+
   const languageInstruction = (() => {
     if (!language) return null;
     if (language === 'Gujarati') {
@@ -36,6 +67,9 @@ const buildUserPrompt = ({
   })();
 
   const contextLines = [
+    `Preset: ${selectedPreset.label}`,
+    selectedPreset.description,
+    selectedPreset.instruction,
     prompt ? `Message goal: ${prompt}` : 'Message goal: Generate a useful WhatsApp campaign message from the selected preset fields. Include a clear call to action.',
     tone ? `Tone: ${tone}` : null,
     language ? `Selected language: ${language}` : null,
@@ -85,6 +119,7 @@ const requestAIMessage = async ({ systemPrompt, userPrompt }) => {
 const generateAIMessage = async (req, res) => {
   try {
     const {
+      preset = 'best',
       prompt,
       tone,
       language,
@@ -104,6 +139,8 @@ Write short, natural, conversational WhatsApp messages.
 No long paragraphs. No stiff formal language unless the requested tone is formal.
 Max 3-4 lines per message. Direct and friendly tone.
 Support festival-specific personalization, multi-tone writing, and multi-language output.
+Optimise for broad-purpose WhatsApp campaigns by default: promotions, reminders, follow-ups, announcements, reactivation, support, and event messages.
+Always make the result sound human, useful, and action-oriented.
 Follow the selected output language exactly. This is mandatory.
 If Gujarati is selected, the message must be in Gujarati script, not English transliteration.
 If Hindi is selected, the message must be in Devanagari script, not English.
@@ -111,6 +148,7 @@ Use variables like {{name}}, {{business_name}}, {{shop}}, or {{city}} only when 
 Return only the requested message content. No explanation, no quotes.`;
 
     const userPrompt = buildUserPrompt({
+      preset,
       prompt,
       tone,
       language,

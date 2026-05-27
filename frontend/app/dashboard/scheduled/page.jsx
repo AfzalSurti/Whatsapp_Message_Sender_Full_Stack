@@ -39,10 +39,76 @@ const getStatusBadge = (status) => {
   return badges[status] || badges.pending;
 };
 
-const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent', 'Other'];
-const AI_LANGUAGES = ['English', 'Hindi', 'Gujarati', 'English + Urdu', 'Other'];
-const AI_FESTIVALS = ['General', 'Diwali', 'Eid al-Fitr', 'New Year', 'Holi', 'Other'];
-const AI_AUDIENCES = ['Customers', 'VIP Clients', 'Leads', 'Local Shoppers', 'Other'];
+const AI_TONES = [
+  'Friendly',
+  'Formal',
+  'Persuasive',
+  'Urgent',
+  'Promotional',
+  'Informative',
+  'Conversational',
+  'Professional',
+  'Casual',
+  'Other'
+];
+
+const AI_LANGUAGES = [
+  'English',
+  'Hindi',
+  'Gujarati',
+  'Urdu',
+  'Spanish',
+  'Tamil',
+  'Telugu',
+  'English + Urdu',
+  'Other'
+];
+
+const AI_FESTIVALS = [
+  'General',
+  'Diwali',
+  'Eid al-Fitr',
+  'New Year',
+  'Holi',
+  'Christmas',
+  'Ramadan',
+  'Black Friday',
+  'Other'
+];
+
+const AI_AUDIENCES = [
+  'Customers',
+  'VIP Clients',
+  'Leads',
+  'Referral',
+  'Lapsed Customers',
+  'New Subscribers',
+  'Local Shoppers',
+  'Other'
+];
+
+const AI_PRESETS = [
+  {
+    value: 'best',
+    label: 'Best Overall',
+    description: 'Balanced, high-converting copy for promos, reminders, updates, follow-ups, and support.'
+  },
+  {
+    value: 'sales',
+    label: 'Sales / Promo',
+    description: 'Sharper offer-first messaging for promotions and conversions.'
+  },
+  {
+    value: 'reminder',
+    label: 'Reminder',
+    description: 'Cleaner, direct messaging for bookings, payments, and follow-ups.'
+  },
+  {
+    value: 'support',
+    label: 'Support / Update',
+    description: 'Helpful, calm messaging for service notices and customer care.'
+  }
+];
 
 export default function ScheduledPage() {
   const { user, loading } = useAuth();
@@ -60,6 +126,7 @@ export default function ScheduledPage() {
   // Step 1 state
   const [campaignName, setCampaignName] = useState('');
   const [message, setMessage] = useState('');
+  const [aiPreset, setAiPreset] = useState('best');
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiTone, setAiTone] = useState('Friendly');
   const [aiLanguage, setAiLanguage] = useState('English');
@@ -125,6 +192,7 @@ export default function ScheduledPage() {
     setAiLoading(true);
     try {
       const res = await aiAPI.generate({
+        preset: aiPreset,
         prompt: aiPrompt,
         tone: aiTone === 'Other' ? customAiTone : aiTone,
         language: aiLanguage === 'Other' ? customAiLanguage : aiLanguage,
@@ -285,6 +353,7 @@ export default function ScheduledPage() {
     setStep(1);
     setCampaignName('');
     setMessage('');
+    setAiPreset('best');
     setAiPrompt('');
     setAiGuidance('');
     setScheduleDate('');
@@ -513,7 +582,27 @@ export default function ScheduledPage() {
                   </div>
 
                   <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 space-y-3">
-                    <p className="text-xs font-medium text-gray-400">Or Generate with AI</p>
+                    <div>
+                      <p className="text-xs font-medium text-gray-400">Or Generate with AI</p>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        The default preset is tuned for the strongest all-purpose WhatsApp copy.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-2">Preset</label>
+                      <select
+                        value={aiPreset}
+                        onChange={(e) => setAiPreset(e.target.value)}
+                        className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
+                      >
+                        {AI_PRESETS.map(item => (
+                          <option key={item.value} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        {AI_PRESETS.find(item => item.value === aiPreset)?.description}
+                      </p>
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <select
                         value={aiTone}

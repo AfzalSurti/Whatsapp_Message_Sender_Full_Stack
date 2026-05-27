@@ -10,6 +10,37 @@ const clients=new Map();
 // Track clients being created to prevent duplicates
 const clientsBeingCreated=new Set();
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const isBrowserAlreadyRunningError = (err) =>
+    /browser is already running/i.test(err?.message || '');
+
+const cleanupStaleSessionLocks = async (userIdStr) => {
+    const sessionDir = path.join(process.cwd(), '.wwebjs_auth', `session-${userIdStr}`);
+
+    if (!fs.existsSync(sessionDir)) {
+        return;
+    }
+
+    const lockFiles = [
+        'SingletonCookie',
+        'SingletonLock',
+        'SingletonSocket',
+        'DevToolsActivePort'
+    ];
+
+    for (const fileName of lockFiles) {
+        const filePath = path.join(sessionDir, fileName);
+        try {
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        } catch (err) {
+            console.warn(`Unable to remove stale lock file ${fileName} for user ${userIdStr}: ${err.message}`);
+        }
+    }
+};
+
 const cleanupClient = async (client) => {
     if (!client) return;
 
@@ -323,6 +354,22 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
             clientsBeingCreated.delete(userIdStr);
         })
         .catch(async(err) => {
+            if (isBrowserAlreadyRunningError(err)) {
+                console.warn(`Browser lock detected for user: ${userIdStr}. Cleaning stale session files and retrying once.`);
+                await cleanupStaleSessionLocks(userIdStr);
+                await cleanupClient(client);
+                clients.delete(userIdStr);
+                clientsBeingCreated.delete(userIdStr);
+                await sleep(1500);
+
+                try {
+                    const retryClient = await createClient(userId, onQR, onReady, onDisconnected);
+                    return retryClient;
+                } catch (retryErr) {
+                    console.error(`Retry after browser lock failed for user: ${userIdStr}:`, retryErr.message);
+                }
+            }
+
             console.error(`Client initialization failed for user: ${userIdStr}:`, err.message);
             const entry = clients.get(userIdStr);
             if(entry && entry.client === client){
