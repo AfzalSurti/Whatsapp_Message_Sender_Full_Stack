@@ -9,6 +9,7 @@ const Session=require('../models/Session');
 const clients=new Map();
 // Track clients being created to prevent duplicates
 const clientsBeingCreated=new Set();
+const getAuthDataPath = () => path.resolve(process.env.WWEBJS_AUTH_PATH || path.join(process.cwd(), '.wwebjs_auth'));
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -16,7 +17,7 @@ const isBrowserAlreadyRunningError = (err) =>
     /browser is already running/i.test(err?.message || '');
 
 const cleanupStaleSessionLocks = async (userIdStr) => {
-    const sessionDir = path.join(process.cwd(), '.wwebjs_auth', `session-${userIdStr}`);
+    const sessionDir = path.join(getAuthDataPath(), `session-${userIdStr}`);
 
     if (!fs.existsSync(sessionDir)) {
         return;
@@ -204,7 +205,7 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
     }
 
     const client=new Client({
-        authStrategy: new LocalAuth({ clientId: userIdStr }),
+        authStrategy: new LocalAuth({ clientId: userIdStr, dataPath: getAuthDataPath() }),
         puppeteer:{
             headless:true,
             executablePath: executablePath || undefined,
@@ -269,7 +270,7 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
 
     //authianticated event
     //fires when qr scan successful
-    // session saved automatically in MongoDB by MongoStore
+    // LocalAuth persists the browser auth state on disk
     client.on('authenticated',()=>{
         console.log(`Client authenticated for user: ${userIdStr}`);
     });
