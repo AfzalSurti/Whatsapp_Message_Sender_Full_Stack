@@ -207,6 +207,14 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
     //store client and status
     clients.set(userIdStr,{client,status:'pending',pendingStartTime:Date.now()});
 
+    // Ensure the session is marked active as soon as initialization starts,
+    // so restart recovery can find it even if the process restarts before ready.
+    await Session.findOneAndUpdate(
+        {userId},
+        {isActive:true,lastSeen:new Date()},
+        {upsert:true,returnDocument:'after'}
+    );
+
     // Add health check interval — periodically verify client is still alive
     const healthCheckInterval = setInterval(async () => {
         const entry = clients.get(userIdStr);
@@ -304,11 +312,7 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
         clients.delete(userIdStr); // remove client on auth failure
         clientsBeingCreated.delete(userIdStr);
 
-        await Session.findOneAndUpdate(
-            {userId},
-            {isActive:false},
-            {upsert:true}
-        );
+        // Keep the session record active so a restart can recover it.
     });
 
     //disconnected
@@ -324,11 +328,8 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
         clients.delete(userIdStr); // remove client on disconnect
         clientsBeingCreated.delete(userIdStr);
 
-        await Session.findOneAndUpdate(
-            {userId},
-            {isActive:false},
-            {upsert:true}
-        );
+        // Do not mark inactive here; a browser disconnect can be temporary and
+        // the RemoteAuth session may still be recoverable on restart.
         onDisconnected(reason); // notify frontend
     });
 
@@ -431,6 +432,12 @@ const disconnectClient=async(userId)=>{
             console.error(`Error disconnecting client for user: ${userIdStr}`,err);
         }
         clients.delete(userIdStr); // remove from map
+
+        await Session.findOneAndUpdate(
+            {userId},
+            {isActive:false,lastSeen:new Date()},
+            {upsert:true}
+        );
     }
 
     clientsBeingCreated.delete(userIdStr);
