@@ -196,7 +196,7 @@ export default function DashboardLayout({ children }) {
                 <div className="text-sm font-medium truncate">{user?.name}</div>
                 <div className="text-xs text-gray-400">{user?.email}</div>
               </div>
-              <button onClick={async () => await logout()} className="text-gray-400 hover:text-red-400 ml-2" aria-label="Logout"><LogOut size={16} /></button>
+              <button onClick={() => setShowLogoutConfirm(true)} className="text-gray-400 hover:text-red-400 ml-2" aria-label="Logout"><LogOut size={16} /></button>
             </div>
           </div>
         </aside>
@@ -230,7 +230,10 @@ export default function DashboardLayout({ children }) {
         {showLogoutConfirm && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-[#111] border border-white/5 rounded-2xl p-6 max-w-sm w-full">
-              <h3 className="font-bold text-lg mb-2">Are you sure you want to logout?</h3>
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <h3 className="font-bold text-lg">Are you sure you want to logout?</h3>
+                <button onClick={() => setShowLogoutConfirm(false)} className="text-gray-500 hover:text-white transition-colors" aria-label="Close logout confirmation"><X size={18} /></button>
+              </div>
               <p className="text-sm text-gray-400 mb-6">Your current dashboard session will close and you will need to sign in again.</p>
               <div className="flex gap-3">
                 <button onClick={async () => { setShowLogoutConfirm(false); await logout(); }} className="flex-1 bg-red-500 hover:bg-red-400 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm">Yes, Logout</button>
