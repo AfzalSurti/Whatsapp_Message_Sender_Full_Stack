@@ -80,6 +80,14 @@ export default function HistoryPage() {
     });
   };
 
+  const getCampaignStatusClass = (status) => {
+    if (status === 'completed') return 'bg-[#25D366]/10 border-[#25D366]/20 text-[#25D366]';
+    if (status === 'running') return 'bg-blue-500/10 border-blue-500/20 text-blue-400';
+    if (status === 'failed') return 'bg-red-500/10 border-red-500/20 text-red-400';
+    if (status === 'cancelled') return 'bg-gray-500/10 border-gray-500/20 text-gray-400';
+    return 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400';
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -92,11 +100,14 @@ export default function HistoryPage() {
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold">History</h1>
+          <div>
+            <h1 className="text-2xl font-bold">History</h1>
+            <p className="text-sm text-gray-400 mt-1">Browse delivery logs and campaign performance in one place.</p>
+          </div>
           <button
             onClick={exportCSV}
             disabled={logs.length === 0}
-            className="flex items-center gap-2 text-xs text-gray-400 hover:text-white border border-white/10 hover:border-white/20 px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 text-xs text-gray-300 hover:text-white border border-white/10 hover:border-white/20 px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Download size={13} /> Export CSV
           </button>
@@ -124,16 +135,16 @@ export default function HistoryPage() {
           <div className="space-y-4">
 
             {/* Filter */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Filter size={14} className="text-gray-500" />
               {['all', 'sent', 'failed', 'skipped'].map(f => (
                 <button
                   key={f}
                   onClick={() => { setFilter(f); setPage(1); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-colors ${
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold capitalize border transition-colors ${
                     filter === f
-                      ? 'bg-[#25D366] text-black'
-                      : 'bg-[#111] border border-white/5 text-gray-400 hover:text-white'
+                      ? 'bg-[#25D366] text-black border-[#25D366]'
+                      : 'bg-[#111] border-white/10 text-gray-400 hover:text-white hover:border-white/20'
                   }`}
                 >
                   {f}
@@ -154,7 +165,13 @@ export default function HistoryPage() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm table-fixed">
+                    <colgroup>
+                      <col className="w-[22%]" />
+                      <col className="w-[38%]" />
+                      <col className="w-[22%]" />
+                      <col className="w-[18%]" />
+                    </colgroup>
                     <thead>
                       <tr className="border-b border-white/5 text-left">
                         <th className="px-5 py-3 text-xs text-gray-500 font-medium">Number</th>
@@ -168,8 +185,8 @@ export default function HistoryPage() {
                         const s = statusConfig[log.status] || statusConfig.skipped;
                         return (
                           <tr key={i} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors">
-                            <td className="px-5 py-3 text-gray-300 font-mono text-xs">{log.number}</td>
-                            <td className="px-5 py-3 text-gray-400 max-w-[200px] truncate text-xs">{log.message}</td>
+                            <td className="px-5 py-3 text-gray-300 font-mono text-xs whitespace-nowrap">{log.number}</td>
+                            <td className="px-5 py-3 text-gray-400 text-xs truncate" title={log.message || ''}>{log.message}</td>
                             <td className="px-5 py-3">
                               <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-medium ${s.bg} ${s.color}`}>
                                 {s.icon} {s.label}
@@ -178,7 +195,7 @@ export default function HistoryPage() {
                                 <p className="text-xs text-gray-600 mt-0.5">{log.failReason}</p>
                               )}
                             </td>
-                            <td className="px-5 py-3 text-gray-600 text-xs whitespace-nowrap">{formatDate(log.createdAt)}</td>
+                            <td className="px-5 py-3 text-gray-500 text-xs whitespace-nowrap">{formatDate(log.createdAt)}</td>
                           </tr>
                         );
                       })}
@@ -194,15 +211,15 @@ export default function HistoryPage() {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-4 py-2 text-xs bg-[#111] border border-white/5 rounded-xl disabled:opacity-30 hover:border-white/20 transition-colors"
+                  className="px-4 py-2 text-xs bg-[#111] border border-white/10 rounded-xl disabled:opacity-30 hover:border-white/20 transition-colors"
                 >
                   Previous
                 </button>
-                <span className="text-xs text-gray-500">Page {page} of {totalPages}</span>
+                <span className="text-xs text-gray-400">Page {page} / {totalPages}</span>
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="px-4 py-2 text-xs bg-[#111] border border-white/5 rounded-xl disabled:opacity-30 hover:border-white/20 transition-colors"
+                  className="px-4 py-2 text-xs bg-[#111] border border-white/10 rounded-xl disabled:opacity-30 hover:border-white/20 transition-colors"
                 >
                   Next
                 </button>
@@ -227,12 +244,7 @@ export default function HistoryPage() {
                       <p className="font-semibold text-sm">{c.name}</p>
                       <p className="text-gray-500 text-xs mt-0.5">{formatDate(c.createdAt)}</p>
                     </div>
-                    <span className={`text-xs px-2.5 py-1 rounded-full border font-medium capitalize ${
-                      c.status === 'completed' ? 'bg-[#25D366]/10 border-[#25D366]/20 text-[#25D366]' :
-                      c.status === 'running'   ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400' :
-                      c.status === 'failed'    ? 'bg-red-500/10 border-red-500/20 text-red-400' :
-                      'bg-white/5 border-white/10 text-gray-400'
-                    }`}>
+                    <span className={`text-xs px-2.5 py-1 rounded-full border font-medium capitalize ${getCampaignStatusClass(c.status)}`}>
                       {c.status}
                     </span>
                   </div>
@@ -251,6 +263,21 @@ export default function HistoryPage() {
                         <p className="text-gray-600 text-xs mt-0.5">{stat.label}</p>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+                      <span>Sent Progress</span>
+                      <span>
+                        {Math.round(((c.sent || 0) / Math.max(1, c.totalNumbers || 0)) * 100)}%
+                      </span>
+                    </div>
+                    <div className="h-2 bg-[#0a0a0a] rounded-full overflow-hidden border border-white/5">
+                      <div
+                        className="h-full bg-[#25D366]"
+                        style={{ width: `${Math.min(100, Math.round(((c.sent || 0) / Math.max(1, c.totalNumbers || 0)) * 100))}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
               ))
