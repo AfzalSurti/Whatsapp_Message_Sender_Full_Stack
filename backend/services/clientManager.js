@@ -1,68 +1,20 @@
-const {Client,LocalAuth}=require('whatsapp-web.js');
-const path=require('path');
-const fs=require('fs');
-const os=require('os');
-const qrcode=require('qrcode');
-const Session=require('../models/Session');
+const {Client, RemoteAuth} = require('whatsapp-web.js');
+const {MongoStore} = require('wwebjs-mongo');
+const mongoose = require('mongoose');
+const fs = require('fs');
+const os = require('os');
+const qrcode = require('qrcode');
+const Session = require('../models/Session');
 
 //client store
 const clients=new Map();
 // Track clients being created to prevent duplicates
-const clientsBeingCreated=new Set();
-const getAuthDataPath = () => path.resolve(process.env.WWEBJS_AUTH_PATH || path.join(process.cwd(), '.wwebjs_auth'));
+const clientsBeingCreated = new Set();
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const isBrowserAlreadyRunningError = (err) =>
     /browser is already running/i.test(err?.message || '');
-
-const cleanupStaleSessionLocks = async (userIdStr) => {
-    const sessionDir = path.join(getAuthDataPath(), `session-${userIdStr}`);
-
-    if (!fs.existsSync(sessionDir)) {
-        return;
-    }
-
-    const lockFiles = [
-        'SingletonCookie',
-        'SingletonLock',
-        'SingletonSocket',
-        'DevToolsActivePort'
-    ];
-
-    for (const fileName of lockFiles) {
-        const filePath = path.join(sessionDir, fileName);
-        try {
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
-        } catch (err) {
-            console.warn(`Unable to remove stale lock file ${fileName} for user ${userIdStr}: ${err.message}`);
-        }
-    }
-};
-
-const removeSessionDirectory = async (userIdStr) => {
-    const sessionDir = path.join(getAuthDataPath(), `session-${userIdStr}`);
-
-    for (let attempt = 1; attempt <= 5; attempt++) {
-        try {
-            if (fs.existsSync(sessionDir)) {
-                fs.rmSync(sessionDir, { recursive: true, force: true });
-            }
-            return true;
-        } catch (err) {
-            if (attempt === 5) {
-                console.warn(`Unable to remove session directory for user ${userIdStr}: ${err.message}`);
-                return false;
-            }
-
-            await sleep(500);
-        }
-    }
-
-    return false;
-};
 
 const cleanupClient = async (client) => {
     if (!client) return;
@@ -222,7 +174,7 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
     clientsBeingCreated.add(userIdStr);
 
 
-    // Create new client with LocalAuth (file-based sessions, per user)
+    // Create new client with RemoteAuth (MongoDB-backed sessions, per user)
     const executablePath = resolveExecutablePath();
     if (executablePath) {
         console.log(`Using browser executable for user ${userIdStr}: ${executablePath}`);
@@ -231,7 +183,11 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
     }
 
     const client=new Client({
-        authStrategy: new LocalAuth({ clientId: userIdStr, dataPath: getAuthDataPath() }),
+        authStrategy: new RemoteAuth({
+            clientId: userIdStr,
+            store: new MongoStore({ mongoose }),
+            backupSyncIntervalMs: 300000
+        }),
         puppeteer:{
             headless:true,
             executablePath: executablePath || undefined,
@@ -296,7 +252,7 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
 
     //authianticated event
     //fires when qr scan successful
-    // LocalAuth persists the browser auth state on disk
+    // RemoteAuth persists the encrypted session in MongoDB
     client.on('authenticated',()=>{
         console.log(`Client authenticated for user: ${userIdStr}`);
     });
@@ -382,10 +338,9 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
         })
         .catch(async(err) => {
             if (isBrowserAlreadyRunningError(err)) {
-                console.warn(`Browser lock detected for user: ${userIdStr}. Cleaning stale session files and retrying once.`);
-                await cleanupStaleSessionLocks(userIdStr);
+                console.warn(`Browser lock detected for user: ${userIdStr}. Attempting recovery and retrying once.`);
+                // Attempt to force-release any browser process and retry without touching local auth files
                 await forceReleaseClient(client);
-                await removeSessionDirectory(userIdStr);
                 clients.delete(userIdStr);
                 clientsBeingCreated.delete(userIdStr);
                 await sleep(3000);
