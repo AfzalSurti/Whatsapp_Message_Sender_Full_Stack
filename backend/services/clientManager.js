@@ -42,6 +42,28 @@ const cleanupStaleSessionLocks = async (userIdStr) => {
     }
 };
 
+const removeSessionDirectory = async (userIdStr) => {
+    const sessionDir = path.join(getAuthDataPath(), `session-${userIdStr}`);
+
+    for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+            if (fs.existsSync(sessionDir)) {
+                fs.rmSync(sessionDir, { recursive: true, force: true });
+            }
+            return true;
+        } catch (err) {
+            if (attempt === 5) {
+                console.warn(`Unable to remove session directory for user ${userIdStr}: ${err.message}`);
+                return false;
+            }
+
+            await sleep(500);
+        }
+    }
+
+    return false;
+};
+
 const cleanupClient = async (client) => {
     if (!client) return;
 
@@ -54,18 +76,14 @@ const cleanupClient = async (client) => {
     }
 
     try {
-        await client.destroy();
+        await forceReleaseClient(client);
     } catch (err) {
-        console.error(`Error destroying client: ${err.message}`);
+        console.error(`Error releasing client browser: ${err.message}`);
     }
+};
 
-    try {
-        if (client.pupBrowser && client.pupBrowser.isConnected && client.pupBrowser.isConnected()) {
-            await client.pupBrowser.close();
-        }
-    } catch (err) {
-        console.error(`Error closing browser: ${err.message}`);
-    }
+const forceReleaseClient = async (client) => {
+    if (!client) return;
 
     try {
         const browserProcess = client.pupBrowser?.process?.();
@@ -73,7 +91,15 @@ const cleanupClient = async (client) => {
             browserProcess.kill();
         }
     } catch (err) {
-        console.error(`Error killing browser process: ${err.message}`);
+        console.warn(`Error force-killing browser process: ${err.message}`);
+    }
+
+    try {
+        if (client.pupBrowser?.close) {
+            await client.pupBrowser.close();
+        }
+    } catch (err) {
+        console.warn(`Error force-closing browser: ${err.message}`);
     }
 };
 
@@ -358,10 +384,11 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
             if (isBrowserAlreadyRunningError(err)) {
                 console.warn(`Browser lock detected for user: ${userIdStr}. Cleaning stale session files and retrying once.`);
                 await cleanupStaleSessionLocks(userIdStr);
-                await cleanupClient(client);
+                await forceReleaseClient(client);
+                await removeSessionDirectory(userIdStr);
                 clients.delete(userIdStr);
                 clientsBeingCreated.delete(userIdStr);
-                await sleep(1500);
+                await sleep(3000);
 
                 try {
                     const retryClient = await createClient(userId, onQR, onReady, onDisconnected);
@@ -369,6 +396,14 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
                 } catch (retryErr) {
                     console.error(`Retry after browser lock failed for user: ${userIdStr}:`, retryErr.message);
                 }
+
+                await Session.findOneAndUpdate(
+                    {userId},
+                    {isActive:false},
+                    {upsert:true}
+                );
+                onDisconnected(`WhatsApp browser failed to start after lock recovery: ${err.message}`);
+                return;
             }
 
             console.error(`Client initialization failed for user: ${userIdStr}:`, err.message);
