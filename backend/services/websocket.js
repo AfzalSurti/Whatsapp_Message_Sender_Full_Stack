@@ -78,10 +78,16 @@ const sendToUser = (userId, data) => {
 
   // Check connection is open (readyState 1 = OPEN)
   if (ws && ws.readyState === WebSocket.OPEN) {
+    console.log(`📤 WebSocket SEND to ${userId}: ${data.type} (message size: ${JSON.stringify(data).length} bytes)`);
     ws.send(JSON.stringify(data));
     return true;
   }
 
+  if (!ws) {
+    console.warn(`⚠️  No WebSocket connection found for user ${userId}`);
+  } else {
+    console.warn(`⚠️  WebSocket for ${userId} not in OPEN state (readyState: ${ws.readyState})`);
+  }
   return false; // user not connected
 };
 

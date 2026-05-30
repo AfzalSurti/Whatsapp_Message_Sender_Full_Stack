@@ -250,8 +250,10 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
         console.log(`🔄 QR Code received for user: ${userIdStr}`);
         try{
             const qrImage=await qrcode.toDataURL(qr);// convert QR code to image
-            console.log(`✅ QR Code converted to data URL for user: ${userIdStr}`);
-            onQR(qrImage);// send image to frontend
+            console.log(`✅ QR Code converted to data URL for user: ${userIdStr} (length: ${qrImage?.length || 0})`);
+            console.log(`📤 Sending QR via onQR callback for user: ${userIdStr}`);
+            onQR(qrImage);// send image to frontend via WebSocket
+            console.log(`✅ QR callback executed for user: ${userIdStr}`);
         }catch(err){
             console.error(`QR code generation failed for user: ${userIdStr}`,err);
         }

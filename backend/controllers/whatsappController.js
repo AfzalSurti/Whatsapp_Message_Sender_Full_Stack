@@ -21,14 +21,18 @@ const connectWhatsApp = async (req, res) => {
       userId,
       (qrImage) => {
         // Send QR image to frontend via WebSocket
-        sendToUser(userId.toString(), { type: 'qr', qr: qrImage });
+        console.log(`📨 Sending QR to user ${userId.toString()} via WebSocket (image size: ${qrImage?.length || 0} bytes)`);
+        const sent = sendToUser(userId.toString(), { type: 'qr', qr: qrImage });
+        console.log(`${sent ? '✅' : '⚠️'} QR message ${sent ? 'sent' : 'not sent'} - WebSocket ${sent ? 'connected' : 'not connected or closed'}`);
       },
       () => {
         // Send connected status
+        console.log(`📨 Sending ready status to user ${userId.toString()}`);
         sendToUser(userId.toString(), { type: 'ready' });
       },
       (reason) => {
         // Send disconnected status
+        console.log(`📨 Sending disconnected status to user ${userId.toString()}: ${reason}`);
         sendToUser(userId.toString(), { type: 'disconnected', reason });
       }
     );
