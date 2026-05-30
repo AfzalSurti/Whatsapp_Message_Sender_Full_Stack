@@ -13,6 +13,10 @@ const connectWhatsApp = async (req, res) => {
       return res.json({ message: 'Already connected', status: 'connected' });
     }
 
+    if (status === 'pending') {
+      return res.json({ message: 'WhatsApp is already initializing', status: 'pending' });
+    }
+
     await clientManager.createClient(
       userId,
       (qrImage) => {
@@ -41,26 +45,6 @@ const getWhatsAppStatus = async (req, res) => {
     const userId = req.user._id;
     const status = clientManager.getStatus(userId);
     const session = await Session.findOne({ userId });
-
-    // If client not in memory, try to recover it
-    if (status === 'disconnected') {
-      console.log(`🔄 Attempting to recover WhatsApp session for user: ${userId}`);
-      const sendToUser = req.app.get('sendToUser');
-
-      // Trigger recovery in background
-      clientManager.createClient(
-        userId,
-        (qrImage) => {
-          sendToUser(userId.toString(), { type: 'qr', qr: qrImage });
-        },
-        () => {
-          sendToUser(userId.toString(), { type: 'ready' });
-        },
-        (reason) => {
-          sendToUser(userId.toString(), { type: 'disconnected', reason });
-        }
-      ).catch(err => console.error('Recovery failed:', err));
-    }
 
     // Get detailed client info
     const client = clientManager.getClient(userId);
