@@ -17,7 +17,10 @@ import {
   X,
   Filter,
   UserPlus,
-  Tags
+  Tags,
+  Edit2,
+  Trash2,
+  Users
 } from 'lucide-react';
 
 const DEFAULT_COUNTRY = DEFAULT_PHONE_COUNTRY;
@@ -34,6 +37,7 @@ export default function GroupsPage() {
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupColor, setNewGroupColor] = useState('#25D366');
   const [creatingGroup, setCreatingGroup] = useState(false);
+  const [editGroupId, setEditGroupId] = useState(null);
 
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [contactName, setContactName] = useState('');
@@ -80,16 +84,40 @@ export default function GroupsPage() {
 
     setCreatingGroup(true);
     try {
-      await createGroup({ name: newGroupName, color: newGroupColor });
-      toast.success('Group created');
+      if (editGroupId) {
+        await groupsAPI.updateGroup(editGroupId, { name: newGroupName, color: newGroupColor });
+        toast.success('Group updated');
+      } else {
+        await createGroup({ name: newGroupName, color: newGroupColor });
+        toast.success('Group created');
+      }
       setShowCreateGroupModal(false);
       setNewGroupName('');
       setNewGroupColor('#25D366');
+      setEditGroupId(null);
       await fetchGroups();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to create group');
     } finally {
       setCreatingGroup(false);
+    }
+  };
+
+  const handleOpenEditGroup = (group) => {
+    setEditGroupId(group._id);
+    setNewGroupName(group.name || '');
+    setNewGroupColor(group.color || '#25D366');
+    setShowCreateGroupModal(true);
+  };
+
+  const handleDeleteGroup = async (groupId) => {
+    if (!window.confirm('Delete this group? This will remove its contacts from the group.')) return;
+    try {
+      await groupsAPI.deleteGroup(groupId);
+      toast.success('Group deleted');
+      await fetchGroups();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to delete group');
     }
   };
 
@@ -246,11 +274,15 @@ export default function GroupsPage() {
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-bold mr-2">Contact Directory</h1>
+          <div>
+            <h1 className="text-2xl font-bold">Contacts</h1>
+            <p className="text-sm text-gray-400 mt-1">Manage your contact groups and numbers — organize, add, and edit contacts quickly.</p>
+          </div>
+
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setShowCreateGroupModal(true)}
-              className="border border-white/15 hover:border-white/30 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+              className="border border-white/12 hover:border-white/30 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
             >
               <Tags size={16} /> Create Group
             </button>
@@ -261,12 +293,33 @@ export default function GroupsPage() {
               <UserPlus size={16} /> Add Contact
             </button>
           </div>
+        </div>
 
-          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-            <div className="flex items-center gap-2 text-xs text-gray-400">
-              <Filter size={14} />
-              <span>Filter by group</span>
+        {/* Groups cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          {sortedGroups.map((group) => (
+            <div key={group._id} className="bg-[#111] border border-white/6 rounded-xl p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="inline-block w-3.5 h-3.5 rounded-full" style={{ backgroundColor: group.color || '#25D366' }} />
+                <div>
+                  <div className="text-sm font-semibold">{group.name}</div>
+                  <div className="text-xs text-gray-400">{(group.numbers || []).length} contacts</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleOpenEditGroup(group)} className="p-2 rounded-md hover:bg-white/5 transition-colors"><Edit2 size={16} /></button>
+                <button onClick={() => handleDeleteGroup(group._id)} className="p-2 rounded-md hover:bg-white/5 transition-colors text-red-400"><Trash2 size={16} /></button>
+              </div>
             </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-xs text-gray-400">
+            <Filter size={14} />
+            <span>Filter</span>
+          </div>
+          <div className="flex gap-2">
             <select
               value={groupFilter}
               onChange={(e) => setGroupFilter(e.target.value)}
@@ -296,9 +349,16 @@ export default function GroupsPage() {
             <Loader2 className="animate-spin text-[#25D366]" size={30} />
           </div>
         ) : filteredAndSortedContacts.length === 0 ? (
-          <div className="bg-[#111] border border-white/10 rounded-2xl p-10 text-center">
-            <p className="text-gray-400">No contacts found for this selection.</p>
-            <p className="text-xs text-gray-500 mt-2">Use Add Contact to save names and numbers with one or more groups.</p>
+          <div className="flex items-center justify-center py-24">
+            <div className="text-center">
+              <Users size={48} className="mx-auto text-gray-500" />
+              <h3 className="text-lg font-semibold mt-4 text-white">No contacts yet</h3>
+              <p className="text-sm text-gray-400 mt-2">Add your first contact to get started — assign them to one or more groups.</p>
+              <div className="mt-4 flex items-center justify-center gap-3">
+                <button onClick={() => setShowAddContactModal(true)} className="bg-[#25D366] px-4 py-2 rounded-lg text-black font-semibold">Add Contact</button>
+                <button onClick={() => setShowCreateGroupModal(true)} className="border border-white/10 px-4 py-2 rounded-lg text-white">Create Group</button>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
@@ -307,32 +367,32 @@ export default function GroupsPage() {
                 <thead className="bg-white/5 text-gray-300">
                   <tr>
                     <th className="text-left font-semibold px-4 py-3">Name</th>
-                    <th className="text-left font-semibold px-4 py-3">Number</th>
-                    <th className="text-left font-semibold px-4 py-3">Tag (Groups)</th>
+                    <th className="text-left font-semibold px-4 py-3">Phone</th>
+                    <th className="text-left font-semibold px-4 py-3">Groups</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredAndSortedContacts.map((contact) => (
-                    <tr key={contact.id} className="border-t border-white/5">
-                      <td className="px-4 py-3 text-white">{contact.name || '-'}</td>
-                      <td className="px-4 py-3 text-gray-300">{formatPhoneNumber(contact.phone)}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          {[...contact.groups]
-                            .sort((a, b) => a.name.localeCompare(b.name))
-                            .map((group) => (
-                              <span
-                                key={`${contact.id}-${group.id}`}
-                                className="text-xs px-2.5 py-1 rounded-full border"
-                                style={{ borderColor: `${group.color}66`, color: group.color }}
-                              >
-                                {group.name}
-                              </span>
-                            ))}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                      <tr key={contact.id} className="border-t border-white/5 odd:bg-white/5">
+                        <td className="px-4 py-3 text-white">{contact.name || '-'}</td>
+                        <td className="px-4 py-3 text-gray-300">{formatPhoneNumber(contact.phone)}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {[...contact.groups]
+                              .sort((a, b) => a.name.localeCompare(b.name))
+                              .map((group) => (
+                                <span
+                                  key={`${contact.id}-${group.id}`}
+                                  className="text-xs px-2.5 py-1 rounded-full border"
+                                  style={{ borderColor: `${group.color}66`, color: group.color }}
+                                >
+                                  {group.name}
+                                </span>
+                              ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
