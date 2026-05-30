@@ -14,7 +14,7 @@ import {
 } from '@/lib/phone';
 import {
   Upload, X, Send, Bot, Loader2, CheckCircle, XCircle,
-  SkipForward, Phone, Edit2, Trash2, Plus
+  SkipForward, Phone, Edit2, Trash2, Plus, BarChart3, Wifi
 } from 'lucide-react';
 
 const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent', 'Other'];
@@ -312,6 +312,38 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+      {/* STATS ROW */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-[#111] border rounded-xl border-[#1f1f1f] p-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-[#0b0b0b] flex items-center justify-center text-[#25D366]"><BarChart3 size={18} /></div>
+            <div>
+              <div className="text-xs text-gray-400">Total Numbers Added</div>
+              <div className="text-lg font-semibold">{numbers.length}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-[#111] border rounded-xl border-[#1f1f1f] p-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-[#0b0b0b] flex items-center justify-center text-white"><CheckCircle size={18} className="text-[#25D366]" /></div>
+            <div>
+              <div className="text-xs text-gray-400">Messages Sent Today</div>
+              <div className="text-lg font-semibold">{progress?.sent || 0}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-[#111] border rounded-xl border-[#1f1f1f] p-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-[#0b0b0b] flex items-center justify-center text-white"><Wifi size={18} className={waStatus === 'connected' ? 'text-[#25D366]' : 'text-red-400'} /></div>
+            <div>
+              <div className="text-xs text-gray-400">WhatsApp Status</div>
+              <div className="text-lg font-semibold capitalize">{waStatus}</div>
+            </div>
+          </div>
+        </div>
+      </div>
         {/* CONTACTS MODAL */}
         {showContactsModal && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -439,9 +471,12 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
           {/* LEFT — NUMBERS */}
-          <div className="bg-[#111] border border-white/5 rounded-2xl p-6 space-y-4">
+          <div className="bg-[#111] border border-[#1f1f1f] rounded-xl p-8 space-y-4 shadow-sm">
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-sm">Phone Numbers</h2>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-md bg-[#0a0a0a]"><Phone size={18} className="text-[#25D366]" /></div>
+                <h2 className="font-semibold text-sm">Phone Numbers</h2>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">{numbers.length} added</span>
                 <button
@@ -509,8 +544,11 @@ export default function Dashboard() {
           </div>
 
           {/* RIGHT — MESSAGE */}
-          <div className="bg-[#111] border border-white/5 rounded-2xl p-6 space-y-4">
-            <h2 className="font-semibold text-sm">Message</h2>
+          <div className="bg-[#111] border border-[#1f1f1f] rounded-xl p-8 space-y-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-md bg-[#0a0a0a]"><Bot size={18} className="text-[#25D366]" /></div>
+              <h2 className="font-semibold text-sm">Message</h2>
+            </div>
 
             {/* Mode Toggle */}
             <div className="flex gap-2">
@@ -737,17 +775,19 @@ export default function Dashboard() {
         </div>
 
         {/* SEND BUTTON */}
-        <button
-          onClick={handleSend}
-          disabled={sending || waStatus !== 'connected' || numbers.length === 0 || !message.trim()}
-          className="w-full bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-40 disabled:cursor-not-allowed text-black font-bold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2 text-base cursor-pointer"
-        >
-          {sending ? (
-            <><Loader2 size={18} className="animate-spin" /> Sending...</>
-          ) : (
-            <><Send size={18} /> Send to {numbers.length} {numbers.length === 1 ? 'number' : 'numbers'}</>
-          )}
-        </button>
+        <div className="mt-6">
+          <button
+            onClick={handleSend}
+            disabled={sending || waStatus !== 'connected' || numbers.length === 0 || !message.trim()}
+            className="w-full bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-40 disabled:cursor-not-allowed text-black font-bold py-4 rounded-2xl transition-colors flex items-center justify-center gap-2 text-lg cursor-pointer"
+          >
+            {sending ? (
+              <><Loader2 size={18} className="animate-spin" /> Sending...</>
+            ) : (
+              <><Send size={18} /> Send to {numbers.length} {numbers.length === 1 ? 'number' : 'numbers'}</>
+            )}
+          </button>
+        </div>
 
         {/* PROGRESS */}
         {progress && (

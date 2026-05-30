@@ -154,7 +154,7 @@ export default function DashboardLayout({ children }) {
   return (
     <DashboardShellProvider value={shellValue}>
       <div className="min-h-screen bg-[#0a0a0a] text-white lg:flex">
-        <aside className="lg:sticky lg:top-0 lg:h-screen lg:w-64 border-b lg:border-b-0 lg:border-r border-white/5 bg-[#111]">
+        <aside className="lg:sticky lg:top-0 lg:h-screen lg:w-64 border-r border-[#1f1f1f] bg-[#111] flex flex-col">
           <div className="h-16 px-5 flex items-center gap-3 border-b border-white/5">
             <div className="w-9 h-9 rounded-xl bg-[#25D366] flex items-center justify-center"><MessageSquare size={17} className="text-black" /></div>
             <div>
@@ -162,37 +162,65 @@ export default function DashboardLayout({ children }) {
               <div className="text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1">Campaigns</div>
             </div>
           </div>
-          <nav className="p-3 flex gap-2 overflow-x-auto lg:block lg:space-y-1">
-            {navItems.map(({ href, label, icon: Icon }) => {
-              const active = pathname === href;
-              return (
-                <Link key={href} href={href} className={`flex items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm transition-colors ${active ? 'bg-[#25D366] text-black font-semibold' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
-                  <Icon size={17} /> {label}
-                </Link>
-              );
-            })}
+
+          <nav className="p-3 flex-1 overflow-y-auto">
+            <div className="text-xs text-gray-500 px-3 mb-2 mt-2">MAIN</div>
+            <div className="space-y-1">
+              {navItems.slice(0,4).map(({ href, label, icon: Icon }) => {
+                const active = pathname === href;
+                return (
+                  <Link key={href} href={href} className={`flex items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm transition-colors ${active ? 'bg-[#25D366] text-black font-semibold' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
+                    <Icon size={17} /> {label}
+                  </Link>
+                );
+              })}
+            </div>
+
+            <div className="text-xs text-gray-500 px-3 my-3">MANAGE</div>
+            <div className="space-y-1">
+              {navItems.slice(4).map(({ href, label, icon: Icon }) => {
+                const active = pathname === href;
+                return (
+                  <Link key={href} href={href} className={`flex items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm transition-colors ${active ? 'bg-[#25D366] text-black font-semibold' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
+                    <Icon size={17} /> {label}
+                  </Link>
+                );
+              })}
+            </div>
           </nav>
+
+          <div className="px-4 py-3 border-t border-white/5">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center text-sm font-semibold text-white">{user?.name?.split(' ').map(n=>n[0]).slice(0,2).join('') || 'U'}</div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate">{user?.name}</div>
+                <div className="text-xs text-gray-400">{user?.email}</div>
+              </div>
+              <button onClick={async () => await logout()} className="text-gray-400 hover:text-red-400 ml-2" aria-label="Logout"><LogOut size={16} /></button>
+            </div>
+          </div>
         </aside>
 
         <div className="min-w-0 flex-1">
           <header className="sticky top-0 z-40 h-16 border-b border-white/5 bg-[#0a0a0a]/90 backdrop-blur px-4 md:px-8 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-sm text-gray-500">Dashboard</div>
+              <div className="text-sm text-gray-500">{navItems.find(item => item.href === pathname)?.label || 'Dashboard'}</div>
               <div className="truncate text-base font-semibold">{navItems.find(item => item.href === pathname)?.label || 'Dashboard'}</div>
             </div>
-            <div className="flex items-center gap-2 md:gap-3">
+            <div className="flex items-center gap-3 md:gap-4">
               {sessionLoading && <span className="hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400"><Loader2 size={13} className="animate-spin" /> Syncing</span>}
-              <span className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border ${waStatus === 'connected' ? 'bg-[#25D366]/10 border-[#25D366]/30 text-[#25D366]' : waStatus === 'pending' ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${waStatus === 'connected' ? 'bg-[#25D366]' : waStatus === 'pending' ? 'bg-yellow-400' : 'bg-red-400'}`} />
-                {waStatus === 'connected' ? 'Connected' : waStatus === 'pending' ? 'Scanning' : 'Disconnected'}
-              </span>
-              {waStatus === 'connected' ? (
-                <button onClick={handleDisconnect} className="hidden sm:flex items-center gap-2 text-xs border border-white/10 hover:border-red-400/40 hover:text-red-400 px-3 py-2 rounded-xl transition-colors"><WifiOff size={14} /> Disconnect</button>
-              ) : (
-                <button onClick={() => handleConnect()} className="flex items-center gap-2 text-xs bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-3 py-2 rounded-xl transition-colors"><Wifi size={14} /> Connect</button>
-              )}
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border border-white/5">
+                  <span className={`w-2 h-2 rounded-full ${waStatus === 'connected' ? 'bg-[#25D366]' : 'bg-red-500'}`} />
+                  {waStatus === 'connected' ? 'Connected' : waStatus === 'pending' ? 'Scanning' : 'Disconnected'}
+                </span>
+                {waStatus === 'connected' ? (
+                  <button onClick={handleDisconnect} className="hidden sm:flex items-center gap-2 text-xs border border-white/10 hover:border-red-400/40 hover:text-red-400 px-3 py-2 rounded-xl transition-colors"><WifiOff size={14} /> Disconnect</button>
+                ) : (
+                  <button onClick={() => handleConnect()} className="flex items-center gap-2 text-xs bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-3 py-2 rounded-xl transition-colors"><Wifi size={14} /> Connect</button>
+                )}
+              </div>
               <div className="hidden md:block text-sm text-gray-400 max-w-32 truncate">{user?.name}</div>
-              <button onClick={() => setShowLogoutConfirm(true)} className="text-gray-500 hover:text-red-400 transition-colors" aria-label="Logout"><LogOut size={17} /></button>
             </div>
           </header>
 
