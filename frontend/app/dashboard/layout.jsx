@@ -1,0 +1,245 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
+import { BarChart3, BookOpen, CheckCircle, History, Key, Loader2, LogOut, MessageSquare, QrCode, Send, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { whatsappAPI } from '@/lib/api';
+import useWebSocket from '@/hooks/useWebSocket';
+import { DashboardShellProvider } from './DashboardShellContext';
+
+const navItems = [
+  { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
+  { href: '/dashboard/groups', label: 'Contacts', icon: Users },
+  { href: '/dashboard/scheduled', label: 'Campaigns', icon: Send },
+  { href: '/dashboard/history', label: 'History', icon: History },
+  { href: '/dashboard/api-keys', label: 'API Keys', icon: Key },
+];
+
+export default function DashboardLayout({ children }) {
+  const { user, loading, logout } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [waStatus, setWaStatus] = useState('disconnected');
+  const [qrImage, setQrImage] = useState(null);
+  const [showQR, setShowQR] = useState(false);
+  const [qrStatusText, setQrStatusText] = useState('Waiting for QR code...');
+  const [connectError, setConnectError] = useState('');
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await whatsappAPI.getStatus();
+      setWaStatus(res.data.status === 'connected' ? 'connected' : 'disconnected');
+    } catch {
+    } finally {
+      setSessionLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !user) router.push('/login');
+  }, [loading, router, user]);
+
+  useEffect(() => {
+    if (user) fetchStatus();
+  }, [fetchStatus, user]);
+
+  useEffect(() => {
+    if (!showQR || waStatus !== 'pending') return;
+    const id = setInterval(fetchStatus, 2000);
+    return () => clearInterval(id);
+  }, [fetchStatus, showQR, waStatus]);
+
+  const handleWsMessage = useCallback((data) => {
+    if (data.type === 'qr') {
+      setQrImage(data.qr);
+      setShowQR(true);
+      setWaStatus('pending');
+      setQrStatusText('Scan the QR code in WhatsApp to finish connecting.');
+      setConnectError('');
+    }
+    if (data.type === 'ready') {
+      setWaStatus('connected');
+      setShowQR(false);
+      setQrImage(null);
+      setQrStatusText('WhatsApp connected successfully.');
+      setConnectError('');
+      setSending(false);
+      setProgress(null);
+      toast.success('WhatsApp connected!');
+    }
+    if (data.type === 'disconnected') {
+      setWaStatus('disconnected');
+      setShowQR(false);
+      setQrImage(null);
+      setQrStatusText('Connection closed. Click Connect to start again.');
+      setSending(false);
+      toast.error(data.reason || 'WhatsApp disconnected');
+    }
+    if (data.type === 'progress') setProgress(data);
+    if (data.type === 'sendingComplete') {
+      setSending(false);
+      toast.success('All messages sent!');
+    }
+    if (data.type === 'sendingError') {
+      setSending(false);
+      toast.error(`Sending failed: ${data.error}`);
+    }
+  }, []);
+
+  useWebSocket(handleWsMessage);
+
+  const handleConnect = async (options = {}) => {
+    try {
+      setShowQR(true);
+      setQrImage(null);
+      setConnectError('');
+      setQrStatusText('Starting WhatsApp connection...');
+      setWaStatus('pending');
+      await whatsappAPI.connect();
+      if (!options.silent) toast('Scan the QR code to connect', { icon: 'QR' });
+    } catch (err) {
+      setConnectError(err.response?.data?.error || 'Connection failed');
+      setQrStatusText('Could not start the connection.');
+      toast.error(err.response?.data?.error || 'Connection failed');
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await whatsappAPI.disconnect();
+      setWaStatus('disconnected');
+      setShowQR(false);
+      setQrImage(null);
+      setQrStatusText('Connection closed.');
+      setConnectError('');
+      toast.success('WhatsApp disconnected');
+    } catch {
+      toast.error('Disconnect failed');
+    }
+  };
+
+  const handleRegenerateQr = async () => {
+    try {
+      setQrStatusText('Restarting WhatsApp connection...');
+      await whatsappAPI.disconnect();
+      setWaStatus('disconnected');
+      setQrImage(null);
+      await handleConnect({ silent: true });
+    } catch (err) {
+      setConnectError(err.response?.data?.error || 'Could not regenerate QR');
+      toast.error(err.response?.data?.error || 'Could not regenerate QR');
+    }
+  };
+
+  const shellValue = useMemo(() => ({
+    waStatus,
+    sending,
+    progress,
+    setSending,
+    setProgress,
+  }), [progress, sending, waStatus]);
+
+  if (loading) {
+    return <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center"><Loader2 className="animate-spin text-[#25D366]" size={32} /></div>;
+  }
+
+  return (
+    <DashboardShellProvider value={shellValue}>
+      <div className="min-h-screen bg-[#0a0a0a] text-white lg:flex">
+        <aside className="lg:sticky lg:top-0 lg:h-screen lg:w-64 border-b lg:border-b-0 lg:border-r border-white/5 bg-[#111]">
+          <div className="h-16 px-5 flex items-center gap-3 border-b border-white/5">
+            <div className="w-9 h-9 rounded-xl bg-[#25D366] flex items-center justify-center"><MessageSquare size={17} className="text-black" /></div>
+            <div>
+              <div className="font-bold leading-none">WA Sender</div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1">Campaigns</div>
+            </div>
+          </div>
+          <nav className="p-3 flex gap-2 overflow-x-auto lg:block lg:space-y-1">
+            {navItems.map(({ href, label, icon: Icon }) => {
+              const active = pathname === href;
+              return (
+                <Link key={href} href={href} className={`flex items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm transition-colors ${active ? 'bg-[#25D366] text-black font-semibold' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
+                  <Icon size={17} /> {label}
+                </Link>
+              );
+            })}
+          </nav>
+        </aside>
+
+        <div className="min-w-0 flex-1">
+          <header className="sticky top-0 z-40 h-16 border-b border-white/5 bg-[#0a0a0a]/90 backdrop-blur px-4 md:px-8 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm text-gray-500">Dashboard</div>
+              <div className="truncate text-base font-semibold">{navItems.find(item => item.href === pathname)?.label || 'Dashboard'}</div>
+            </div>
+            <div className="flex items-center gap-2 md:gap-3">
+              {sessionLoading && <span className="hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400"><Loader2 size={13} className="animate-spin" /> Syncing</span>}
+              <span className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border ${waStatus === 'connected' ? 'bg-[#25D366]/10 border-[#25D366]/30 text-[#25D366]' : waStatus === 'pending' ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${waStatus === 'connected' ? 'bg-[#25D366]' : waStatus === 'pending' ? 'bg-yellow-400' : 'bg-red-400'}`} />
+                {waStatus === 'connected' ? 'Connected' : waStatus === 'pending' ? 'Scanning' : 'Disconnected'}
+              </span>
+              {waStatus === 'connected' ? (
+                <button onClick={handleDisconnect} className="hidden sm:flex items-center gap-2 text-xs border border-white/10 hover:border-red-400/40 hover:text-red-400 px-3 py-2 rounded-xl transition-colors"><WifiOff size={14} /> Disconnect</button>
+              ) : (
+                <button onClick={() => handleConnect()} className="flex items-center gap-2 text-xs bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-3 py-2 rounded-xl transition-colors"><Wifi size={14} /> Connect</button>
+              )}
+              <div className="hidden md:block text-sm text-gray-400 max-w-32 truncate">{user?.name}</div>
+              <button onClick={() => setShowLogoutConfirm(true)} className="text-gray-500 hover:text-red-400 transition-colors" aria-label="Logout"><LogOut size={17} /></button>
+            </div>
+          </header>
+
+          <main>{children}</main>
+        </div>
+
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[#111] border border-white/10 rounded-2xl p-6 max-w-sm w-full">
+              <h3 className="font-bold text-lg mb-2">Are you sure you want to logout?</h3>
+              <p className="text-sm text-gray-400 mb-6">Your current dashboard session will close and you will need to sign in again.</p>
+              <div className="flex gap-3">
+                <button onClick={async () => { setShowLogoutConfirm(false); await logout(); }} className="flex-1 bg-red-500 hover:bg-red-400 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm">Yes, Logout</button>
+                <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm">Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showQR && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[#111] border border-white/10 rounded-2xl p-8 text-center max-w-sm w-full">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="text-left">
+                  <h3 className="font-bold text-lg mb-1">Connect WhatsApp</h3>
+                  <p className="text-gray-400 text-sm">Open WhatsApp, Linked Devices, then Link a Device.</p>
+                </div>
+                <button onClick={() => setShowQR(false)} className="text-gray-500 hover:text-white transition-colors" aria-label="Close QR popup"><X size={18} /></button>
+              </div>
+              <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-5 mb-5 min-h-[17rem] flex flex-col items-center justify-center">
+                {qrImage ? (
+                  <div className="bg-white p-4 rounded-xl inline-block mb-4"><Image src={qrImage} alt="QR Code" width={192} height={192} unoptimized className="w-48 h-48" /></div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-10 text-center"><Loader2 size={28} className="animate-spin text-[#25D366] mb-3" /><p className="text-white font-medium">Waiting for QR code...</p><p className="text-gray-500 text-sm mt-1">This usually takes a few seconds.</p></div>
+                )}
+                <div className="mt-2 text-sm text-gray-300">{qrStatusText}</div>
+                {connectError && <div className="mt-3 text-sm text-red-400">{connectError}</div>}
+              </div>
+              <div className="flex items-center gap-3">
+                <button onClick={handleRegenerateQr} className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm">Re-generate QR</button>
+                <button onClick={() => setShowQR(false)} className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm">Close</button>
+              </div>
+              {waStatus === 'pending' && !qrImage && <div className="flex items-center justify-center gap-2 text-yellow-400 text-sm mt-4"><Loader2 size={14} className="animate-spin" /> Waiting for scan...</div>}
+            </div>
+          </div>
+        )}
+      </div>
+    </DashboardShellProvider>
+  );
+}

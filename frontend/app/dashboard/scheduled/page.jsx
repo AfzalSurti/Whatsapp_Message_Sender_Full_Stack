@@ -410,18 +410,6 @@ export default function ScheduledPage() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       {/* NAVBAR */}
-      <nav className="border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between">
-        <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-70 transition-opacity">
-          <ChevronLeft size={20} />
-          <span className="font-semibold">Scheduled Campaigns</span>
-        </Link>
-        <button
-          onClick={() => setShowScheduleForm(true)}
-          className="bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-4 py-2 rounded-xl transition-colors text-sm flex items-center gap-2 cursor-pointer"
-        >
-          <Plus size={16} /> Schedule
-        </button>
-      </nav>
 
       {/* TABS */}
       <div className="border-b border-white/5 px-6 md:px-10 flex gap-8">

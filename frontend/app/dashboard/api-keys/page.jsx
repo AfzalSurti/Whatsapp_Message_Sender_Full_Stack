@@ -5,10 +5,9 @@ import { useAuth } from '@/context/AuthContext';
 import { keysAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import {
-  Copy, Eye, EyeOff, Trash2, Plus, Loader2, X, Check, ArrowLeft,
+  Copy, Eye, Trash2, Plus, Loader2, X, Check,
   Key, Code, TrendingUp, Zap
 } from 'lucide-react';
-import Link from 'next/link';
 
 export default function ApiKeysPage() {
   const { user, loading } = useAuth();
@@ -123,22 +122,6 @@ export default function ApiKeysPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
-
-      {/* NAVBAR */}
-      <nav className="border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="text-gray-400 hover:text-white transition-colors">
-            <ArrowLeft size={18} />
-          </Link>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#25D366] flex items-center justify-center">
-              <Key size={15} className="text-black" />
-            </div>
-            <span className="font-bold text-base">API Keys</span>
-          </div>
-        </div>
-      </nav>
-
       {/* MAIN */}
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
 

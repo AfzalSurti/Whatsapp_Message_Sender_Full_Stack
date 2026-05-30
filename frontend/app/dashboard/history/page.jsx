@@ -4,10 +4,9 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { logsAPI } from '@/lib/api';
 import { 
-  MessageSquare, ArrowLeft, CheckCircle, XCircle, 
+  MessageSquare, CheckCircle, XCircle, 
   SkipForward, Loader2, Filter, Download
 } from 'lucide-react';
-import Link from 'next/link';
 
 const statusConfig = {
   sent:    { icon: <CheckCircle size={13} />,  color: 'text-[#25D366]', bg: 'bg-[#25D366]/10 border-[#25D366]/20', label: 'Sent' },
@@ -91,31 +90,17 @@ export default function HistoryPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
-
-      {/* NAVBAR */}
-      <nav className="border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="text-gray-400 hover:text-white transition-colors">
-            <ArrowLeft size={18} />
-          </Link>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-[#25D366] flex items-center justify-center">
-              <MessageSquare size={13} className="text-black" />
-            </div>
-            <span className="font-bold text-base">History</span>
-          </div>
-        </div>
-
-        <button
-          onClick={exportCSV}
-          disabled={logs.length === 0}
-          className="flex items-center gap-2 text-xs text-gray-400 hover:text-white border border-white/10 hover:border-white/20 px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Download size={13} /> Export CSV
-        </button>
-      </nav>
-
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold">History</h1>
+          <button
+            onClick={exportCSV}
+            disabled={logs.length === 0}
+            className="flex items-center gap-2 text-xs text-gray-400 hover:text-white border border-white/10 hover:border-white/20 px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Download size={13} /> Export CSV
+          </button>
+        </div>
 
         {/* TABS */}
         <div className="flex gap-2">

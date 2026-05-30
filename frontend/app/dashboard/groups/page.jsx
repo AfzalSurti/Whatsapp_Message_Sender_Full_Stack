@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { groupsAPI } from '@/lib/api';
@@ -13,7 +12,6 @@ import {
   normalizePhoneNumber
 } from '@/lib/phone';
 import {
-  ChevronLeft,
   Loader2,
   Plus,
   X,
@@ -245,31 +243,24 @@ export default function GroupsPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
-      <nav className="border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between gap-3">
-        <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-70 transition-opacity">
-          <ChevronLeft size={20} />
-          <span className="font-semibold">Contacts</span>
-        </Link>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowCreateGroupModal(true)}
-            className="border border-white/15 hover:border-white/30 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
-          >
-            <Tags size={16} /> Create Group
-          </button>
-          <button
-            onClick={() => setShowAddContactModal(true)}
-            className="bg-[#25D366] hover:bg-[#1ebe5d] text-black text-sm font-semibold px-4 py-2 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
-          >
-            <UserPlus size={16} /> Add Contact
-          </button>
-        </div>
-      </nav>
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <h1 className="text-xl font-bold">Contact Directory</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-bold mr-2">Contact Directory</h1>
+            <button
+              onClick={() => setShowCreateGroupModal(true)}
+              className="border border-white/15 hover:border-white/30 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <Tags size={16} /> Create Group
+            </button>
+            <button
+              onClick={() => setShowAddContactModal(true)}
+              className="bg-[#25D366] hover:bg-[#1ebe5d] text-black text-sm font-semibold px-4 py-2 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <UserPlus size={16} /> Add Contact
+            </button>
+          </div>
 
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
             <div className="flex items-center gap-2 text-xs text-gray-400">

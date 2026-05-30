@@ -1,12 +1,11 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 import { whatsappAPI, aiAPI, contactsAPI } from '@/lib/api';
-import useWebSocket from '@/hooks/useWebSocket';
 import toast from 'react-hot-toast';
 import InternationalPhoneInput from '@/components/InternationalPhoneInput';
+import { useDashboardShell } from './DashboardShellContext';
 import {
   DEFAULT_PHONE_COUNTRY,
   digitsOnly,
@@ -14,11 +13,9 @@ import {
   formatPhoneNumber
 } from '@/lib/phone';
 import {
-  MessageSquare, LogOut, Wifi, WifiOff, Upload, X,
-  Send, Bot, History, Loader2, CheckCircle, XCircle,
-  SkipForward, User, ChevronRight, Phone, Edit2, Trash2, Plus, Key, Clock
+  Upload, X, Send, Bot, Loader2, CheckCircle, XCircle,
+  SkipForward, Phone, Edit2, Trash2, Plus
 } from 'lucide-react';
-import Link from 'next/link';
 
 const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent', 'Other'];
 const AI_LANGUAGES = ['English', 'Hindi', 'Gujarati', 'English + Urdu', 'Other'];
@@ -49,17 +46,9 @@ const AI_PRESETS = [
 const DEFAULT_COUNTRY = DEFAULT_PHONE_COUNTRY;
 
 export default function Dashboard() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
-
-  // WhatsApp state
-  const [waStatus, setWaStatus] = useState('disconnected'); // disconnected | pending | connected
-  const [qrImage, setQrImage] = useState(null);
-  const [showQR, setShowQR] = useState(false);
-  const [qrStatusText, setQrStatusText] = useState('Waiting for QR code...');
-  const [connectError, setConnectError] = useState('');
-  const [connectionNotice, setConnectionNotice] = useState('');
-  const [sessionLoading, setSessionLoading] = useState(true);
+  const { waStatus, sending, setSending, progress, setProgress } = useDashboardShell();
 
   // Message state
   const [numbers, setNumbers] = useState([]);
@@ -80,12 +69,6 @@ export default function Dashboard() {
   const [aiRefineLoading, setAiRefineLoading] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [messageMode, setMessageMode] = useState('manual'); // manual | ai
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-
-  // Sending state
-  const [sending, setSending] = useState(false);
-  const [progress, setProgress] = useState(null);
-
   // Contacts state
   const [savedContacts, setSavedContacts] = useState([]);
   const [showContactsModal, setShowContactsModal] = useState(false);
@@ -94,24 +77,6 @@ export default function Dashboard() {
   const [newContactName, setNewContactName] = useState('');
   const [newContactCountry, setNewContactCountry] = useState(DEFAULT_COUNTRY);
   const [newContactPhone, setNewContactPhone] = useState('');
-
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await whatsappAPI.getStatus();
-      const nextStatus = res.data.status === 'connected' ? 'connected' : 'disconnected';
-      setWaStatus(nextStatus);
-
-      if (nextStatus === 'connected') {
-        setShowQR(false);
-        setQrImage(null);
-        setQrStatusText('WhatsApp connected successfully.');
-        setConnectionNotice('Yes, WhatsApp connected.');
-        setConnectError('');
-      }
-    } catch {} finally {
-      setSessionLoading(false);
-    }
-  }, []);
 
   const fetchContacts = useCallback(async () => {
     try {
@@ -127,29 +92,10 @@ export default function Dashboard() {
     if (!loading && !user) router.push('/login');
   }, [user, loading, router]);
 
-  // Fetch WhatsApp status on load
-  useEffect(() => {
-    if (user) {
-      fetchStatus();
-    }
-  }, [user, fetchStatus]);
-
   // Fetch contacts on load
   useEffect(() => {
     if (user) fetchContacts();
   }, [user, fetchContacts]);
-
-  useEffect(() => {
-    if (!showQR || waStatus !== 'pending') {
-      return;
-    }
-
-    const intervalId = setInterval(() => {
-      fetchStatus();
-    }, 2000);
-
-    return () => clearInterval(intervalId);
-  }, [showQR, waStatus, fetchStatus]);
 
   const handleAddContact = async () => {
     if (!newContactName.trim() || !newContactPhone.trim()) {
@@ -219,114 +165,6 @@ export default function Dashboard() {
       toast.success(`Added ${contact.name}`);
     } else {
       toast.error('Number already added');
-    }
-  };
-
-  // WebSocket message handler
-  const handleWsMessage = useCallback((data) => {
-    if (data.type === 'qr') {
-      setQrImage(data.qr);
-      setShowQR(true);
-      setWaStatus('pending');
-      setQrStatusText('Scan the QR code in WhatsApp to finish connecting.');
-      setConnectError('');
-    }
-    if (data.type === 'ready') {
-      setWaStatus('connected');
-      setShowQR(false);
-      setQrImage(null);
-      setQrStatusText('WhatsApp connected successfully.');
-      setConnectionNotice('Yes, WhatsApp connected.');
-      setConnectError('');
-      setSending(false);
-      setProgress(null);
-      toast.success('WhatsApp connected!');
-    }
-    if (data.type === 'disconnected') {
-      setWaStatus('disconnected');
-      if (typeof data.reason === 'string' && /failed to launch|browser failed to start|initialization failed/i.test(data.reason)) {
-        setShowQR(true);
-        setQrStatusText('WhatsApp could not start the browser. Check the backend terminal for the Chrome launch error.');
-      } else {
-        setShowQR(false);
-        setQrImage(null);
-        setQrStatusText('Connection closed. Click Connect to start again.');
-      }
-      setConnectionNotice('');
-      setSending(false);
-      toast.error(typeof data.reason === 'string' && data.reason ? data.reason : 'WhatsApp disconnected');
-    }
-    if (data.type === 'progress') {
-      setProgress(data);
-      if (data.lastError) {
-        setConnectError(data.lastError);
-      }
-    }
-    if (data.type === 'sendingComplete') {
-      setSending(false);
-      toast.success('All messages sent!');
-    }
-    if (data.type === 'sendingError') {
-      setSending(false);
-      toast.error(`Sending failed: ${data.error}`);
-    }
-  }, []);
-
-  useWebSocket(handleWsMessage);
-
-  // Connect WhatsApp
-  const handleConnect = async (options = {}) => {
-    try {
-      setShowQR(true);
-      setQrImage(null);
-      setConnectError('');
-      setQrStatusText('Starting WhatsApp connection...');
-      setConnectionNotice('');
-      setWaStatus('pending');
-
-      await whatsappAPI.connect();
-      if (!options.silent) {
-        toast('Scan the QR code to connect', { icon: '📱' });
-      }
-    } catch (err) {
-      setConnectError(err.response?.data?.error || 'Connection failed');
-      setQrStatusText('Could not start the connection.');
-      toast.error(err.response?.data?.error || 'Connection failed');
-    }
-  };
-
-  const handleRegenerateQr = async () => {
-    try {
-      setQrStatusText('Restarting WhatsApp connection...');
-      await whatsappAPI.disconnect();
-      setWaStatus('disconnected');
-      setQrImage(null);
-      setConnectionNotice('');
-      await handleConnect({ silent: true });
-    } catch (err) {
-      setConnectError(err.response?.data?.error || 'Could not regenerate QR');
-      toast.error(err.response?.data?.error || 'Could not regenerate QR');
-    }
-  };
-
-  const handleCloseQrPopup = () => {
-    setShowQR(false);
-    setConnectError('');
-  };
-
-  // Disconnect WhatsApp
-  const handleDisconnect = async () => {
-    try {
-      await whatsappAPI.disconnect();
-      setWaStatus('disconnected');
-      setShowQR(false);
-      setQrImage(null);
-      setQrStatusText('Connection closed.');
-      setConnectError('');
-      setConnectionNotice('');
-      toast.success('WhatsApp disconnected');
-    } catch (err) {
-      toast.error('Disconnect failed');
     }
   };
 
@@ -436,11 +274,6 @@ export default function Dashboard() {
     toast.success('Message added to campaign');
   };
 
-  const handleLogoutClick = async () => {
-    setShowLogoutConfirm(false);
-    await logout();
-  };
-
   // Send messages
   const handleSend = async () => {
     if (waStatus !== 'connected') {
@@ -478,175 +311,7 @@ export default function Dashboard() {
     : 0;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white">
-
-      {/* NAVBAR */}
-      <nav className="border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-[#25D366] flex items-center justify-center">
-            <MessageSquare size={15} className="text-black" />
-          </div>
-          <span className="font-bold text-base">WA Sender</span>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {/* Session Loading Message */}
-          {sessionLoading && (
-            <div className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400">
-              <Loader2 size={13} className="animate-spin" />
-              Retrieving your session...
-            </div>
-          )}
-
-          {/* WA Status Badge */}
-          <div className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border ${
-            waStatus === 'connected'
-              ? 'bg-[#25D366]/10 border-[#25D366]/30 text-[#25D366]'
-              : waStatus === 'pending'
-              ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
-              : 'bg-red-500/10 border-red-500/30 text-red-400'
-          }`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${
-              waStatus === 'connected' ? 'bg-[#25D366]' :
-              waStatus === 'pending' ? 'bg-yellow-400' : 'bg-red-400'
-            }`} />
-            {waStatus === 'connected' ? 'Connected' : waStatus === 'pending' ? 'Scanning...' : 'Disconnected'}
-          </div>
-
-          <Link href="/dashboard/groups" className="text-gray-400 hover:text-white transition-colors" title="Contacts">
-            <Phone size={18} />
-          </Link>
-
-          <Link href="/dashboard/scheduled" className="text-gray-400 hover:text-white transition-colors" title="Scheduled Campaigns">
-            <Clock size={18} />
-          </Link>
-
-          <Link href="/dashboard/history" className="text-gray-400 hover:text-white transition-colors" title="History">
-            <History size={18} />
-          </Link>
-
-          <Link href="/dashboard/api-keys" className="text-gray-400 hover:text-[#25D366] transition-colors" title="API Keys">
-            <Key size={18} />
-          </Link>
-
-          <div className="flex items-center gap-2 text-sm text-gray-400">
-            <User size={15} />
-            <span className="hidden md:inline">{user?.name}</span>
-          </div>
-
-          <button
-            onClick={() => setShowLogoutConfirm(true)}
-            className="text-gray-500 hover:text-red-400 transition-colors cursor-pointer"
-            aria-label="Logout"
-          >
-            <LogOut size={17} />
-          </button>
-        </div>
-      </nav>
-
-      {/* MAIN */}
-      <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
-        {showLogoutConfirm && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#111] border border-white/10 rounded-2xl p-6 max-w-sm w-full">
-              <h3 className="font-bold text-lg mb-2">Are you sure you want to logout?</h3>
-              <p className="text-sm text-gray-400 mb-6">Your current dashboard session will close and you will need to sign in again.</p>
-              <div className="flex gap-3">
-                <button
-                  onClick={handleLogoutClick}
-                  className="flex-1 bg-red-500 hover:bg-red-400 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-                >
-                  Yes, Logout
-                </button>
-                <button
-                  onClick={() => setShowLogoutConfirm(false)}
-                  className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* QR MODAL */}
-        {showQR && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#111] border border-white/10 rounded-2xl p-8 text-center max-w-sm w-full">
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <div className="text-left">
-                  <h3 className="font-bold text-lg mb-1">Connect WhatsApp</h3>
-                  <p className="text-gray-400 text-sm">Open WhatsApp → Linked Devices → Link a Device</p>
-                </div>
-                <button
-                  onClick={handleCloseQrPopup}
-                  className="text-gray-500 hover:text-white transition-colors"
-                  aria-label="Close QR popup"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-5 mb-5 min-h-[17rem] flex flex-col items-center justify-center">
-                {qrImage ? (
-                  <div className="bg-white p-4 rounded-xl inline-block mb-4">
-                    <Image
-                      src={qrImage}
-                      alt="QR Code"
-                      width={192}
-                      height={192}
-                      unoptimized
-                      className="w-48 h-48"
-                    />
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-10 text-center">
-                    <Loader2 size={28} className="animate-spin text-[#25D366] mb-3" />
-                    <p className="text-white font-medium">Waiting for QR code...</p>
-                    <p className="text-gray-500 text-sm mt-1">This usually takes a few seconds.</p>
-                  </div>
-                )}
-
-                <div className="mt-2 text-sm text-gray-300">
-                  {qrStatusText}
-                </div>
-
-                {connectError && (
-                  <div className="mt-3 text-sm text-red-400">{connectError}</div>
-                )}
-
-                {connectionNotice && !connectError && (
-                  <div className="mt-3 text-sm text-[#25D366] font-medium">
-                    {connectionNotice}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleRegenerateQr}
-                  className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-                >
-                  Re-generate QR
-                </button>
-                <button
-                  onClick={handleCloseQrPopup}
-                  className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-
-              {waStatus === 'pending' && !qrImage && (
-                <div className="flex items-center justify-center gap-2 text-yellow-400 text-sm mt-4">
-                  <Loader2 size={14} className="animate-spin" />
-                  Waiting for scan...
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
+    <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
         {/* CONTACTS MODAL */}
         {showContactsModal && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -768,43 +433,6 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-          </div>
-        )}
-
-        {/* CONNECT WHATSAPP CARD */}
-        {waStatus !== 'connected' && (
-          <div className="bg-[#111] border border-white/5 rounded-2xl p-6 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
-                <WifiOff size={18} className="text-red-400" />
-              </div>
-              <div>
-                <p className="font-semibold text-sm">WhatsApp Not Connected</p>
-                <p className="text-gray-500 text-xs mt-0.5">Scan QR to start sending messages</p>
-              </div>
-            </div>
-            <button
-              onClick={handleConnect}
-              className="bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2 cursor-pointer"
-            >
-              <Wifi size={15} /> Connect
-            </button>
-          </div>
-        )}
-
-        {/* CONNECTED BANNER */}
-        {waStatus === 'connected' && (
-          <div className="bg-[#25D366]/5 border border-[#25D366]/20 rounded-2xl p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <CheckCircle size={18} className="text-[#25D366]" />
-              <span className="text-sm font-medium text-[#25D366]">Yes, WhatsApp connected. Ready to send.</span>
-            </div>
-            <button
-              onClick={handleDisconnect}
-              className="text-xs text-gray-500 hover:text-red-400 transition-colors cursor-pointer"
-            >
-              Disconnect
-            </button>
           </div>
         )}
 
