@@ -4,7 +4,8 @@
 
 @layer base {
   body {
-    font-family: var(--font-geist-sans), sans-serif;
+    /* Use DM Sans from prototype for body and Syne for headings */
+    font-family: 'DM Sans', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
     @apply bg-white dark:bg-dark-bg text-gray-900 dark:text-white transition-colors duration-300;
   }
 

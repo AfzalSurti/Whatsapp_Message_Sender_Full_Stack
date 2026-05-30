@@ -16,6 +16,7 @@ import {
   Upload, X, Send, Bot, Loader2, CheckCircle, XCircle,
   SkipForward, Phone, Edit2, Trash2, Plus, BarChart3, Wifi
 } from 'lucide-react';
+import StatCard from '@/components/dashboard/StatCard';
 
 const AI_TONES = ['Friendly', 'Formal', 'Festive', 'Urgent', 'Other'];
 const AI_LANGUAGES = ['English', 'Hindi', 'Gujarati', 'English + Urdu', 'Other'];
@@ -314,35 +315,9 @@ export default function Dashboard() {
     <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
       {/* STATS ROW */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-[#111] border rounded-xl border-[#1f1f1f] p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#0b0b0b] flex items-center justify-center text-[#25D366]"><BarChart3 size={18} /></div>
-            <div>
-              <div className="text-xs text-gray-400">Total Numbers Added</div>
-              <div className="text-lg font-semibold">{numbers.length}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-[#111] border rounded-xl border-[#1f1f1f] p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#0b0b0b] flex items-center justify-center text-white"><CheckCircle size={18} className="text-[#25D366]" /></div>
-            <div>
-              <div className="text-xs text-gray-400">Messages Sent Today</div>
-              <div className="text-lg font-semibold">{progress?.sent || 0}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-[#111] border rounded-xl border-[#1f1f1f] p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#0b0b0b] flex items-center justify-center text-white"><Wifi size={18} className={waStatus === 'connected' ? 'text-[#25D366]' : 'text-red-400'} /></div>
-            <div>
-              <div className="text-xs text-gray-400">WhatsApp Status</div>
-              <div className="text-lg font-semibold capitalize">{waStatus}</div>
-            </div>
-          </div>
-        </div>
+        <StatCard icon={<BarChart3 size={18} />} title="Total Numbers Added" value={numbers.length} />
+        <StatCard icon={<CheckCircle size={18} />} title="Messages Sent Today" value={progress?.sent || 0} />
+        <StatCard icon={<Wifi size={18} className={waStatus === 'connected' ? 'text-[#25D366]' : 'text-red-400'} />} title="WhatsApp Status" value={waStatus} />
       </div>
         {/* CONTACTS MODAL */}
         {showContactsModal && (
