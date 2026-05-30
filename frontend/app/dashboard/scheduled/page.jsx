@@ -467,7 +467,7 @@ export default function ScheduledPage() {
                 ?? (campaign.individualNumbers?.length || 0);
 
               return (
-                <div key={campaign._id} className="bg-[#111] border border-white/8 rounded-xl p-5 flex items-start justify-between hover:border-white/20 transition-colors">
+                <div key={campaign._id} className="bg-[#111] border border-white/5 rounded-2xl p-5 flex items-start justify-between hover:border-white/20 transition-colors">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="font-semibold text-white">{campaign.name}</h3>
@@ -542,7 +542,7 @@ export default function ScheduledPage() {
       {/* SCHEDULE FORM MODAL */}
       {showScheduleForm && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#111] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-[#111] border border-white/5 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/5 sticky top-0 bg-[#111]">
               <div>

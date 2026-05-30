@@ -107,7 +107,7 @@ export default function HistoryPage() {
           <button
             onClick={exportCSV}
             disabled={logs.length === 0}
-            className="flex items-center gap-2 text-xs text-gray-300 hover:text-white border border-white/10 hover:border-white/20 px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 text-xs text-white hover:text-white border border-white/10 hover:border-white/20 px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Download size={13} /> Export CSV
           </button>

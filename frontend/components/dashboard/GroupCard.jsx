@@ -3,7 +3,7 @@ import { Edit2, Trash2 } from 'lucide-react';
 
 export default function GroupCard({ group, onEdit, onDelete }) {
   return (
-    <div className="bg-[#111] border border-white/6 rounded-xl p-4 flex items-center justify-between">
+    <div className="bg-[#111] border border-white/5 rounded-2xl p-4 flex items-center justify-between">
       <div className="flex items-center gap-3">
         <span className="inline-block w-3.5 h-3.5 rounded-full" style={{ backgroundColor: group.color || '#25D366' }} />
         <div>

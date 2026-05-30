@@ -283,7 +283,7 @@ export default function GroupsPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowCreateGroupModal(true)}
-              className="border border-white/12 hover:border-white/30 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+              className="border border-white/10 hover:border-white/20 text-white rounded-xl text-sm font-semibold px-4 py-2 transition-colors flex items-center gap-2 cursor-pointer"
             >
               <Tags size={16} /> Create Group
             </button>
@@ -312,7 +312,7 @@ export default function GroupsPage() {
             <select
               value={groupFilter}
               onChange={(e) => setGroupFilter(e.target.value)}
-              className="px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
+              className="px-3 py-2 bg-[#111] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366]"
             >
               <option value="all">All groups</option>
               {sortedGroups.map((group) => (
@@ -323,7 +323,7 @@ export default function GroupsPage() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
+              className="px-3 py-2 bg-[#111] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366]"
             >
               <option value="name-asc">Name A-Z</option>
               <option value="name-desc">Name Z-A</option>
@@ -339,13 +339,13 @@ export default function GroupsPage() {
           </div>
         ) : filteredAndSortedContacts.length === 0 ? (
           <div className="flex items-center justify-center py-24">
-            <div className="text-center">
+              <div className="text-center">
               <Users size={48} className="mx-auto text-gray-500" />
               <h3 className="text-lg font-semibold mt-4 text-white">No contacts yet</h3>
               <p className="text-sm text-gray-400 mt-2">Add your first contact to get started — assign them to one or more groups.</p>
               <div className="mt-4 flex items-center justify-center gap-3">
-                <button onClick={() => setShowAddContactModal(true)} className="bg-[#25D366] px-4 py-2 rounded-lg text-black font-semibold">Add Contact</button>
-                <button onClick={() => setShowCreateGroupModal(true)} className="border border-white/10 px-4 py-2 rounded-lg text-white">Create Group</button>
+                <button onClick={() => setShowAddContactModal(true)} className="bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold rounded-xl px-4 py-2">Add Contact</button>
+                <button onClick={() => setShowCreateGroupModal(true)} className="border border-white/10 hover:border-white/20 text-white rounded-xl px-4 py-2">Create Group</button>
               </div>
             </div>
           </div>

@@ -8,7 +8,7 @@ export default function GroupModal({ open, onClose, name, setName, color, setCol
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-[#111] border border-white/10 rounded-2xl p-8 w-full max-w-sm">
+      <div className="bg-[#111] border border-white/5 rounded-2xl p-8 w-full max-w-sm">
         <div className="flex items-center justify-between mb-5">
           <h3 className="font-bold text-lg">{editMode ? 'Edit Group' : 'Create Group'}</h3>
           <button onClick={onClose} className="p-1.5 rounded-md hover:bg-white/10 transition-colors" aria-label="Close"><X size={16} /></button>

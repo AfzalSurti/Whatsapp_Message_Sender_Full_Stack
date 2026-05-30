@@ -229,7 +229,7 @@ export default function DashboardLayout({ children }) {
 
         {showLogoutConfirm && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#111] border border-white/10 rounded-2xl p-6 max-w-sm w-full">
+            <div className="bg-[#111] border border-white/5 rounded-2xl p-6 max-w-sm w-full">
               <h3 className="font-bold text-lg mb-2">Are you sure you want to logout?</h3>
               <p className="text-sm text-gray-400 mb-6">Your current dashboard session will close and you will need to sign in again.</p>
               <div className="flex gap-3">
@@ -242,7 +242,7 @@ export default function DashboardLayout({ children }) {
 
         {showQR && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#111] border border-white/10 rounded-2xl p-8 text-center max-w-sm w-full">
+            <div className="bg-[#111] border border-white/5 rounded-2xl p-8 text-center max-w-sm w-full">
               <div className="flex items-start justify-between gap-4 mb-4">
                 <div className="text-left">
                   <h3 className="font-bold text-lg mb-1">Connect WhatsApp</h3>
@@ -250,7 +250,7 @@ export default function DashboardLayout({ children }) {
                 </div>
                 <button onClick={() => setShowQR(false)} className="text-gray-500 hover:text-white transition-colors" aria-label="Close QR popup"><X size={18} /></button>
               </div>
-              <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-5 mb-5 min-h-[17rem] flex flex-col items-center justify-center">
+              <div className="bg-[#0a0a0a] border border-white/5 rounded-xl p-5 mb-5 min-h-[17rem] flex flex-col items-center justify-center">
                 {qrImage ? (
                   <div className="bg-white p-4 rounded-xl inline-block mb-4"><Image src={qrImage} alt="QR Code" width={192} height={192} unoptimized className="w-48 h-48" /></div>
                 ) : (

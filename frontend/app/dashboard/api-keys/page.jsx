@@ -128,7 +128,7 @@ export default function ApiKeysPage() {
         {/* GENERATE MODAL */}
         {showGenerateModal && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#111] border border-white/10 rounded-2xl p-8 max-w-sm w-full">
+            <div className="bg-[#111] border border-white/5 rounded-2xl p-8 max-w-sm w-full">
               <div className="flex items-center justify-between gap-4 mb-4">
                 <h3 className="font-bold text-lg">Generate New API Key</h3>
                 <button
@@ -186,7 +186,7 @@ export default function ApiKeysPage() {
         {/* REVEALED KEY MODAL */}
         {revealedKeyId && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#111] border border-white/10 rounded-2xl p-8 max-w-lg w-full">
+            <div className="bg-[#111] border border-white/5 rounded-2xl p-8 max-w-lg w-full">
               <div className="flex items-center justify-between gap-4 mb-4">
                 <h3 className="font-bold text-lg">API Key</h3>
                 <button
@@ -241,7 +241,7 @@ export default function ApiKeysPage() {
         {/* STATS MODAL */}
         {selectedKeyStats && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-[#111] border border-white/10 rounded-2xl p-8 max-w-sm w-full">
+            <div className="bg-[#111] border border-white/5 rounded-2xl p-8 max-w-sm w-full">
               <div className="flex items-center justify-between gap-4 mb-6">
                 <h3 className="font-bold text-lg">Usage Statistics</h3>
                 <button
