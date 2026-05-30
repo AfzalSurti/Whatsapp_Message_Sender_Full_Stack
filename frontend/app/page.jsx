@@ -125,7 +125,7 @@ export default function LandingPage() {
             <span className="inline-flex items-center gap-2 text-xs font-semibold text-[#25D366] bg-[#25D366]/10 border border-[#25D366]/20 px-4 py-2 rounded-full mb-6 tracking-[0.28em] uppercase">
               <Sparkles size={14} /> No API Required
             </span>
-            <h1 className="text-5xl md:text-7xl font-black leading-[0.95] tracking-tight mb-6">
+            <h1 className="text-6xl md:text-8xl font-black leading-[0.92] tracking-tight mb-6">
               Bulk WhatsApp
               <span className="block text-white">Messaging that feels</span>
               <span className="block text-[#25D366]">built for growth</span>
@@ -235,54 +235,26 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* FEATURES */}
+      {/* FEATURES - condensed 2x3 grid */}
       <section className="py-20 px-6 md:px-16 max-w-7xl mx-auto pop-up">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10">
           <div>
             <p className="text-sm uppercase tracking-[0.3em] text-[#25D366] mb-3">Features</p>
-            <h2 className="text-3xl md:text-5xl font-black tracking-tight">Everything the page should have had.</h2>
+            <h2 className="text-3xl md:text-5xl font-black tracking-tight">Everything you need to scale.</h2>
           </div>
           <p className="text-white/55 max-w-xl leading-relaxed">
-            The section hierarchy now does the selling: a real dashboard preview, clearer feature groups, and a conversion path that reads like a product launch.
+            A focused feature grid highlights core capabilities at a glance.
           </p>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-12">
-          <div className="lg:col-span-7 rounded-[28px] border border-white/8 bg-white/4 p-7 hover:border-[#25D366]/30 transition-colors">
-            <div className="w-12 h-12 rounded-2xl bg-[#25D366]/10 text-[#25D366] flex items-center justify-center mb-5">
-              {features[0].icon}
-            </div>
-            <h3 className="text-2xl font-bold mb-3">{features[0].title}</h3>
-            <p className="text-white/55 max-w-xl leading-relaxed mb-6">{features[0].desc}</p>
-            <div className="grid sm:grid-cols-2 gap-3 text-sm text-white/75">
-              <div className="rounded-2xl border border-white/8 bg-black/20 p-4 flex items-center gap-3">
-                <Check size={16} className="text-[#25D366]" /> Unique pacing per send
-              </div>
-              <div className="rounded-2xl border border-white/8 bg-black/20 p-4 flex items-center gap-3">
-                <Check size={16} className="text-[#25D366]" /> Queue visibility in real time
-              </div>
-            </div>
-          </div>
-
-          <div className="lg:col-span-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-1">
-            {features.slice(1, 3).map((feature, index) => (
-              <div key={feature.title} className="rounded-[28px] border border-white/8 bg-white/4 p-6 hover:border-[#25D366]/30 transition-colors">
-                <div className="w-11 h-11 rounded-2xl bg-[#25D366]/10 text-[#25D366] flex items-center justify-center mb-4">
-                  {feature.icon}
-                </div>
-                <h3 className="font-bold text-lg mb-2">{feature.title}</h3>
-                <p className="text-white/55 text-sm leading-relaxed">{feature.desc}</p>
-              </div>
-            ))}
-          </div>
-
-          {features.slice(3).map((feature) => (
-            <div key={feature.title} className="lg:col-span-4 rounded-[28px] border border-white/8 bg-[#0b100d] p-6 hover:border-[#25D366]/30 transition-colors pop-up">
-              <div className="w-11 h-11 rounded-2xl bg-[#25D366]/10 text-[#25D366] flex items-center justify-center mb-4">
+        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          {features.map((feature) => (
+            <div key={feature.title} className="rounded-2xl border border-white/8 bg-white/4 p-6 hover:border-[#25D366]/30 transition-colors">
+              <div className="w-10 h-10 rounded-lg bg-[#25D366]/10 text-[#25D366] flex items-center justify-center mb-3">
                 {feature.icon}
               </div>
-              <h3 className="font-bold text-lg mb-2">{feature.title}</h3>
-              <p className="text-white/55 text-sm leading-relaxed">{feature.desc}</p>
+              <div className="font-semibold mb-1">{feature.title}</div>
+              <div className="text-sm text-white/60 leading-relaxed">{feature.desc}</div>
             </div>
           ))}
         </div>

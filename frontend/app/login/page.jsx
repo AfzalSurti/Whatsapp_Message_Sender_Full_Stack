@@ -41,12 +41,12 @@ export default function LoginPage() {
             </div>
             <span className="font-bold text-xl text-white">WA Sender</span>
           </Link>
-          <h1 className="text-2xl font-bold text-white">Welcome back</h1>
+          <h1 className="text-3xl font-bold text-white">Welcome back</h1>
           <p className="text-gray-400 mt-1 text-sm">Sign in to your account</p>
         </div>
 
         {/* Card */}
-        <div className="bg-[#111] border border-white/5 rounded-2xl p-8">
+        <div className="bg-[#111] border border-white/5 rounded-2xl p-10">
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email */}
             <div>
