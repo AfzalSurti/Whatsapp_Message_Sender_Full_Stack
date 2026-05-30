@@ -5,19 +5,25 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { BarChart3, BookOpen, CheckCircle, History, Key, Loader2, LogOut, MessageSquare, QrCode, Send, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { Activity, BarChart3, History, Key, Loader2, LogOut, MessageSquare, Send, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { whatsappAPI } from '@/lib/api';
 import useWebSocket from '@/hooks/useWebSocket';
 import { DashboardShellProvider } from './DashboardShellContext';
 
-const navItems = [
+const mainNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
+  { href: '/dashboard/live-feed', label: 'Live Feed', icon: Activity },
   { href: '/dashboard/groups', label: 'Contacts', icon: Users },
   { href: '/dashboard/scheduled', label: 'Campaigns', icon: Send },
   { href: '/dashboard/history', label: 'History', icon: History },
+];
+
+const manageNavItems = [
   { href: '/dashboard/api-keys', label: 'API Keys', icon: Key },
 ];
+
+const navItems = [...mainNavItems, ...manageNavItems];
 
 export default function DashboardLayout({ children }) {
   const { user, loading, logout } = useAuth();
@@ -166,7 +172,7 @@ export default function DashboardLayout({ children }) {
           <nav className="p-3 flex-1 overflow-y-auto">
             <div className="text-xs text-gray-500 px-3 mb-2 mt-2">MAIN</div>
             <div className="space-y-1">
-              {navItems.slice(0,4).map(({ href, label, icon: Icon }) => {
+              {mainNavItems.map(({ href, label, icon: Icon }) => {
                 const active = pathname === href;
                 return (
                   <Link key={href} href={href} className={`flex items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm transition-colors ${active ? 'bg-[#25D366] text-black font-semibold' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
@@ -178,7 +184,7 @@ export default function DashboardLayout({ children }) {
 
             <div className="text-xs text-gray-500 px-3 my-3">MANAGE</div>
             <div className="space-y-1">
-              {navItems.slice(4).map(({ href, label, icon: Icon }) => {
+              {manageNavItems.map(({ href, label, icon: Icon }) => {
                 const active = pathname === href;
                 return (
                   <Link key={href} href={href} className={`flex items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm transition-colors ${active ? 'bg-[#25D366] text-black font-semibold' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>

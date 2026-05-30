@@ -55,6 +55,7 @@ export const aiAPI = {
 export const logsAPI = {
   getLogs: (params) => api.get('/api/logs', { params }),
   getCampaigns: () => api.get('/api/logs/campaigns'),
+  getLiveFeed: () => api.get('/api/logs/live-feed'),
 };
 
 // ─── CONTACTS ──────────────────────────────────────────────────
