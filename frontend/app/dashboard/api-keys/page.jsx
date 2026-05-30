@@ -155,6 +155,9 @@ export default function ApiKeysPage() {
                 <p className="text-xs text-gray-400">
                   You can create up to 5 API keys per account.
                 </p>
+                <p className="text-xs text-yellow-300/90 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
+                  Keep keys private. Anyone with this key can send messages using your account.
+                </p>
 
                 <div className="flex gap-3">
                   <button
@@ -199,7 +202,7 @@ export default function ApiKeysPage() {
 
               <div className="space-y-4">
                 <p className="text-sm text-gray-400">
-                  ⚠️ This is the only time you&apos;ll see this key. Store it securely.
+                  ⚠️ Copy this key now. You won&apos;t be able to see this exact value again.
                 </p>
 
                 <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 flex items-center justify-between">
@@ -216,6 +219,10 @@ export default function ApiKeysPage() {
                     <><Copy size={14} /> Copy Key</>
                   )}
                 </button>
+
+                <p className="text-[11px] text-yellow-300/90 text-center">
+                  Warning: copy now, full key won&apos;t be shown again after closing.
+                </p>
 
                 <button
                   onClick={() => {
@@ -271,6 +278,10 @@ export default function ApiKeysPage() {
                     />
                   </div>
                 </div>
+
+                <p className="text-xs text-gray-500 -mt-1">
+                  {Math.min(100, Math.round((selectedKeyStats.monthlyUsage / Math.max(1, selectedKeyStats.monthlyLimit)) * 100))}% of monthly quota used.
+                </p>
 
                 <div className="bg-[#0a0a0a] rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-2">
@@ -352,11 +363,9 @@ export default function ApiKeysPage() {
                     <div className="flex items-center gap-2 mb-2">
                       <Code size={14} className="text-[#25D366] flex-shrink-0" />
                       <h3 className="font-semibold text-base truncate">{key.name}</h3>
-                      {!key.isActive && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
-                          Disabled
-                        </span>
-                      )}
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${key.isActive ? 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                        {key.isActive ? 'Active' : 'Disabled'}
+                      </span>
                     </div>
 
                     <div className="bg-[#0a0a0a] rounded-xl p-3 mb-3 truncate">
@@ -389,6 +398,19 @@ export default function ApiKeysPage() {
                             ? new Date(key.lastUsed).toLocaleDateString()
                             : 'Never'}
                         </p>
+                      </div>
+                    </div>
+
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+                        <span>Usage Progress</span>
+                        <span>{Math.min(100, Math.round((key.monthlyUsage / Math.max(1, key.monthlyLimit)) * 100))}%</span>
+                      </div>
+                      <div className="h-2 bg-[#0a0a0a] rounded-full overflow-hidden border border-white/10">
+                        <div
+                          className="h-full bg-[#25D366]"
+                          style={{ width: `${Math.min(100, Math.round((key.monthlyUsage / Math.max(1, key.monthlyLimit)) * 100))}%` }}
+                        />
                       </div>
                     </div>
 
