@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Activity, ArrowClockwise, Clock3, Loader2, MessageSquareText, Radar, Search, Send, Sparkles } from 'lucide-react';
+import { Activity, Clock3, Loader2, MessageSquareText, Radar, RotateCw, Search, Send, Sparkles } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { logsAPI } from '@/lib/api';
 import { useDashboardShell } from '../DashboardShellContext';
@@ -138,7 +138,7 @@ export default function LiveFeedPage() {
               onClick={() => fetchLiveFeed()}
               className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[#111] px-4 py-3 text-sm text-white transition-colors hover:border-[#25D366]/40 hover:text-[#25D366]"
             >
-              <ArrowClockwise size={16} className={refreshing ? 'animate-spin' : ''} />
+              <RotateCw size={16} className={refreshing ? 'animate-spin' : ''} />
               Refresh
             </button>
 
