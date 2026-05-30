@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -18,10 +18,10 @@ import {
   Filter,
   UserPlus,
   Tags,
-  Edit2,
-  Trash2,
   Users
 } from 'lucide-react';
+import GroupCard from '@/components/dashboard/GroupCard';
+import GroupModal from '@/components/dashboard/GroupModal';
 
 const DEFAULT_COUNTRY = DEFAULT_PHONE_COUNTRY;
 const GROUP_COLORS = ['#25D366', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
@@ -298,19 +298,7 @@ export default function GroupsPage() {
         {/* Groups cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-4">
           {sortedGroups.map((group) => (
-            <div key={group._id} className="bg-[#111] border border-white/6 rounded-xl p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="inline-block w-3.5 h-3.5 rounded-full" style={{ backgroundColor: group.color || '#25D366' }} />
-                <div>
-                  <div className="text-sm font-semibold">{group.name}</div>
-                  <div className="text-xs text-gray-400">{(group.numbers || []).length} contacts</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => handleOpenEditGroup(group)} className="p-2 rounded-md hover:bg-white/5 transition-colors"><Edit2 size={16} /></button>
-                <button onClick={() => handleDeleteGroup(group._id)} className="p-2 rounded-md hover:bg-white/5 transition-colors text-red-400"><Trash2 size={16} /></button>
-              </div>
-            </div>
+            <GroupCard key={group._id} group={group} onEdit={handleOpenEditGroup} onDelete={handleDeleteGroup} />
           ))}
         </div>
 
@@ -400,57 +388,22 @@ export default function GroupsPage() {
         )}
       </div>
 
-      {showCreateGroupModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#111] border border-white/10 rounded-2xl p-8 w-full max-w-sm">
-            <h3 className="font-bold text-lg mb-5">Create Group</h3>
-
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Group name"
-                value={newGroupName}
-                onChange={(e) => setNewGroupName(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
-              />
-
-              <div>
-                <p className="text-xs text-gray-400 mb-2">Color</p>
-                <div className="grid grid-cols-6 gap-2">
-                  {GROUP_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setNewGroupColor(color)}
-                      className={`h-9 rounded-lg border-2 ${newGroupColor === color ? 'border-white' : 'border-transparent'} cursor-pointer`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={handleCreateGroup}
-                  disabled={creatingGroup}
-                  className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-                >
-                  {creatingGroup ? 'Creating...' : 'Create'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowCreateGroupModal(false);
-                    setNewGroupName('');
-                    setNewGroupColor('#25D366');
-                  }}
-                  className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <GroupModal
+        open={showCreateGroupModal}
+        onClose={() => {
+          setShowCreateGroupModal(false);
+          setNewGroupName('');
+          setNewGroupColor('#25D366');
+          setEditGroupId(null);
+        }}
+        name={newGroupName}
+        setName={setNewGroupName}
+        color={newGroupColor}
+        setColor={setNewGroupColor}
+        creating={creatingGroup}
+        onSubmit={handleCreateGroup}
+        editMode={!!editGroupId}
+      />
 
       {showAddContactModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
