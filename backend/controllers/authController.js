@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 const User = require('../models/User');
+const { getSafeErrorMessage } = require('../utils/safeError');
 
 // ─── GENERATE JWT TOKEN ────────────────────────────────────────
 const generateToken = (id) => {
@@ -37,7 +38,7 @@ const signup = async (req, res) => {
     res.status(201).json({ token, user });
 
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: getSafeErrorMessage(error) });
   }
 };
 
@@ -75,7 +76,7 @@ const login = async (req, res) => {
     res.json({ token, user });
 
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: getSafeErrorMessage(error) });
   }
 };
 
@@ -108,7 +109,7 @@ const logout = async (req, res) => {
 
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: getSafeErrorMessage(error) });
   }
 };
 

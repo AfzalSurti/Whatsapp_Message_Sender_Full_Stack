@@ -23,17 +23,17 @@ const requireGoogleOAuth = (req, res, next) => {
 
 // Validation rules for signup
 const signupValidation = [
-  body('name').trim().notEmpty().withMessage('Name is required'),
-  body('email').isEmail().withMessage('Valid email is required'),
+  body('name').trim().isLength({ min: 2, max: 80 }).withMessage('Name must be 2-80 characters'),
+  body('email').isEmail().normalizeEmail().isLength({ max: 254 }).withMessage('Valid email is required'),
   body('password')
-    .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters')
+    .isLength({ min: 6, max: 128 })
+    .withMessage('Password must be 6-128 characters')
 ];
 
 // Validation rules for login
 const loginValidation = [
-  body('email').isEmail().withMessage('Valid email is required'),
-  body('password').notEmpty().withMessage('Password is required')
+  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('password').notEmpty().isLength({ max: 128 }).withMessage('Password is required')
 ];
 
 // ─── LOCAL AUTH ───────────────────────────────────────────────

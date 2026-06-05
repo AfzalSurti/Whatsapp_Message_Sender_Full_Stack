@@ -3,6 +3,8 @@ const ScheduledCampaign = require('../models/ScheduledCampaign');
 const ContactGroup = require('../models/ContactGroup');
 const MessageTemplate = require('../models/MessageTemplate');
 const { validateScheduleVariables } = require('../utils/template');
+const { normalizePhoneNumber, getPhoneValidationError } = require('../utils/phone');
+const { getSafeErrorMessage } = require('../utils/safeError');
 
 const stripNumber = (num) => num.replace(/\D/g, '');
 
@@ -93,9 +95,14 @@ const createCampaign = async (req, res) => {
       individualNumbers.forEach((item) => {
         const phone = typeof item === 'string' ? item : item.phone;
         const name = typeof item === 'object' ? (item.name || '') : '';
-        const cleanPhone = stripNumber(phone);
+        const normalized = normalizePhoneNumber(phone);
 
-        if (cleanPhone.length >= 10 && !phoneSet.has(cleanPhone)) {
+        if (!normalized) {
+          return;
+        }
+
+        const cleanPhone = stripNumber(normalized.e164);
+        if (!phoneSet.has(cleanPhone)) {
           phoneSet.add(cleanPhone);
           allNumbers.push({
             name,
@@ -108,7 +115,7 @@ const createCampaign = async (req, res) => {
     }
 
     if (allNumbers.length === 0) {
-      return res.status(400).json({ error: 'No valid phone numbers found' });
+      return res.status(400).json({ error: getPhoneValidationError() });
     }
 
     const variableCheck = validateScheduleVariables(
@@ -136,7 +143,7 @@ const createCampaign = async (req, res) => {
 
     res.status(201).json({ campaign });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: getSafeErrorMessage(err) });
   }
 };
 

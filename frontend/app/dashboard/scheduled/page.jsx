@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import InternationalPhoneInput from '@/components/InternationalPhoneInput';
@@ -167,6 +167,7 @@ export default function ScheduledPage() {
 
   // Step 3 & submission
   const [submitting, setSubmitting] = useState(false);
+  const handledTemplateQueryRef = useRef(null);
 
   const fetchCampaigns = useCallback(async () => {
     try {
@@ -224,20 +225,20 @@ export default function ScheduledPage() {
     setSelectedTemplateId(template._id);
     setSelectedTemplate(template);
     setMessage(template.body);
-    if (!campaignName.trim()) {
-      setCampaignName(template.name);
-    }
+    setCampaignName((prev) => (prev.trim() ? prev : template.name));
     setTemplateVariables({});
-  }, [campaignName]);
+  }, []);
 
   useEffect(() => {
     if (!user || templates.length === 0) return;
 
     const templateId = new URLSearchParams(window.location.search).get('template');
     if (!templateId) return;
+    if (handledTemplateQueryRef.current === templateId) return;
 
     const template = templates.find((item) => item._id === templateId);
     if (template) {
+      handledTemplateQueryRef.current = templateId;
       applyTemplateSelection(template);
       setShowScheduleForm(true);
       setStep(1);
@@ -472,9 +473,7 @@ export default function ScheduledPage() {
       });
 
       toast.success('Campaign scheduled!');
-      setShowScheduleForm(false);
-      resetForm();
-      router.replace('/dashboard/scheduled');
+      closeScheduleForm();
       await fetchCampaigns();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to schedule');
@@ -504,6 +503,13 @@ export default function ScheduledPage() {
     setSelectedIndividuals([]);
     setSearchQuery('');
     setSearchResults([]);
+  };
+
+  const closeScheduleForm = () => {
+    handledTemplateQueryRef.current = null;
+    setShowScheduleForm(false);
+    resetForm();
+    router.replace('/dashboard/scheduled');
   };
 
   const handleDeleteCampaign = async (id) => {
@@ -718,8 +724,7 @@ export default function ScheduledPage() {
               </div>
               <button
                 onClick={() => {
-                  setShowScheduleForm(false);
-                  resetForm();
+                  closeScheduleForm();
                 }}
                 className="text-gray-500 hover:text-white transition-colors cursor-pointer"
               >
@@ -1249,10 +1254,7 @@ export default function ScheduledPage() {
               )}
 
               <button
-                onClick={() => {
-                  setShowScheduleForm(false);
-                  resetForm();
-                }}
+                onClick={closeScheduleForm}
                 className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
               >
                 Cancel

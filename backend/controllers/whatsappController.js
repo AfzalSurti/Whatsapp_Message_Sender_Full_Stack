@@ -85,13 +85,6 @@ const sendBulkMessages = async (req, res) => {
     const userId = req.user._id;
     const sendToUser = req.app.get('sendToUser');
 
-    if (!numbers || !numbers.length) {
-      return res.status(400).json({ error: 'No numbers provided' });
-    }
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
-    }
-
     const client = clientManager.getClient(userId);
     if (!client) {
       return res.status(400).json({ error: 'WhatsApp not connected. Please scan QR again.' });
@@ -175,13 +168,6 @@ const sendBulkMessagesViaApiKey = async (req, res) => {
     const { numbers, message } = req.body;
     const apiKey = req.apiKey;
     const apiUser = req.apiUser;
-
-    if (!numbers || !numbers.length) {
-      return res.status(400).json({ error: 'No numbers provided' });
-    }
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
-    }
 
     const client = clientManager.getClient(apiUser._id);
     if (!client) {

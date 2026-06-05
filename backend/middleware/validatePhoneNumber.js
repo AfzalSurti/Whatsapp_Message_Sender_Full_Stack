@@ -1,4 +1,4 @@
-const { normalizePhoneNumber } = require('../utils/phone');
+const { normalizePhoneNumber, getPhoneValidationError } = require('../utils/phone');
 
 const buildPhoneError = (field, message) => ({
   type: 'field',
@@ -12,18 +12,21 @@ const validateAndNormalizePhoneField = ({
   field,
   countryField = 'country',
   requiredMessage = 'Phone number is required',
-  invalidMessage = 'Enter a valid international phone number'
+  invalidMessage
 }) => {
   return (req, res, next) => {
     const rawValue = req.body?.[field];
+    const country = req.body?.[countryField];
 
     if (!String(rawValue || '').trim()) {
       return res.status(400).json({ errors: [buildPhoneError(field, requiredMessage)] });
     }
 
-    const normalized = normalizePhoneNumber(rawValue, req.body?.[countryField]);
+    const normalized = normalizePhoneNumber(rawValue, country);
     if (!normalized) {
-      return res.status(400).json({ errors: [buildPhoneError(field, invalidMessage)] });
+      return res.status(400).json({
+        errors: [buildPhoneError(field, invalidMessage || getPhoneValidationError(country))]
+      });
     }
 
     req.body[field] = normalized.e164;

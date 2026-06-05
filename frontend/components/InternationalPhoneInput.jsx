@@ -5,7 +5,8 @@ import { PhoneInput } from 'react-international-phone';
 import {
   DEFAULT_PHONE_COUNTRY,
   normalizePhoneNumber,
-  getPhonePlaceholder
+  getPhonePlaceholder,
+  getPhoneValidationError
 } from '@/lib/phone';
 
 export default function InternationalPhoneInput({
@@ -33,7 +34,9 @@ export default function InternationalPhoneInput({
 
   const validationError = useMemo(() => {
     if (!value) return required ? 'Phone number is required' : '';
-    return normalizePhoneNumber(value, defaultCountry) ? '' : 'Enter a valid international phone number';
+    return normalizePhoneNumber(value, defaultCountry)
+      ? ''
+      : getPhoneValidationError(defaultCountry);
   }, [defaultCountry, required, value]);
 
   const displayError = error || (touched ? validationError : '');

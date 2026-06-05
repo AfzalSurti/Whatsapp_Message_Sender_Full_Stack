@@ -15,7 +15,7 @@ const {
 } = require('../controllers/groupsController');
 
 const createValidation = [
-  body('name').trim().notEmpty().withMessage('Group name is required')
+  body('name').trim().isLength({ min: 1, max: 80 }).withMessage('Group name must be 1-80 characters')
 ];
 
 const updateValidation = [

@@ -7,6 +7,8 @@ const rateLimit = require('express-rate-limit');
 const passport = require('./config/passport');
 
 const connectDB = require('./config/db');
+const securityHeaders = require('./middleware/securityHeaders');
+const { getSafeErrorMessage } = require('./utils/safeError');
 const { setupWebSocket, sendToUser, getWsClients } = require('./services/websocket');
 const { recoverSessions } = require('./services/clientManager');
 const verifyToken = require('./utils/verifyToken');
@@ -33,6 +35,7 @@ const limiter = rateLimit({
 });
 
 // ─── MIDDLEWARE ───────────────────────────────────────────────
+app.use(securityHeaders);
 app.use(cors({
   origin: process.env.CLIENT_URL,
   credentials: true
@@ -77,7 +80,7 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error('❌ Error:', err.message);
   res.status(err.status || 500).json({
-    error: err.message || 'Internal server error'
+    error: getSafeErrorMessage(err)
   });
 });
 

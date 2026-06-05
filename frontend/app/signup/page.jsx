@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { MessageSquare, User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import toast from 'react-hot-toast';
+import { validateEmail, validateName, validatePassword } from '@/lib/validation';
 
 export default function SignupPage() {
   const { signup } = useAuth();
@@ -15,10 +16,24 @@ export default function SignupPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (form.password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+
+    const nameError = validateName(form.name);
+    const emailError = validateEmail(form.email);
+    const passwordError = validatePassword(form.password);
+
+    if (nameError) {
+      toast.error(nameError);
       return;
     }
+    if (emailError) {
+      toast.error(emailError);
+      return;
+    }
+    if (passwordError) {
+      toast.error(passwordError);
+      return;
+    }
+
     setLoading(true);
     try {
       await signup(form.name, form.email, form.password);

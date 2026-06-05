@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { MessageSquare, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import toast from 'react-hot-toast';
+import { validateEmail, validatePassword } from '@/lib/validation';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -15,6 +16,19 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    const emailError = validateEmail(form.email);
+    const passwordError = validatePassword(form.password);
+
+    if (emailError) {
+      toast.error(emailError);
+      return;
+    }
+    if (passwordError) {
+      toast.error(passwordError);
+      return;
+    }
+
     setLoading(true);
     try {
       await login(form.email, form.password);

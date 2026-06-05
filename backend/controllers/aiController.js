@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { validationResult } = require('express-validator');
 
 const LANGUAGE_RANGES = {
   Gujarati: /[\u0A80-\u0AFF]/,
@@ -118,6 +119,11 @@ const requestAIMessage = async ({ systemPrompt, userPrompt }) => {
 
 const generateAIMessage = async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
     const {
       preset = 'best',
       prompt,

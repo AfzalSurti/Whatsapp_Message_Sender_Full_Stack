@@ -34,28 +34,31 @@ const getFeedTone = (status) => {
 // ─── GET MESSAGE LOGS ─────────────────────────────────────────
 const getLogs = async (req, res) => {
   try {
-    const { page = 1, limit = 50, status } = req.query;
+    const pageNum = Math.max(1, Math.min(Number(req.query.page) || 1, 10000));
+    const limitNum = Math.max(1, Math.min(Number(req.query.limit) || 50, 100));
+    const { status } = req.query;
 
-    // Build filter — only this user's logs
     const filter = { userId: req.user._id };
-    if (status) filter.status = status; // filter by sent/failed/skipped
+    if (status && ['sent', 'failed', 'skipped'].includes(status)) {
+      filter.status = status;
+    }
 
     const logs = await MessageLog.find(filter)
-      .sort({ createdAt: -1 })           // newest first
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .sort({ createdAt: -1 })
+      .limit(limitNum)
+      .skip((pageNum - 1) * limitNum);
 
     const total = await MessageLog.countDocuments(filter);
 
     res.json({
       logs,
       total,
-      pages: Math.ceil(total / limit),
-      currentPage: page
+      pages: Math.ceil(total / limitNum),
+      currentPage: pageNum
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to load message logs' });
   }
 };
 
