@@ -321,7 +321,69 @@ export default function ScheduledPage() {
     () => getMissingScheduleVariables(message, templateVariables),
     [message, templateVariables]
   );
-  const getTotalContactsCount = () => buildRecipients().length;
+
+  const stepOneBlockers = useMemo(() => {
+    const blockers = [];
+
+    if (!campaignName.trim()) {
+      blockers.push('Enter a campaign name');
+    }
+
+    if (messageMode === 'template' && !selectedTemplateId) {
+      blockers.push('Select a template from the list above');
+    }
+
+    if (!message.trim()) {
+      blockers.push(messageMode === 'template' ? 'Select a template to load the message' : 'Enter a message');
+    }
+
+    if (!scheduleDate) {
+      blockers.push('Select a schedule date');
+    }
+
+    if (!scheduleTime) {
+      blockers.push('Select a schedule time');
+    }
+
+    if (scheduleDate && scheduleTime) {
+      const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
+      if (Number.isNaN(scheduledAt.getTime())) {
+        blockers.push('Enter a valid date and time');
+      } else if (scheduledAt <= new Date(Date.now() + 60000)) {
+        blockers.push('Schedule time must be at least 1 minute in the future');
+      }
+    }
+
+    missingTemplateVariables.forEach((variable) => {
+      blockers.push(`Fill in ${variableLabel(variable)} for {{${variable}}}`);
+    });
+
+    return blockers;
+  }, [
+    campaignName,
+    message,
+    messageMode,
+    missingTemplateVariables,
+    scheduleDate,
+    scheduleTime,
+    selectedTemplateId
+  ]);
+
+  const canProceedStep1 = stepOneBlockers.length === 0;
+
+  const totalContactsCount = useMemo(
+    () => buildRecipients().length,
+    [buildRecipients]
+  );
+
+  const stepTwoBlockers = useMemo(() => {
+    if (totalContactsCount > 0) return [];
+    return ['Select at least one group or phone number'];
+  }, [totalContactsCount]);
+
+  const canProceedStep2 = stepTwoBlockers.length === 0;
+
+  const getTotalContactsCount = () => totalContactsCount;
 
   const handleSearch = (query) => {
     setSearchQuery(query);
@@ -399,20 +461,8 @@ export default function ScheduledPage() {
   };
 
   const validateStepOne = () => {
-    if (!campaignName.trim()) {
-      toast.error('Enter campaign name');
-      return false;
-    }
-    if (!message.trim()) {
-      toast.error(messageMode === 'template' ? 'Select a template' : 'Enter message');
-      return false;
-    }
-    if (!scheduleDate || !scheduleTime) {
-      toast.error('Select date and time');
-      return false;
-    }
-    if (missingTemplateVariables.length > 0) {
-      toast.error(`Provide values for: ${missingTemplateVariables.map((v) => `{{${v}}}`).join(', ')}`);
+    if (stepOneBlockers.length > 0) {
+      toast.error(stepOneBlockers[0]);
       return false;
     }
     return true;
@@ -556,24 +606,7 @@ export default function ScheduledPage() {
     all: 'No campaigns found.'
   };
 
-  const totalContacts = getTotalContactsCount();
-
-  const canProceedStep1 =
-    campaignName.trim() &&
-    message.trim() &&
-    scheduleDate &&
-    scheduleTime &&
-    missingTemplateVariables.length === 0;
-
-  const handleNextFromStep1 = () => {
-    if (!canProceedStep1) {
-      if (missingTemplateVariables.length > 0) {
-        toast.error(`Provide values for: ${missingTemplateVariables.map((v) => `{{${v}}}`).join(', ')}`);
-      }
-      return;
-    }
-    setStep(2);
-  };
+  const totalContacts = totalContactsCount;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -799,23 +832,89 @@ export default function ScheduledPage() {
                             </Link>
                           </div>
                         ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
-                            {templates.map((template) => (
-                              <TemplateCard
-                                key={template._id}
-                                template={template}
-                                selectable
-                                selected={selectedTemplateId === template._id}
-                                onUse={() => handleSelectTemplate(template)}
-                              />
-                            ))}
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
+                              {templates.map((template) => (
+                                <TemplateCard
+                                  key={template._id}
+                                  template={template}
+                                  selectable
+                                  selected={selectedTemplateId === template._id}
+                                  onUse={() => handleSelectTemplate(template)}
+                                />
+                              ))}
+                            </div>
+
+                            {selectedTemplate && (
+                              <div className="bg-[#0a0f0d] border border-[#25D366]/25 rounded-xl p-4 space-y-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <p className="text-sm font-medium text-white">
+                                      Selected: {selectedTemplate.icon} {selectedTemplate.name}
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-1">Template loaded into preview below</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setMessageMode('manual');
+                                      setSelectedTemplateId('');
+                                      setSelectedTemplate(null);
+                                      setTemplateVariables({});
+                                    }}
+                                    className="text-xs text-gray-400 hover:text-white cursor-pointer"
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+
+                                {missingTemplateVariables.length > 0 && (
+                                  <div className="space-y-3 pt-1 border-t border-white/10">
+                                    <p className="text-xs font-medium text-amber-300">
+                                      Required before you can continue
+                                    </p>
+                                    {activeTemplateVariables
+                                      .filter((variable) => SCHEDULE_REQUIRED_VARIABLES.includes(variable))
+                                      .map((variable) => (
+                                        <div key={variable}>
+                                          <label className="text-xs text-gray-400 block mb-1.5">
+                                            {variableLabel(variable)} ({`{{${variable}}}`}) <span className="text-red-400">*</span>
+                                          </label>
+                                          <input
+                                            type="text"
+                                            value={templateVariables[variable] || ''}
+                                            onChange={(e) =>
+                                              setTemplateVariables((prev) => ({
+                                                ...prev,
+                                                [variable]: e.target.value
+                                              }))
+                                            }
+                                            placeholder={`Enter ${variableLabel(variable).toLowerCase()}`}
+                                            className={`w-full px-4 py-2.5 bg-[#111] border rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] ${
+                                              !(templateVariables[variable] || '').trim()
+                                                ? 'border-amber-500/40'
+                                                : 'border-white/10'
+                                            }`}
+                                          />
+                                        </div>
+                                      ))}
+                                  </div>
+                                )}
+
+                                {activeTemplateVariables.includes('name') && (
+                                  <p className="text-[11px] text-amber-400/90">
+                                    This template uses {'{{name}}'}. In Step 2, every selected contact must have a saved name.
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     )}
                   </div>
 
-                  {activeTemplateVariables.some((variable) => SCHEDULE_REQUIRED_VARIABLES.includes(variable)) && (
+                  {messageMode !== 'template' && activeTemplateVariables.some((variable) => SCHEDULE_REQUIRED_VARIABLES.includes(variable)) && (
                     <div className="bg-[#0a0a0a] border border-amber-500/20 rounded-xl p-4 space-y-3">
                       <p className="text-sm font-medium text-amber-300">Template variables</p>
                       {activeTemplateVariables
@@ -1200,7 +1299,40 @@ export default function ScheduledPage() {
             </div>
 
             {/* Footer */}
-            <div className="border-t border-white/5 p-6 flex gap-3 sticky bottom-0 bg-[#111]">
+            <div className="border-t border-white/5 p-6 space-y-4 sticky bottom-0 bg-[#111]">
+              {step === 1 && stepOneBlockers.length > 0 && (
+                <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
+                  <p className="text-sm font-medium text-amber-200 mb-2">
+                    Complete these items to continue:
+                  </p>
+                  <ul className="space-y-1">
+                    {stepOneBlockers.map((blocker) => (
+                      <li key={blocker} className="text-xs text-amber-100/90 flex items-start gap-2">
+                        <span className="text-amber-400 mt-0.5">•</span>
+                        <span>{blocker}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {step === 2 && stepTwoBlockers.length > 0 && (
+                <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
+                  <p className="text-sm font-medium text-amber-200 mb-2">
+                    Complete these items to continue:
+                  </p>
+                  <ul className="space-y-1">
+                    {stepTwoBlockers.map((blocker) => (
+                      <li key={blocker} className="text-xs text-amber-100/90 flex items-start gap-2">
+                        <span className="text-amber-400 mt-0.5">•</span>
+                        <span>{blocker}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="flex gap-3">
               {step > 1 && (
                 <button
                   onClick={() => setStep(step - 1)}
@@ -1215,28 +1347,30 @@ export default function ScheduledPage() {
                 <button
                   onClick={() => {
                     if (step === 1 && !validateStepOne()) return;
-                    if (step === 2 && totalContacts === 0) {
-                      toast.error('Select at least one recipient');
-                      return;
-                    }
-                    if (step === 2 && message.includes('{{name}}')) {
-                      const scheduleValidationError = validateScheduleOnClient(
-                        message,
-                        templateVariables,
-                        buildRecipients()
-                      );
-                      if (scheduleValidationError) {
-                        toast.error(scheduleValidationError);
+                    if (step === 2) {
+                      if (!canProceedStep2) {
+                        toast.error(stepTwoBlockers[0]);
                         return;
+                      }
+                      if (message.includes('{{name}}')) {
+                        const scheduleValidationError = validateScheduleOnClient(
+                          message,
+                          templateVariables,
+                          buildRecipients()
+                        );
+                        if (scheduleValidationError) {
+                          toast.error(scheduleValidationError);
+                          return;
+                        }
                       }
                     }
                     setStep(step + 1);
                   }}
                   disabled={
-                    (step === 1 && (!campaignName.trim() || !message.trim() || !scheduleDate || !scheduleTime || missingTemplateVariables.length > 0)) ||
-                    (step === 2 && totalContacts === 0)
+                    (step === 1 && !canProceedStep1) ||
+                    (step === 2 && !canProceedStep2)
                   }
-                  className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
+                  className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
                 >
                   Next <ChevronRight size={16} />
                 </button>
@@ -1259,6 +1393,7 @@ export default function ScheduledPage() {
               >
                 Cancel
               </button>
+              </div>
             </div>
           </div>
         </div>
