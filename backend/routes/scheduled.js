@@ -12,11 +12,13 @@ const {
 
 const createValidation = [
   body('name').trim().optional(),
-  body('message').trim().notEmpty().withMessage('Message is required'),
+  body('message').optional().trim(),
   body('scheduledAt').isISO8601().withMessage('Invalid scheduled time format'),
   body('timezone').trim().optional(),
   body('groupIds').isArray().optional(),
-  body('individualNumbers').isArray().optional()
+  body('individualNumbers').isArray().optional(),
+  body('templateId').optional().isMongoId().withMessage('Invalid template ID'),
+  body('templateVariables').optional().isObject()
 ];
 
 router.post('/', protect, createValidation, createCampaign);

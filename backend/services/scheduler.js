@@ -1,5 +1,6 @@
 const ScheduledCampaign = require('../models/ScheduledCampaign');
 const ContactGroup = require('../models/ContactGroup');
+const { buildRecipientMessage } = require('../utils/template');
 
 const stripNumber = (num) => num.replace(/\D/g, '');
 
@@ -25,36 +26,46 @@ const startScheduler = (sendMessages, clientManager) => {
             continue;
           }
 
-          let allNumbers = [];
+          const recipients = [];
           const phoneSet = new Set();
+          const groupNameById = new Map();
 
           if (campaign.groupIds && campaign.groupIds.length > 0) {
             const groups = await ContactGroup.find({
               _id: { $in: campaign.groupIds }
             });
 
-            groups.forEach(group => {
-              group.numbers.forEach(num => {
+            groups.forEach((group) => {
+              groupNameById.set(String(group._id), group.name);
+              group.numbers.forEach((num) => {
                 const cleanPhone = stripNumber(num.phone);
                 if (!phoneSet.has(cleanPhone)) {
                   phoneSet.add(cleanPhone);
-                  allNumbers.push(cleanPhone);
+                  recipients.push({
+                    name: num.name || '',
+                    phone: cleanPhone,
+                    segment: group.name
+                  });
                 }
               });
             });
           }
 
           if (campaign.individualNumbers && campaign.individualNumbers.length > 0) {
-            campaign.individualNumbers.forEach(item => {
+            campaign.individualNumbers.forEach((item) => {
               const cleanPhone = stripNumber(item.phone);
               if (!phoneSet.has(cleanPhone)) {
                 phoneSet.add(cleanPhone);
-                allNumbers.push(cleanPhone);
+                recipients.push({
+                  name: item.name || '',
+                  phone: cleanPhone,
+                  segment: groupNameById.get(String(item.groupId)) || item.segment || ''
+                });
               }
             });
           }
 
-          if (allNumbers.length === 0) {
+          if (recipients.length === 0) {
             await ScheduledCampaign.findByIdAndUpdate(campaign._id, {
               status: 'failed',
               failReason: 'No valid phone numbers to send to'
@@ -62,11 +73,20 @@ const startScheduler = (sendMessages, clientManager) => {
             continue;
           }
 
+          const templateVariables = campaign.templateVariables instanceof Map
+            ? Object.fromEntries(campaign.templateVariables)
+            : (campaign.templateVariables || {});
+
+          const personalizedRecipients = recipients.map((recipient) => ({
+            phone: recipient.phone,
+            message: buildRecipientMessage(campaign.message, recipient, templateVariables)
+          }));
+
           await sendMessages(
             client,
             campaign.userId,
-            allNumbers,
-            campaign.message,
+            personalizedRecipients,
+            null,
             async (progress) => {
               await ScheduledCampaign.findByIdAndUpdate(campaign._id, {
                 sent: progress.sent,
@@ -76,7 +96,6 @@ const startScheduler = (sendMessages, clientManager) => {
             }
           );
 
-          const final = await ScheduledCampaign.findById(campaign._id);
           await ScheduledCampaign.findByIdAndUpdate(campaign._id, {
             status: 'completed'
           });

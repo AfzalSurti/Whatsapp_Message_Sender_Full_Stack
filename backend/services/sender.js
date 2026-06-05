@@ -7,13 +7,34 @@ const Campaign = require('../models/Campaign');
 // numbers — array of phone numbers
 // message — message to send
 // onProgress — callback to send live updates to frontend
-const sendMessages = async (client, userId, numbers, message, onProgress) => {
+const normalizeRecipients = (numbersOrRecipients, message) => {
+  if (
+    Array.isArray(numbersOrRecipients) &&
+    numbersOrRecipients.length > 0 &&
+    typeof numbersOrRecipients[0] === 'object' &&
+    numbersOrRecipients[0]?.phone
+  ) {
+    return numbersOrRecipients.map((item) => ({
+      phone: item.phone,
+      message: item.message || message
+    }));
+  }
+
+  return numbersOrRecipients.map((phone) => ({
+    phone,
+    message
+  }));
+};
+
+const sendMessages = async (client, userId, numbersOrRecipients, message, onProgress) => {
+  const recipients = normalizeRecipients(numbersOrRecipients, message);
+  const baseMessage = recipients[0]?.message || message || '';
 
   // Create campaign record in MongoDB
   const campaign = await Campaign.create({
     userId,
-    message,
-    totalNumbers: numbers.length,
+    message: baseMessage,
+    totalNumbers: recipients.length,
     status: 'running'
   });
 
@@ -22,8 +43,8 @@ const sendMessages = async (client, userId, numbers, message, onProgress) => {
   // Wait a moment to ensure client is fully ready
   await sleep(1000);
 
-  for (let i = 0; i < numbers.length; i++) {
-    const rawNumber = numbers[i];
+  for (let i = 0; i < recipients.length; i++) {
+    const { phone: rawNumber, message: recipientMessage } = recipients[i];
 
     try {
       // Clean number — remove all non-digits
@@ -32,14 +53,14 @@ const sendMessages = async (client, userId, numbers, message, onProgress) => {
       // Validate length
       if (cleanNumber.length < 10) {
         results.skipped++;
-        await logMessage(userId, campaign._id, rawNumber, message, 'skipped', 'Invalid number');
+        await logMessage(userId, campaign._id, rawNumber, recipientMessage, 'skipped', 'Invalid number');
         continue;
       }
 
       const whatsappId = `${cleanNumber}@c.us`;
 
       // Make message unique per number (to avoid WhatsApp duplicate detection)
-      const uniqueMessage = message + '\u200B'.repeat(i + 1);
+      const uniqueMessage = recipientMessage + '\u200B'.repeat(i + 1);
 
       // Send message with retry logic
       let retries = 0;
@@ -51,7 +72,7 @@ const sendMessages = async (client, userId, numbers, message, onProgress) => {
           await client.sendMessage(whatsappId, uniqueMessage);
           sent = true;
           results.sent++;
-          await logMessage(userId, campaign._id, rawNumber, message, 'sent', null);
+          await logMessage(userId, campaign._id, rawNumber, recipientMessage, 'sent', null);
           console.log(`✅ Message sent to ${rawNumber}`);
         } catch (err) {
           retries++;
@@ -66,13 +87,13 @@ const sendMessages = async (client, userId, numbers, message, onProgress) => {
 
     } catch (err) {
       results.failed++;
-      await logMessage(userId, campaign._id, rawNumber, message, 'failed', err.message);
+      await logMessage(userId, campaign._id, rawNumber, recipientMessage, 'failed', err.message);
     }
 
     // Send live progress to frontend via WebSocket
     onProgress({
       current: i + 1,
-      total: numbers.length,
+      total: recipients.length,
       sent: results.sent,
       failed: results.failed,
       skipped: results.skipped,

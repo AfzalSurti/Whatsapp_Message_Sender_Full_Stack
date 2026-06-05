@@ -15,6 +15,16 @@ const ScheduledCampaignSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Message is required']
     },
+    templateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'MessageTemplate',
+      default: null
+    },
+    templateVariables: {
+      type: Map,
+      of: String,
+      default: {}
+    },
     scheduledAt: {
       type: Date,
       required: [true, 'Scheduled time is required']

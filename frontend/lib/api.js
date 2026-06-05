@@ -96,4 +96,13 @@ export const scheduledAPI = {
   deleteCampaign: (id) => api.delete(`/api/scheduled/${id}`),
 };
 
+// ─── MESSAGE TEMPLATES ─────────────────────────────────────────
+export const templatesAPI = {
+  getTemplates: () => api.get('/api/templates'),
+  getTemplate: (id) => api.get(`/api/templates/${id}`),
+  createTemplate: (data) => api.post('/api/templates', data),
+  updateTemplate: (id, data) => api.put(`/api/templates/${id}`, data),
+  deleteTemplate: (id) => api.delete(`/api/templates/${id}`),
+};
+
 export default api;

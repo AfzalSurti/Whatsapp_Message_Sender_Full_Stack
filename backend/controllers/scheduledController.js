@@ -1,6 +1,8 @@
 const { validationResult } = require('express-validator');
 const ScheduledCampaign = require('../models/ScheduledCampaign');
 const ContactGroup = require('../models/ContactGroup');
+const MessageTemplate = require('../models/MessageTemplate');
+const { validateScheduleVariables } = require('../utils/template');
 
 const stripNumber = (num) => num.replace(/\D/g, '');
 
@@ -11,7 +13,16 @@ const createCampaign = async (req, res) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, message, scheduledAt, timezone, groupIds, individualNumbers } = req.body;
+    const {
+      name,
+      message,
+      scheduledAt,
+      timezone,
+      groupIds,
+      individualNumbers,
+      templateId,
+      templateVariables = {}
+    } = req.body;
 
     const scheduleTime = new Date(scheduledAt);
     const now = new Date();
@@ -21,8 +32,39 @@ const createCampaign = async (req, res) => {
       return res.status(400).json({ error: 'Scheduled time must be at least 1 minute in the future' });
     }
 
+    let resolvedMessage = message ? String(message).trim() : '';
+    let resolvedTemplateId = null;
+    let resolvedTemplateVariables = {};
+
+    if (templateId) {
+      const template = await MessageTemplate.findOne({
+        _id: templateId,
+        $or: [{ isSystem: true }, { userId: req.user._id }]
+      });
+
+      if (!template) {
+        return res.status(404).json({ error: 'Template not found' });
+      }
+
+      resolvedMessage = template.body;
+      resolvedTemplateId = template._id;
+    }
+
+    if (!resolvedMessage) {
+      return res.status(400).json({ error: 'Message or template is required' });
+    }
+
+    if (templateVariables && typeof templateVariables === 'object') {
+      resolvedTemplateVariables = Object.fromEntries(
+        Object.entries(templateVariables)
+          .filter(([key, value]) => key && String(value || '').trim())
+          .map(([key, value]) => [key, String(value).trim()])
+      );
+    }
+
     let allNumbers = [];
     const phoneSet = new Set();
+    const groupNameById = new Map();
 
     if (groupIds && groupIds.length > 0) {
       const groups = await ContactGroup.find({
@@ -30,15 +72,17 @@ const createCampaign = async (req, res) => {
         userId: req.user._id
       });
 
-      groups.forEach(group => {
-        group.numbers.forEach(num => {
+      groups.forEach((group) => {
+        groupNameById.set(String(group._id), group.name);
+        group.numbers.forEach((num) => {
           const cleanPhone = stripNumber(num.phone);
           if (!phoneSet.has(cleanPhone)) {
             phoneSet.add(cleanPhone);
             allNumbers.push({
               name: num.name || '',
               phone: cleanPhone,
-              groupId: group._id
+              groupId: group._id,
+              segment: group.name
             });
           }
         });
@@ -46,7 +90,7 @@ const createCampaign = async (req, res) => {
     }
 
     if (individualNumbers && individualNumbers.length > 0) {
-      individualNumbers.forEach(item => {
+      individualNumbers.forEach((item) => {
         const phone = typeof item === 'string' ? item : item.phone;
         const name = typeof item === 'object' ? (item.name || '') : '';
         const cleanPhone = stripNumber(phone);
@@ -56,7 +100,8 @@ const createCampaign = async (req, res) => {
           allNumbers.push({
             name,
             phone: cleanPhone,
-            groupId: null
+            groupId: null,
+            segment: ''
           });
         }
       });
@@ -66,10 +111,22 @@ const createCampaign = async (req, res) => {
       return res.status(400).json({ error: 'No valid phone numbers found' });
     }
 
+    const variableCheck = validateScheduleVariables(
+      resolvedMessage,
+      resolvedTemplateVariables,
+      allNumbers
+    );
+
+    if (!variableCheck.valid) {
+      return res.status(400).json({ error: variableCheck.error });
+    }
+
     const campaign = await ScheduledCampaign.create({
       userId: req.user._id,
       name: name || 'Untitled Campaign',
-      message,
+      message: resolvedMessage,
+      templateId: resolvedTemplateId,
+      templateVariables: resolvedTemplateVariables,
       scheduledAt: scheduleTime,
       timezone: timezone || 'Asia/Kolkata',
       groupIds: groupIds || [],
@@ -86,6 +143,7 @@ const createCampaign = async (req, res) => {
 const getCampaigns = async (req, res) => {
   try {
     const campaigns = await ScheduledCampaign.find({ userId: req.user._id })
+      .populate('templateId', 'name icon category')
       .sort({ scheduledAt: -1 });
 
     res.json({ campaigns });
@@ -101,7 +159,7 @@ const getCampaign = async (req, res) => {
     const campaign = await ScheduledCampaign.findOne({
       _id: id,
       userId: req.user._id
-    });
+    }).populate('templateId', 'name icon category');
 
     if (!campaign) {
       return res.status(404).json({ error: 'Campaign not found' });

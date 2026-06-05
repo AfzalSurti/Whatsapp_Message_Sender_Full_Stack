@@ -57,6 +57,7 @@ app.use('/api/contacts', require('./routes/contacts'));
 app.use('/api/keys', require('./routes/keys'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/scheduled', require('./routes/scheduled'));
+app.use('/api/templates', require('./routes/templates'));
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────
 app.get('/health', (req, res) => {

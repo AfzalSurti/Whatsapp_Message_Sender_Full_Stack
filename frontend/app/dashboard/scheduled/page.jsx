@@ -1,16 +1,24 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import InternationalPhoneInput from '@/components/InternationalPhoneInput';
-import { scheduledAPI, groupsAPI, aiAPI } from '@/lib/api';
+import TemplateCard from '@/components/dashboard/TemplateCard';
+import { scheduledAPI, groupsAPI, aiAPI, templatesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import {
   ChevronLeft, Plus, Trash2, X, Loader2, Clock,
-  CheckCircle, AlertCircle, Zap, Bot, ChevronRight
+  CheckCircle, AlertCircle, Zap, Bot, ChevronRight, FileText
 } from 'lucide-react';
 import Link from 'next/link';
 import { DEFAULT_PHONE_COUNTRY, formatPhoneNumber, normalizePhoneNumber } from '@/lib/phone';
+import {
+  extractVariables,
+  getMissingScheduleVariables,
+  validateScheduleOnClient,
+  variableLabel,
+  SCHEDULE_REQUIRED_VARIABLES
+} from '@/lib/template';
 
 const formatDate = (dateStr) => {
   const date = new Date(dateStr);
@@ -122,9 +130,15 @@ export default function ScheduledPage() {
 
   const [allGroups, setAllGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
 
   // Step 1 state
   const [campaignName, setCampaignName] = useState('');
+  const [messageMode, setMessageMode] = useState('manual'); // manual | template
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [templateVariables, setTemplateVariables] = useState({});
   const [message, setMessage] = useState('');
   const [aiPreset, setAiPreset] = useState('best');
   const [aiPrompt, setAiPrompt] = useState('');
@@ -178,6 +192,20 @@ export default function ScheduledPage() {
     }
   }, []);
 
+  const fetchTemplates = useCallback(async () => {
+    try {
+      setLoadingTemplates(true);
+      const res = await templatesAPI.getTemplates();
+      setTemplates(res.data.templates || []);
+      return res.data.templates || [];
+    } catch (err) {
+      toast.error('Failed to load templates');
+      return [];
+    } finally {
+      setLoadingTemplates(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!loading && !user) router.push('/login');
   }, [user, loading, router]);
@@ -186,8 +214,35 @@ export default function ScheduledPage() {
     if (user) {
       fetchCampaigns();
       fetchGroups();
+      fetchTemplates();
     }
-  }, [user, fetchCampaigns, fetchGroups]);
+  }, [user, fetchCampaigns, fetchGroups, fetchTemplates]);
+
+  const applyTemplateSelection = useCallback((template) => {
+    if (!template) return;
+    setMessageMode('template');
+    setSelectedTemplateId(template._id);
+    setSelectedTemplate(template);
+    setMessage(template.body);
+    if (!campaignName.trim()) {
+      setCampaignName(template.name);
+    }
+    setTemplateVariables({});
+  }, [campaignName]);
+
+  useEffect(() => {
+    if (!user || templates.length === 0) return;
+
+    const templateId = new URLSearchParams(window.location.search).get('template');
+    if (!templateId) return;
+
+    const template = templates.find((item) => item._id === templateId);
+    if (template) {
+      applyTemplateSelection(template);
+      setShowScheduleForm(true);
+      setStep(1);
+    }
+  }, [templates, user, applyTemplateSelection]);
 
   const handleAIGenerate = async () => {
     setAiLoading(true);
@@ -210,40 +265,62 @@ export default function ScheduledPage() {
     }
   };
 
-  const getTotalContactsCount = () => {
-    let count = 0;
+  const buildRecipients = useCallback(() => {
+    const recipients = [];
     const phoneSet = new Set();
 
-    selectedGroupIds.forEach(groupId => {
-      const group = allGroups.find(g => g._id === groupId);
-      if (group) {
-        group.numbers.forEach(num => {
-          if (!phoneSet.has(num.phone)) {
-            phoneSet.add(num.phone);
-            count++;
-          }
-        });
-      }
+    selectedGroupIds.forEach((groupId) => {
+      const group = allGroups.find((g) => g._id === groupId);
+      if (!group) return;
+
+      group.numbers.forEach((num) => {
+        const clean = num.phone.replace(/\D/g, '');
+        if (!phoneSet.has(clean)) {
+          phoneSet.add(clean);
+          recipients.push({
+            name: num.name || '',
+            phone: clean,
+            segment: group.name
+          });
+        }
+      });
     });
 
-    selectedGroupContacts.forEach(num => {
-      const clean = num.replace(/\D/g, '');
+    selectedGroupContacts.forEach((phone) => {
+      const clean = phone.replace(/\D/g, '');
+      if (phoneSet.has(clean)) return;
+
+      let name = '';
+      allGroups.forEach((group) => {
+        const match = (group.numbers || []).find((num) => num.phone.replace(/\D/g, '') === clean);
+        if (match?.name) name = match.name;
+      });
+
+      phoneSet.add(clean);
+      recipients.push({ name, phone: clean, segment: '' });
+    });
+
+    selectedIndividuals.forEach((phone) => {
+      const clean = phone.replace(/\D/g, '');
       if (!phoneSet.has(clean)) {
         phoneSet.add(clean);
-        count++;
+        recipients.push({ name: '', phone: clean, segment: '' });
       }
     });
 
-    selectedIndividuals.forEach(num => {
-      const clean = num.replace(/\D/g, '');
-      if (!phoneSet.has(clean)) {
-        phoneSet.add(clean);
-        count++;
-      }
-    });
+    return recipients;
+  }, [allGroups, selectedGroupContacts, selectedGroupIds, selectedIndividuals]);
 
-    return count;
-  };
+  const activeTemplateVariables = useMemo(
+    () => extractVariables(message),
+    [message]
+  );
+
+  const missingTemplateVariables = useMemo(
+    () => getMissingScheduleVariables(message, templateVariables),
+    [message, templateVariables]
+  );
+  const getTotalContactsCount = () => buildRecipients().length;
 
   const handleSearch = (query) => {
     setSearchQuery(query);
@@ -308,21 +385,71 @@ export default function ScheduledPage() {
     setSelectedIndividuals(selectedIndividuals.filter(n => n !== phone));
   };
 
+  const handleSelectTemplate = (template) => {
+    if (selectedTemplateId === template._id) {
+      setMessageMode('manual');
+      setSelectedTemplateId('');
+      setSelectedTemplate(null);
+      setTemplateVariables({});
+      return;
+    }
+
+    applyTemplateSelection(template);
+  };
+
+  const validateStepOne = () => {
+    if (!campaignName.trim()) {
+      toast.error('Enter campaign name');
+      return false;
+    }
+    if (!message.trim()) {
+      toast.error(messageMode === 'template' ? 'Select a template' : 'Enter message');
+      return false;
+    }
+    if (!scheduleDate || !scheduleTime) {
+      toast.error('Select date and time');
+      return false;
+    }
+    if (missingTemplateVariables.length > 0) {
+      toast.error(`Provide values for: ${missingTemplateVariables.map((v) => `{{${v}}}`).join(', ')}`);
+      return false;
+    }
+    return true;
+  };
+
   const handleSchedule = async () => {
     if (!campaignName.trim()) {
       toast.error('Enter campaign name');
       return;
     }
     if (!message.trim()) {
-      toast.error('Enter message');
+      toast.error('Enter message or select a template');
       return;
     }
     if (!scheduleDate || !scheduleTime) {
       toast.error('Select date and time');
       return;
     }
-    if (selectedGroupIds.length === 0 && selectedIndividuals.length === 0) {
+    if (selectedGroupIds.length === 0 && selectedIndividuals.length === 0 && selectedGroupContacts.length === 0) {
       toast.error('Select at least one group or number');
+      return;
+    }
+
+    const recipients = buildRecipients();
+    if (recipients.length === 0) {
+      toast.error('No valid recipients selected');
+      return;
+    }
+
+    const missingStatic = getMissingScheduleVariables(message, templateVariables);
+    if (missingStatic.length > 0) {
+      toast.error(`Provide values for: ${missingStatic.map((v) => `{{${v}}}`).join(', ')}`);
+      return;
+    }
+
+    const scheduleValidationError = validateScheduleOnClient(message, templateVariables, recipients);
+    if (scheduleValidationError) {
+      toast.error(scheduleValidationError);
       return;
     }
 
@@ -336,12 +463,18 @@ export default function ScheduledPage() {
         scheduledAt: dateTime.toISOString(),
         timezone: 'Asia/Kolkata',
         groupIds: selectedGroupIds,
-        individualNumbers: [...selectedGroupContacts, ...selectedIndividuals].map(phone => ({ phone }))
+        individualNumbers: [
+          ...selectedGroupContacts.map((phone) => ({ phone })),
+          ...selectedIndividuals.map((phone) => ({ phone }))
+        ],
+        templateId: messageMode === 'template' ? selectedTemplateId : undefined,
+        templateVariables
       });
 
       toast.success('Campaign scheduled!');
       setShowScheduleForm(false);
       resetForm();
+      router.replace('/dashboard/scheduled');
       await fetchCampaigns();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to schedule');
@@ -353,6 +486,10 @@ export default function ScheduledPage() {
   const resetForm = () => {
     setStep(1);
     setCampaignName('');
+    setMessageMode('manual');
+    setSelectedTemplateId('');
+    setSelectedTemplate(null);
+    setTemplateVariables({});
     setMessage('');
     setAiPreset('best');
     setAiPrompt('');
@@ -414,6 +551,23 @@ export default function ScheduledPage() {
   };
 
   const totalContacts = getTotalContactsCount();
+
+  const canProceedStep1 =
+    campaignName.trim() &&
+    message.trim() &&
+    scheduleDate &&
+    scheduleTime &&
+    missingTemplateVariables.length === 0;
+
+  const handleNextFromStep1 = () => {
+    if (!canProceedStep1) {
+      if (missingTemplateVariables.length > 0) {
+        toast.error(`Provide values for: ${missingTemplateVariables.map((v) => `{{${v}}}`).join(', ')}`);
+      }
+      return;
+    }
+    setStep(2);
+  };
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -484,6 +638,13 @@ export default function ScheduledPage() {
                       {campaign.message}
                     </p>
 
+                    {campaign.templateId && (
+                      <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 mb-3">
+                        <FileText size={11} />
+                        {typeof campaign.templateId === 'object' ? campaign.templateId.name : 'Template'}
+                      </span>
+                    )}
+
                     <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
                       <span className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
                         {groupCount} group{groupCount !== 1 ? 's' : ''}
@@ -542,7 +703,7 @@ export default function ScheduledPage() {
       {/* SCHEDULE FORM MODAL */}
       {showScheduleForm && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#111] border border-white/5 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-[#111] border border-white/5 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-white/5 sticky top-0 bg-[#111]">
               <div>
@@ -583,16 +744,127 @@ export default function ScheduledPage() {
                   </div>
 
                   <div>
-                    <label className="text-sm font-medium text-gray-300 block mb-2">Message</label>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-medium text-gray-300">Message Source</label>
+                      <Link href="/dashboard/templates" className="text-xs text-[#25D366] hover:underline">
+                        Manage templates
+                      </Link>
+                    </div>
+                    <div className="inline-flex p-1 rounded-xl bg-[#0a0a0a] border border-white/10 gap-1 mb-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMessageMode('manual');
+                          setSelectedTemplateId('');
+                          setSelectedTemplate(null);
+                          setTemplateVariables({});
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                          messageMode === 'manual'
+                            ? 'bg-[#25D366] text-black'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        Write manually
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMessageMode('template')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                          messageMode === 'template'
+                            ? 'bg-[#25D366] text-black'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        Use template
+                      </button>
+                    </div>
+
+                    {messageMode === 'template' && (
+                      <div className="mb-4">
+                        {loadingTemplates ? (
+                          <div className="flex items-center justify-center py-8">
+                            <Loader2 size={18} className="animate-spin text-[#25D366]" />
+                          </div>
+                        ) : templates.length === 0 ? (
+                          <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 text-sm text-gray-500">
+                            No templates yet.{' '}
+                            <Link href="/dashboard/templates" className="text-[#25D366] hover:underline">
+                              Create one
+                            </Link>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
+                            {templates.map((template) => (
+                              <TemplateCard
+                                key={template._id}
+                                template={template}
+                                selectable
+                                selected={selectedTemplateId === template._id}
+                                onUse={() => handleSelectTemplate(template)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {activeTemplateVariables.some((variable) => SCHEDULE_REQUIRED_VARIABLES.includes(variable)) && (
+                    <div className="bg-[#0a0a0a] border border-amber-500/20 rounded-xl p-4 space-y-3">
+                      <p className="text-sm font-medium text-amber-300">Template variables</p>
+                      {activeTemplateVariables
+                        .filter((variable) => SCHEDULE_REQUIRED_VARIABLES.includes(variable))
+                        .map((variable) => (
+                          <div key={variable}>
+                            <label className="text-xs text-gray-400 block mb-1.5">
+                              {variableLabel(variable)} ({`{{${variable}}}`})
+                            </label>
+                            <input
+                              type="text"
+                              value={templateVariables[variable] || ''}
+                              onChange={(e) =>
+                                setTemplateVariables((prev) => ({
+                                  ...prev,
+                                  [variable]: e.target.value
+                                }))
+                              }
+                              placeholder={`Enter ${variableLabel(variable).toLowerCase()}`}
+                              className="w-full px-4 py-2.5 bg-[#111] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
+                            />
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-300 block mb-2">
+                      {messageMode === 'template' ? 'Template Preview' : 'Message'}
+                    </label>
                     <textarea
                       placeholder="Type your message..."
                       value={message}
-                      onChange={(e) => setMessage(e.target.value)}
+                      onChange={(e) => {
+                        setMessage(e.target.value);
+                        if (messageMode === 'template' && selectedTemplate && e.target.value !== selectedTemplate.body) {
+                          setMessageMode('manual');
+                          setSelectedTemplateId('');
+                          setSelectedTemplate(null);
+                        }
+                      }}
+                      readOnly={messageMode === 'template' && Boolean(selectedTemplateId)}
                       rows={4}
-                      className="w-full px-4 py-3 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors resize-none"
+                      className={`w-full px-4 py-3 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors resize-none ${
+                        messageMode === 'template' && selectedTemplateId ? 'opacity-90' : ''
+                      }`}
                     />
                     {message && (
                       <p className="text-xs text-gray-600 text-right mt-1">{message.length} characters</p>
+                    )}
+                    {activeTemplateVariables.includes('name') && (
+                      <p className="text-xs text-amber-400 mt-2">
+                        This template uses {'{{name}}'}. Make sure selected contacts include names.
+                      </p>
                     )}
                   </div>
 
@@ -906,7 +1178,12 @@ export default function ScheduledPage() {
                     </div>
                     <div className="border-t border-white/5 pt-3">
                       <p className="text-xs text-gray-500 uppercase tracking-wide">Message Preview</p>
-                      <p className="text-white font-medium mt-1 line-clamp-3">{message}</p>
+                      {selectedTemplate && (
+                        <p className="text-xs text-violet-300 mt-1">
+                          Template: {selectedTemplate.icon} {selectedTemplate.name}
+                        </p>
+                      )}
+                      <p className="text-white font-medium mt-1 line-clamp-4 whitespace-pre-wrap">{message}</p>
                     </div>
                     <div className="border-t border-white/5 pt-3">
                       <p className="text-xs text-gray-500 uppercase tracking-wide">Recipients</p>
@@ -931,9 +1208,27 @@ export default function ScheduledPage() {
 
               {step < 3 && (
                 <button
-                  onClick={() => setStep(step + 1)}
+                  onClick={() => {
+                    if (step === 1 && !validateStepOne()) return;
+                    if (step === 2 && totalContacts === 0) {
+                      toast.error('Select at least one recipient');
+                      return;
+                    }
+                    if (step === 2 && message.includes('{{name}}')) {
+                      const scheduleValidationError = validateScheduleOnClient(
+                        message,
+                        templateVariables,
+                        buildRecipients()
+                      );
+                      if (scheduleValidationError) {
+                        toast.error(scheduleValidationError);
+                        return;
+                      }
+                    }
+                    setStep(step + 1);
+                  }}
                   disabled={
-                    (step === 1 && (!campaignName.trim() || !message.trim() || !scheduleDate || !scheduleTime)) ||
+                    (step === 1 && (!campaignName.trim() || !message.trim() || !scheduleDate || !scheduleTime || missingTemplateVariables.length > 0)) ||
                     (step === 2 && totalContacts === 0)
                   }
                   className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
