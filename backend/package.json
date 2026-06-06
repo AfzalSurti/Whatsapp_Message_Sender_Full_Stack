@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "postinstall": "node scripts/ensure-chrome.js",
+    "build": "node scripts/ensure-chrome.js",
     "start": "node index.js",
     "dev": "nodemon index.js"
   },

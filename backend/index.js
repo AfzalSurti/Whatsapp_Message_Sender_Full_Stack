@@ -1,5 +1,7 @@
 const express = require('express');
 require('dotenv').config();
+require('./config/puppeteerEnv');
+const fs = require('fs');
 const http = require('http');           // needed to share server with WebSocket
 const cors = require('cors');
 const morgan = require('morgan');
@@ -104,6 +106,13 @@ setupWebSocket(server, verifyToken);
 // server handles both HTTP and WebSocket
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
+
+  if (process.platform === 'linux') {
+    const { resolveChromeExecutable } = require('./config/puppeteerEnv');
+    const chromePath = resolveChromeExecutable();
+    console.log(`Puppeteer cache: ${process.env.PUPPETEER_CACHE_DIR}`);
+    console.log(`Chrome executable: ${chromePath || 'NOT FOUND — run node scripts/ensure-chrome.js during build'}`);
+  }
 
   // Recover active sessions from database after a short delay
   setTimeout(() => {

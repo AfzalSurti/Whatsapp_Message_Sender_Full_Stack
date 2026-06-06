@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const qrcode = require('qrcode');
 const Session = require('../models/Session');
+const { resolveChromeExecutable } = require('../config/puppeteerEnv');
 
 //client store
 const clients=new Map();
@@ -71,18 +72,7 @@ const getStatus=(userId)=>{
     return entry.status;
 };
 
-const resolvePuppeteerChrome = () => {
-    try {
-        const puppeteer = require('puppeteer');
-        const executablePath = puppeteer.executablePath();
-        if (executablePath && fs.existsSync(executablePath)) {
-            return executablePath;
-        }
-    } catch (err) {
-        console.warn(`Puppeteer executable lookup failed: ${err.message}`);
-    }
-    return null;
-};
+const resolvePuppeteerChrome = () => resolveChromeExecutable();
 
 const resolveExecutablePath = () => {
     if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
