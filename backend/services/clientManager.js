@@ -71,9 +71,27 @@ const getStatus=(userId)=>{
     return entry.status;
 };
 
+const resolvePuppeteerChrome = () => {
+    try {
+        const puppeteer = require('puppeteer');
+        const executablePath = puppeteer.executablePath();
+        if (executablePath && fs.existsSync(executablePath)) {
+            return executablePath;
+        }
+    } catch (err) {
+        console.warn(`Puppeteer executable lookup failed: ${err.message}`);
+    }
+    return null;
+};
+
 const resolveExecutablePath = () => {
     if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
         return process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
+    const puppeteerChrome = resolvePuppeteerChrome();
+    if (puppeteerChrome) {
+        return puppeteerChrome;
     }
 
     if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
@@ -199,7 +217,8 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
                 '--disable-web-resources',
                 '--disable-default-apps',
                 '--disable-popup-blocking',
-                '--start-maximized'
+                '--no-zygote',
+                '--disable-software-rasterizer'
             ]
         }
     });
