@@ -311,6 +311,18 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
         onReady(); // notify frontend
     });
 
+    client.on('message', async (msg) => {
+        if (msg.fromMe) return;
+        if (msg.isGroupMsg) return;
+
+        try {
+            const { handleIncomingMessage } = require('./autoReplyService');
+            await handleIncomingMessage(client, userId, msg);
+        } catch (err) {
+            console.error(`Auto-reply error for user ${userIdStr}:`, err.message);
+        }
+    });
+
     //auth failure or disconnected event
     client.on('auth_failure',async(msg)=>{
         console.error(`Authentication failure for user: ${userIdStr}`,msg);
