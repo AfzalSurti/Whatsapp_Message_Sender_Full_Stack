@@ -9,6 +9,35 @@
     @apply bg-white dark:bg-dark-bg text-gray-900 dark:text-white transition-colors duration-300;
   }
 
+  button:not(:disabled),
+  [type='button']:not(:disabled),
+  [type='submit']:not(:disabled),
+  [type='reset']:not(:disabled),
+  a[href],
+  label,
+  select:not(:disabled),
+  summary,
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='range']:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='link'],
+  [role='tab'],
+  [role='menuitem'],
+  .cursor-pointer {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [type='button']:disabled,
+  [type='submit']:disabled,
+  [type='reset']:disabled,
+  select:disabled,
+  input:disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
   ::-webkit-scrollbar {
     width: 6px;
   }
@@ -24,11 +53,11 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-primary hover:bg-primary-hover text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-primary hover:bg-primary-hover text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-outline {
-    @apply border-2 border-primary text-primary hover:bg-primary hover:text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200;
+    @apply border-2 border-primary text-primary hover:bg-primary hover:text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer;
   }
 
   .input-field {
@@ -55,4 +84,10 @@
 /* Slight stagger utility when applied via inline style or JS */
 .pop-up--delayed {
   transition-delay: 80ms;
+}
+
+/* Third-party phone input country selector */
+.react-international-phone-country-selector-button,
+.react-international-phone-country-selector-button:hover {
+  cursor: pointer;
 }
