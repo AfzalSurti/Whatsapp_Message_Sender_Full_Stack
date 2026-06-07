@@ -9,6 +9,7 @@ import {
   Search,
   SkipForward,
   Trash2,
+  X,
   XCircle
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -72,6 +73,7 @@ export default function AutoReplyPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [deletingContactPhone, setDeletingContactPhone] = useState('');
 
   const latestLogIdRef = useRef(null);
   const pollInitializedRef = useRef(false);
@@ -294,6 +296,31 @@ export default function AutoReplyPage() {
     });
   };
 
+  const removeSelectedContact = (value) => {
+    setSelectedContacts((prev) => prev.filter((item) => item !== value));
+  };
+
+  const selectedContactDetails = useMemo(() => {
+    return selectedContacts.map((value) => {
+      const saved = savedContacts.find(
+        (contact) => contact.phoneNumber === value || contact.chatId === value
+      );
+      const whatsapp = whatsappContacts.find(
+        (contact) => contact.phoneNumber === value || contact.chatId === value
+      );
+      const fromLog = logContacts.find((contact) => contact.contactPhone === value);
+
+      return {
+        value,
+        name: saved?.name || whatsapp?.name || fromLog?.contactName || value,
+        subtitle:
+          value.includes('@') || value === saved?.name || value === whatsapp?.name
+            ? ''
+            : value
+      };
+    });
+  }, [selectedContacts, savedContacts, whatsappContacts, logContacts]);
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -326,6 +353,27 @@ export default function AutoReplyPage() {
       fetchLogContacts();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to delete log');
+    }
+  };
+
+  const handleDeleteContactLogs = async (contactPhone) => {
+    const label =
+      logContacts.find((contact) => contact.contactPhone === contactPhone)?.contactName ||
+      contactPhone;
+
+    if (!window.confirm(`Delete all conversation history for ${label}?`)) return;
+
+    setDeletingContactPhone(contactPhone);
+    try {
+      await autoReplyAPI.deleteContactLogs(contactPhone);
+      setLogs((prev) => prev.filter((log) => log.contactPhone !== contactPhone));
+      if (contactFilter === contactPhone) setContactFilter('');
+      toast.success('Contact history deleted');
+      fetchLogContacts();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to delete contact history');
+    } finally {
+      setDeletingContactPhone('');
     }
   };
 
@@ -551,6 +599,53 @@ export default function AutoReplyPage() {
                   {selectedContacts.length} contact{selectedContacts.length === 1 ? '' : 's'} selected
                 </p>
               )}
+
+              <div className="border-t border-white/5 pt-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-gray-300">
+                    Added numbers ({selectedContacts.length})
+                  </span>
+                  {selectedContacts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedContacts([])}
+                      className="text-[10px] text-red-400 hover:text-red-300 transition-colors"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+
+                {selectedContacts.length === 0 ? (
+                  <p className="text-xs text-gray-500">
+                    No numbers added yet. Check contacts above, then save settings.
+                  </p>
+                ) : (
+                  <div className="max-h-36 overflow-y-auto space-y-1.5">
+                    {selectedContactDetails.map((item) => (
+                      <div
+                        key={item.value}
+                        className="flex items-center justify-between gap-2 p-2 rounded-lg bg-[#111] border border-white/5"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium truncate">{item.name}</div>
+                          {item.subtitle ? (
+                            <div className="text-[10px] text-gray-500 truncate">{item.subtitle}</div>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeSelectedContact(item.value)}
+                          className="shrink-0 text-gray-500 hover:text-red-400 transition-colors p-1"
+                          aria-label={`Remove ${item.name}`}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -602,7 +697,15 @@ export default function AutoReplyPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold">Conversation History</h2>
-              <p className="text-sm text-gray-400 mt-1">Incoming messages and AI replies.</p>
+              <p className="text-sm text-gray-400 mt-1">
+                Incoming messages and AI replies.
+                {logContacts.length > 0 && (
+                  <span className="text-gray-500">
+                    {' '}
+                    · {logContacts.length} contact{logContacts.length === 1 ? '' : 's'}
+                  </span>
+                )}
+              </p>
             </div>
             <button
               type="button"
@@ -614,20 +717,83 @@ export default function AutoReplyPage() {
             </button>
           </div>
 
-          <div>
-            <label className="text-xs text-gray-500 mb-2 block">Filter by contact</label>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs text-gray-500">Filter by contact</label>
+              {contactFilter && (
+                <button
+                  type="button"
+                  onClick={() => setContactFilter('')}
+                  className="text-[10px] text-gray-400 hover:text-white transition-colors"
+                >
+                  Show all
+                </button>
+              )}
+            </div>
             <select
               value={contactFilter}
               onChange={(e) => setContactFilter(e.target.value)}
               className="w-full sm:w-72 bg-[#0a0a0a] border border-white/10 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#25D366]/40"
             >
-              <option value="">All contacts</option>
+              <option value="">All contacts ({logContacts.length})</option>
               {logContacts.map((contact) => (
                 <option key={contact.contactPhone} value={contact.contactPhone}>
-                  {contact.contactName || contact.contactPhone} ({contact.contactPhone})
+                  {contact.contactName || contact.contactPhone} ({contact.messageCount || 0} msgs)
                 </option>
               ))}
             </select>
+
+            {logContacts.length > 0 && (
+              <div className="border border-white/5 rounded-xl bg-[#0a0a0a] p-3 space-y-2">
+                <div className="text-xs font-medium text-gray-300">
+                  Contacts in history ({logContacts.length})
+                </div>
+                <div className="max-h-40 overflow-y-auto space-y-1.5">
+                  {logContacts.map((contact) => {
+                    const isActive = contactFilter === contact.contactPhone;
+                    const isDeleting = deletingContactPhone === contact.contactPhone;
+
+                    return (
+                      <div
+                        key={contact.contactPhone}
+                        className={`flex items-center justify-between gap-2 p-2 rounded-lg border ${
+                          isActive
+                            ? 'border-[#25D366]/30 bg-[#25D366]/5'
+                            : 'border-white/5 bg-[#111]'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setContactFilter(contact.contactPhone)}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <div className="text-xs font-medium truncate">
+                            {contact.contactName || 'Unknown contact'}
+                          </div>
+                          <div className="text-[10px] text-gray-500 truncate">
+                            {contact.contactPhone}
+                            {contact.messageCount ? ` · ${contact.messageCount} message${contact.messageCount === 1 ? '' : 's'}` : ''}
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteContactLogs(contact.contactPhone)}
+                          disabled={isDeleting}
+                          className="shrink-0 text-gray-500 hover:text-red-400 transition-colors p-1 disabled:opacity-50"
+                          aria-label={`Delete history for ${contact.contactName || contact.contactPhone}`}
+                        >
+                          {isDeleting ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {logsLoading ? (

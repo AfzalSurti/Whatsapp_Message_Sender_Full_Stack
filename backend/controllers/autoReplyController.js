@@ -131,7 +131,8 @@ const getContacts = async (req, res) => {
         $group: {
           _id: '$contactPhone',
           contactName: { $last: '$contactName' },
-          lastMessageAt: { $max: '$createdAt' }
+          lastMessageAt: { $max: '$createdAt' },
+          messageCount: { $sum: 1 }
         }
       },
       { $sort: { lastMessageAt: -1 } },
@@ -140,15 +141,42 @@ const getContacts = async (req, res) => {
           _id: 0,
           contactPhone: '$_id',
           contactName: 1,
-          lastMessageAt: 1
+          lastMessageAt: 1,
+          messageCount: 1
         }
       }
     ]);
 
-    res.json({ contacts });
+    res.json({ contacts, total: contacts.length });
   } catch (err) {
     console.error('Get auto-reply contacts failed:', err.message);
     res.status(500).json({ error: 'Failed to load auto-reply contacts' });
+  }
+};
+
+const deleteContactLogs = async (req, res) => {
+  try {
+    const contactPhone = String(req.query.contactPhone || '').trim();
+    if (!contactPhone) {
+      return res.status(400).json({ error: 'contactPhone is required' });
+    }
+
+    const result = await AutoReplyLog.deleteMany({
+      userId: req.user._id,
+      contactPhone
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: 'No conversation history found for this contact' });
+    }
+
+    res.json({
+      message: 'Contact conversation history deleted',
+      deletedCount: result.deletedCount
+    });
+  } catch (err) {
+    console.error('Delete auto-reply contact logs failed:', err.message);
+    res.status(500).json({ error: 'Failed to delete contact history' });
   }
 };
 
@@ -216,5 +244,6 @@ module.exports = {
   getContacts,
   getWhatsAppContacts,
   deleteLog,
+  deleteContactLogs,
   clearLogs
 };

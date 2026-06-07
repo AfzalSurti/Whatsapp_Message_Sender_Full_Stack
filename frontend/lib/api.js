@@ -119,6 +119,8 @@ export const autoReplyAPI = {
   getLogs: (params) => api.get('/api/auto-reply/logs', { params }),
   getContacts: () => api.get('/api/auto-reply/contacts'),
   deleteLog: (id) => api.delete(`/api/auto-reply/logs/${id}`),
+  deleteContactLogs: (contactPhone) =>
+    api.delete('/api/auto-reply/contacts', { params: { contactPhone } }),
   clearLogs: () => api.delete('/api/auto-reply/logs'),
 };
 
