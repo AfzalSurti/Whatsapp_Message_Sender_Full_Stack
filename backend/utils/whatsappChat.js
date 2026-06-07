@@ -22,6 +22,23 @@ const normalizePhoneValue = (value) => {
   return normalized?.e164 || null;
 };
 
+const resolvePhoneFromContactSync = (contact) => {
+  if (!contact) return null;
+
+  const candidates = [
+    contact.number,
+    contact.id?.user,
+    contact.id?._serialized?.split('@')[0]
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const normalized = normalizePhoneValue(candidate);
+    if (normalized) return normalized;
+  }
+
+  return null;
+};
+
 const isAutoReplyEligibleMessage = (msg) => {
   if (!msg || msg.fromMe) return false;
   if (msg.isStatus || msg.broadcast) return false;
@@ -36,18 +53,8 @@ const isAutoReplyEligibleMessage = (msg) => {
 };
 
 const resolvePhoneFromContact = async (contact) => {
-  if (!contact) return null;
-
-  const candidates = [
-    contact.number,
-    contact.id?.user,
-    contact.id?._serialized?.split('@')[0]
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    const normalized = normalizePhoneValue(candidate);
-    if (normalized) return normalized;
-  }
+  const syncValue = resolvePhoneFromContactSync(contact);
+  if (syncValue) return syncValue;
 
   try {
     const formatted = await contact.getFormattedNumber();
@@ -66,7 +73,7 @@ const resolveMessageContact = async (msg) => {
   try {
     contact = await msg.getContact();
     contactName = contact.pushname || contact.name || contact.shortName || contact.verifiedName || '';
-    contactPhone = await resolvePhoneFromContact(contact);
+    contactPhone = (await resolvePhoneFromContact(contact)) || resolvePhoneFromContactSync(contact);
   } catch (err) {
     console.warn(`Could not resolve WhatsApp contact for auto-reply: ${err.message}`);
   }
@@ -113,26 +120,7 @@ const contactMatchesSelection = (selection, chatId, contactPhone) => {
 const isContactSelected = (selectedContacts = [], chatId, contactPhone) =>
   selectedContacts.some((selection) => contactMatchesSelection(selection, chatId, contactPhone));
 
-const serializeWhatsAppContact = async (contact) => {
-  if (!contact || contact.isMe || contact.isGroup || contact.isBlocked) return null;
-
-  const chatId = contact.id?._serialized || '';
-  const server = getChatServer(chatId);
-
-  if (!PERSONAL_CHAT_SERVERS.has(server)) return null;
-
-  const phoneNumber = (await resolvePhoneFromContact(contact)) || chatId;
-  const name = contact.name || contact.pushname || contact.shortName || contact.verifiedName || phoneNumber;
-
-  return {
-    chatId,
-    name,
-    phoneNumber,
-    isMyContact: Boolean(contact.isMyContact)
-  };
-};
-
-const serializeWhatsAppChat = async (client, chat, contactById = new Map()) => {
+const serializeChatContact = (chat, contactById = new Map()) => {
   if (!chat || chat.isGroup) return null;
 
   const chatId = chat.id?._serialized || '';
@@ -140,76 +128,54 @@ const serializeWhatsAppChat = async (client, chat, contactById = new Map()) => {
   if (!chatId || !PERSONAL_CHAT_SERVERS.has(server)) return null;
 
   const savedContact = contactById.get(chatId);
-  if (savedContact) {
-    const serialized = await serializeWhatsAppContact(savedContact);
-    if (serialized) {
-      return {
-        ...serialized,
-        name: serialized.name || chat.name || serialized.phoneNumber
-      };
-    }
-  }
-
-  let phoneNumber = '';
-  try {
-    const contact = await client.getContactById(chatId);
-    phoneNumber = (await resolvePhoneFromContact(contact)) || '';
-  } catch {
-    // Fall back to chat metadata below.
-  }
+  let phoneNumber = resolvePhoneFromContactSync(savedContact);
 
   if (!phoneNumber) {
     const userPart = chatId.split('@')[0];
     phoneNumber = looksLikePhoneDigits(userPart) ? normalizePhoneValue(userPart) || chatId : chatId;
   }
 
+  const name =
+    chat.name ||
+    savedContact?.name ||
+    savedContact?.pushname ||
+    savedContact?.shortName ||
+    phoneNumber;
+
   return {
     chatId,
-    name: chat.name || phoneNumber,
+    name,
     phoneNumber,
     isMyContact: Boolean(savedContact?.isMyContact)
   };
 };
 
 const fetchWhatsAppContacts = async (client) => {
-  const [chats, contacts] = await Promise.all([
-    client.getChats(),
-    client.getContacts()
-  ]);
+  const chats = await client.getChats();
 
-  const contactById = new Map();
-  for (const contact of contacts) {
-    const chatId = contact.id?._serialized;
-    if (chatId) contactById.set(chatId, contact);
+  let contactById = new Map();
+  try {
+    const contacts = await client.getContacts();
+    contactById = new Map(
+      contacts
+        .filter((contact) => contact.id?._serialized)
+        .map((contact) => [contact.id._serialized, contact])
+    );
+  } catch (err) {
+    console.warn(`Could not load WhatsApp contact index: ${err.message}`);
   }
 
   const serialized = [];
   const seen = new Set();
 
   for (const chat of chats) {
-    try {
-      const item = await serializeWhatsAppChat(client, chat, contactById);
-      if (!item || seen.has(item.chatId)) continue;
-      seen.add(item.chatId);
-      serialized.push(item);
-    } catch (err) {
-      console.warn(`Skipping WhatsApp chat during serialization: ${err.message}`);
-    }
-  }
-
-  for (const contact of contacts) {
-    try {
-      const item = await serializeWhatsAppContact(contact);
-      if (!item || seen.has(item.chatId)) continue;
-      seen.add(item.chatId);
-      serialized.push(item);
-    } catch (err) {
-      console.warn(`Skipping WhatsApp contact during serialization: ${err.message}`);
-    }
+    const item = serializeChatContact(chat, contactById);
+    if (!item || seen.has(item.chatId)) continue;
+    seen.add(item.chatId);
+    serialized.push(item);
   }
 
   serialized.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-
   return serialized;
 };
 
@@ -219,8 +185,7 @@ module.exports = {
   resolveMessageContact,
   isContactSelected,
   contactMatchesSelection,
-  serializeWhatsAppContact,
-  serializeWhatsAppChat,
+  serializeChatContact,
   fetchWhatsAppContacts,
   normalizePhoneValue
 };

@@ -155,22 +155,29 @@ const getContacts = async (req, res) => {
 const getWhatsAppContacts = async (req, res) => {
   try {
     const userId = req.user._id;
-    const status = clientManager.getStatus(userId);
+    let client = clientManager.getClient(userId);
 
-    if (status !== 'connected') {
-      return res.status(400).json({ error: 'WhatsApp not connected. Connect first to load contacts.' });
+    if (!clientManager.isClientReady(userId)) {
+      client = await clientManager.waitForClientReady(userId, 20000);
     }
 
-    const client = clientManager.getClient(userId);
-    if (!client) {
-      return res.status(400).json({ error: 'WhatsApp client is not ready yet.' });
+    if (!client || !clientManager.isClientReady(userId)) {
+      return res.status(400).json({
+        error: 'WhatsApp not connected. Connect first, then click Refresh.'
+      });
     }
 
-    const contacts = await fetchWhatsAppContacts(client);
+    const contacts = await Promise.race([
+      fetchWhatsAppContacts(client),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Loading WhatsApp contacts timed out')), 45000);
+      })
+    ]);
+
     res.json({ contacts });
   } catch (err) {
     console.error('Get WhatsApp contacts failed:', err.message);
-    res.status(500).json({ error: 'Failed to load WhatsApp contacts' });
+    res.status(500).json({ error: err.message || 'Failed to load WhatsApp contacts' });
   }
 };
 

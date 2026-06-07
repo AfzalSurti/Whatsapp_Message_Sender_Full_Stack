@@ -16,7 +16,29 @@ const clients=new Map();
 // Track clients being created to prevent duplicates
 const clientsBeingCreated = new Set();
 
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isClientReady = (userId) => {
+    const entry = clients.get(userId.toString());
+    return Boolean(
+        entry?.client &&
+        entry.status === 'connected' &&
+        typeof entry.client.sendMessage === 'function'
+    );
+};
+
+const waitForClientReady = async (userId, maxMs = 20000) => {
+    const started = Date.now();
+
+    while (Date.now() - started < maxMs) {
+        if (isClientReady(userId)) {
+            return getClient(userId);
+        }
+        await sleep(500);
+    }
+
+    return null;
+};
 
 const isBrowserAlreadyRunningError = (err) =>
     /browser is already running/i.test(err?.message || '');
@@ -335,18 +357,6 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
             client.info?.wid?.user ? `+${client.info.wid.user}` : null
         );
 
-        // RemoteAuth waits 60s before the first backup by default — persist sooner so restarts recover.
-        if (client.authStrategy?.storeRemoteSession) {
-            setTimeout(async () => {
-                try {
-                    await client.authStrategy.storeRemoteSession({ emit: true });
-                    console.log(`Early RemoteAuth backup completed for user: ${userIdStr}`);
-                } catch (err) {
-                    console.warn(`Early RemoteAuth backup failed for user ${userIdStr}: ${err.message}`);
-                }
-            }, 5000);
-        }
-
         onReady(); // notify frontend
     });
 
@@ -576,6 +586,8 @@ module.exports={
     createClient,
     getClient,
     getStatus,
+    isClientReady,
+    waitForClientReady,
     disconnectClient,
     clearWhatsAppSession,
     recoverSessions,

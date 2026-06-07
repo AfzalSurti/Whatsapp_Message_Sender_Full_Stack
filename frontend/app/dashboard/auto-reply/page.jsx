@@ -12,7 +12,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { autoReplyAPI } from '@/lib/api';
+import { autoReplyAPI, whatsappAPI } from '@/lib/api';
 
 const statusConfig = {
   sent: {
@@ -58,6 +58,7 @@ export default function AutoReplyPage() {
   const [whatsappContacts, setWhatsappContacts] = useState([]);
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactsError, setContactsError] = useState('');
+  const [waConnected, setWaConnected] = useState(false);
   const [contactSearch, setContactSearch] = useState('');
 
   const [logs, setLogs] = useState([]);
@@ -93,11 +94,22 @@ export default function AutoReplyPage() {
   const fetchWhatsAppContacts = useCallback(async () => {
     setContactsLoading(true);
     setContactsError('');
+
     try {
+      const statusRes = await whatsappAPI.getStatus();
+      const connected = statusRes.data.status === 'connected' && statusRes.data.clientReady;
+      setWaConnected(connected);
+
+      if (!connected) {
+        setContactsError('Connect WhatsApp first, then click Refresh.');
+        setWhatsappContacts([]);
+        return;
+      }
+
       const res = await autoReplyAPI.getWhatsAppContacts();
       setWhatsappContacts(res.data.contacts || []);
     } catch (err) {
-      const message = err.response?.data?.error || 'Failed to load WhatsApp contacts';
+      const message = err.response?.data?.error || err.message || 'Failed to load WhatsApp contacts';
       setContactsError(message);
       setWhatsappContacts([]);
     } finally {
@@ -177,14 +189,30 @@ export default function AutoReplyPage() {
   useEffect(() => {
     if (!user) return;
     fetchConfig();
-    fetchWhatsAppContacts();
     fetchLogContacts();
-  }, [user, fetchConfig, fetchWhatsAppContacts, fetchLogContacts]);
+  }, [user, fetchConfig, fetchLogContacts]);
 
   useEffect(() => {
-    if (!user || mode !== 'selected') return;
+    if (!user) return;
+
+    const syncStatus = async () => {
+      try {
+        const res = await whatsappAPI.getStatus();
+        setWaConnected(res.data.status === 'connected' && res.data.clientReady);
+      } catch {
+        setWaConnected(false);
+      }
+    };
+
+    syncStatus();
+    const intervalId = setInterval(syncStatus, 5000);
+    return () => clearInterval(intervalId);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || mode !== 'selected' || !waConnected) return;
     fetchWhatsAppContacts();
-  }, [user, mode, fetchWhatsAppContacts]);
+  }, [user, mode, waConnected, fetchWhatsAppContacts]);
 
   useEffect(() => {
     if (!user) return;
@@ -386,6 +414,10 @@ export default function AutoReplyPage() {
                   </div>
                 ) : contactsError ? (
                   <p className="text-xs text-amber-400">{contactsError}</p>
+                ) : !waConnected ? (
+                  <p className="text-xs text-gray-500">
+                    Connect WhatsApp from the header, then click Refresh.
+                  </p>
                 ) : filteredWhatsAppContacts.length === 0 ? (
                   <p className="text-xs text-gray-500">
                     No WhatsApp contacts found. Connect WhatsApp and click Refresh.
