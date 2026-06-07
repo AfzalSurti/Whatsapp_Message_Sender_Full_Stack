@@ -19,6 +19,56 @@ const clients=new Map();
 // Track clients being created to prevent duplicates
 const clientsBeingCreated = new Set();
 
+// Render has limited RAM — only launch one Chrome at a time to avoid OOM restarts
+let browserLaunchChain = Promise.resolve();
+
+const withBrowserLaunchLock = async (fn) => {
+  const run = browserLaunchChain.then(fn);
+  browserLaunchChain = run.catch(() => {});
+  return run;
+};
+
+const isProductionLinux = () =>
+  process.platform === 'linux' &&
+  (process.env.NODE_ENV === 'production' || process.env.RENDER === 'true');
+
+const getPuppeteerArgs = () => {
+  const args = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--disable-web-resources',
+    '--disable-default-apps',
+    '--disable-popup-blocking',
+    '--no-zygote',
+    '--disable-software-rasterizer',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-extensions',
+    '--disable-background-networking',
+    '--disable-sync',
+    '--mute-audio',
+    '--hide-scrollbars'
+  ];
+
+  if (isProductionLinux()) {
+    args.push('--single-process');
+  }
+
+  return args;
+};
+
+const getPuppeteerLaunchOptions = (executablePath) => ({
+  headless: true,
+  executablePath: executablePath || undefined,
+  args: getPuppeteerArgs(),
+  timeout: isProductionLinux() ? 120000 : 60000,
+  protocolTimeout: isProductionLinux() ? 120000 : 60000
+});
+
+const getQrTimeoutMs = () => (isProductionLinux() ? 90000 : 30000);
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isClientReady = (userId) => {
@@ -250,21 +300,7 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
             store: new FixedMongoStore({ mongoose, authDataPath: AUTH_DATA_PATH }),
             backupSyncIntervalMs: 180000
         }),
-        puppeteer:{
-            headless:true,
-            executablePath: executablePath || undefined,
-            args:[
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-web-resources',
-                '--disable-default-apps',
-                '--disable-popup-blocking',
-                '--no-zygote',
-                '--disable-software-rasterizer'
-            ]
-        }
+        puppeteer: getPuppeteerLaunchOptions(executablePath)
     });
 
     //store client and status
@@ -411,7 +447,9 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
         onDisconnected(reason); // notify frontend
     });
 
-    client.initialize()
+    await withBrowserLaunchLock(async () => {
+        await client.initialize();
+    })
         .then(() => {
             clientsBeingCreated.delete(userIdStr);
         })
@@ -447,14 +485,14 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
             onDisconnected(`WhatsApp browser failed to start: ${err.message}`);
         }); // start the client
 
-    // Timeout if QR not received within 30 seconds
+    // Timeout if QR not received within the launch window
     const qrTimeoutHandle = setTimeout(() => {
         const entry = clients.get(userIdStr);
         if(entry && entry.status === 'pending'){
-            console.warn(`⚠️  QR Code timeout for user: ${userIdStr} - no QR received in 30 seconds`);
-            console.warn(`This usually means the browser failed to load WhatsApp.com`);
+            console.warn(`⚠️  QR Code timeout for user: ${userIdStr} - no QR received in ${getQrTimeoutMs() / 1000} seconds`);
+            console.warn(`This usually means the browser failed to load WhatsApp.com (check Render memory/plan)`);
         }
-    }, 30000);
+    }, getQrTimeoutMs());
 
     // Store timeout so we can clear it later
     if(clients.get(userIdStr)){
@@ -568,6 +606,11 @@ const ensureClientConnected = async (userId, sendToUser) => {
 //recover sessions on backend startup
 const recoverSessions=async(sendToUser)=>{
     try {
+        if (process.env.SKIP_SESSION_RECOVERY === 'true') {
+            console.log('Skipping WhatsApp session recovery (SKIP_SESSION_RECOVERY=true)');
+            return;
+        }
+
         console.log('🔄 Attempting to recover active sessions from database...');
         const activeSessions = await Session.find({ isActive: true });
 
@@ -577,6 +620,8 @@ const recoverSessions=async(sendToUser)=>{
         }
 
         console.log(`Found ${activeSessions.length} active sessions to recover`);
+
+        const recoveryDelayMs = isProductionLinux() ? 8000 : 2000;
 
         for (const session of activeSessions) {
             try {
@@ -605,6 +650,11 @@ const recoverSessions=async(sendToUser)=>{
                     },
                     { suppressQrNotification: true }
                 );
+
+                if (isProductionLinux()) {
+                    console.log(`Waiting ${recoveryDelayMs / 1000}s before next session recovery (Render memory limit)`);
+                    await sleep(recoveryDelayMs);
+                }
             } catch (err) {
                 console.error(`Error recovering session for user ${session.userId}:`, err.message);
             }

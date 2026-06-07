@@ -5,6 +5,15 @@ services:
     rootDir: backend
     buildCommand: npm install && npm run build
     startCommand: npm start
+    plan: standard
     envVars:
       - key: NODE_ENV
         value: production
+      - key: CLIENT_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false

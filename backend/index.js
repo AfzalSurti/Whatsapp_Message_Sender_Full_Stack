@@ -8,6 +8,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const passport = require('./config/passport');
 
+const { createCorsOptions, logCorsConfig } = require('./config/cors');
 const connectDB = require('./config/db');
 const securityHeaders = require('./middleware/securityHeaders');
 const { getSafeErrorMessage } = require('./utils/safeError');
@@ -19,6 +20,9 @@ const { sendMessages } = require('./services/sender');
 const clientManager = require('./services/clientManager');
 
 const app = express();
+
+// Render / Vercel sit behind a reverse proxy — required for rate-limit + real client IP
+app.set('trust proxy', 1);
 
 // ─── CREATE HTTP SERVER ───────────────────────────────────────
 // We need raw HTTP server to attach WebSocket on same port
@@ -33,15 +37,15 @@ connectDB();
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: { error: 'Too many requests. Please try again later.' }
+  message: { error: 'Too many requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS'
 });
 
 // ─── MIDDLEWARE ───────────────────────────────────────────────
 app.use(securityHeaders);
-app.use(cors({
-  origin: process.env.CLIENT_URL,
-  credentials: true
-}));
+app.use(cors(createCorsOptions()));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
@@ -120,6 +124,7 @@ setupWebSocket(server, verifyToken);
 // server handles both HTTP and WebSocket
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
+  logCorsConfig();
 
   if (process.platform === 'linux') {
     const { resolveChromeExecutable } = require('./config/puppeteerEnv');
@@ -128,12 +133,15 @@ server.listen(PORT, () => {
     console.log(`Chrome executable: ${chromePath || 'NOT FOUND — run node scripts/ensure-chrome.js during build'}`);
   }
 
-  // Recover active sessions from database after a short delay
+  // Recover active sessions after startup (delay longer on Render while Chrome warms up)
+  const recoveryDelayMs =
+    process.env.NODE_ENV === 'production' || process.env.RENDER === 'true' ? 10000 : 2000;
+
   setTimeout(() => {
     recoverSessions(sendToUser);
 
     // Start campaign scheduler after clientManager is ready
     startScheduler(sendMessages, clientManager);
     console.log('📅 Campaign scheduler started');
-  }, 2000);
+  }, recoveryDelayMs);
 });

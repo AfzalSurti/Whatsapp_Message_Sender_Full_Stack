@@ -5,58 +5,87 @@ This app is split into two deployable parts:
 - Frontend: `frontend/` on Vercel
 - Backend: `backend/` on Render
 
-## 1) Deploy the frontend to Vercel
+## 1) Deploy the backend to Render (do this first)
+
+1. Create a new Render Web Service from the repository.
+2. Set the root directory to `backend`.
+3. Set the build command to `npm install && npm run build` (installs Chrome for Puppeteer).
+4. Set the start command to `npm start`.
+5. **Use at least the Standard plan (2 GB RAM).** The free tier (512 MB) often cannot run headless Chrome + WhatsApp Web and the service will restart when you click Connect.
+6. Add these environment variables in Render:
+
+| Variable | Example | Required |
+|----------|---------|----------|
+| `MONGODB_URI` | MongoDB Atlas connection string | Yes |
+| `JWT_SECRET` | long random secret | Yes |
+| `JWT_EXPIRES_IN` | `30d` | Yes |
+| `CLIENT_URL` | `https://whatsapp-message-sender-full-stack.vercel.app` | Yes |
+| `ALLOWED_ORIGINS` | `https://your-preview.vercel.app` | Optional (comma-separated extra Vercel preview URLs) |
+| `OPENROUTER_API_KEY` | your key | If using AI |
+| `MODEL_NAME` | e.g. `openai/gpt-4o-mini` | If using AI |
+| `CLIENT_ID` / `CLIENT_SECRET` | Google OAuth | If using Google login |
+
+**Important:** `CLIENT_URL` must match your Vercel frontend URL **exactly** (https, no trailing slash). If CORS errors appear in the browser console, this value is wrong or missing.
+
+Optional:
+
+- `SKIP_SESSION_RECOVERY=true` — skip auto-recovering WhatsApp sessions on boot (helps debugging on low-memory instances).
+
+After deploy, check Render logs for:
+
+```
+✅ CORS allowed origins: https://your-frontend.vercel.app
+Chrome executable: /opt/render/project/src/backend/.puppeteer-cache/...
+```
+
+## 2) Deploy the frontend to Vercel
 
 1. Import the repository into Vercel.
 2. Set the project root directory to `frontend`.
-3. Keep the build command as `npm run build`.
-4. Set the output to the default Next.js app output.
-5. Add these environment variables in Vercel:
-   - `NEXT_PUBLIC_API_URL` = your Render backend URL, for example `https://your-backend.onrender.com`
-   - `NEXT_PUBLIC_WS_URL` = your backend WebSocket URL, for example `wss://your-backend.onrender.com`
+3. Build command: `npm run build`
+4. Add environment variables:
 
-## 2) Deploy the backend to Render
+| Variable | Example |
+|----------|---------|
+| `NEXT_PUBLIC_API_URL` | `https://your-backend.onrender.com` |
+| `NEXT_PUBLIC_WS_URL` | `wss://your-backend.onrender.com` |
 
-1. Create a new Render Web Service from the same repository.
-2. Set the root directory to `backend`.
-3. Set the build command to `npm install`.
-4. Set the start command to `npm start`.
-5. Add these environment variables in Render:
-   - `MONGODB_URI` = your MongoDB Atlas connection string
-   - `JWT_SECRET` = a long random secret
-   - `JWT_EXPIRES_IN` = for example `30d`
-   - `CLIENT_URL` = your Vercel frontend URL, for example `https://your-frontend.vercel.app`
-   - `CLIENT_ID` = Google OAuth client id, if you use Google login
-   - `CLIENT_SECRET` = Google OAuth client secret, if you use Google login
-   - `OPENROUTER_API_KEY` = required only if you use the AI route
-   - `WWEBJS_AUTH_PATH` = mounted disk path for WhatsApp session data, for example `/var/data/wwebjs`
+5. Redeploy after the backend URL is live.
 
-## 3) Add persistent storage on Render
+## 3) Configure Google OAuth (if enabled)
 
-MongoDB stores the session record and recovery metadata, but the WhatsApp login state itself is created by `LocalAuth` on disk. On Render, you should attach a persistent disk so that WhatsApp stays logged in after restarts.
-
-1. Create a disk for the backend service.
-2. Mount it at the same path you used for `WWEBJS_AUTH_PATH`.
-3. Keep that path stable across deploys so the WhatsApp session survives restarts.
-
-## 4) Configure Google OAuth
-
-In Google Cloud Console, update your OAuth client with:
+In Google Cloud Console:
 
 - Authorized redirect URI: `https://your-backend.onrender.com/api/auth/google/callback`
 - Authorized JavaScript origin: `https://your-frontend.vercel.app`
 
-## 5) Final checks
+## 4) WhatsApp session storage
 
-1. Redeploy the backend first.
-2. Redeploy the frontend after the backend URL is available.
-3. Open the frontend and confirm login, API calls, and WebSocket updates work.
-4. If Google login is enabled, test the callback flow once and confirm it lands on `/auth/callback`.
+Sessions are stored in **MongoDB** via RemoteAuth (not on Render disk). No persistent disk is required for WhatsApp login state.
 
-## Local development mapping
+## 5) Troubleshooting production
 
-- Frontend local URL: `http://localhost:3000`
-- Backend local URL: `http://localhost:5000`
-- Local API env: `NEXT_PUBLIC_API_URL=http://localhost:5000`
-- Local WebSocket env: `NEXT_PUBLIC_WS_URL=ws://localhost:5000`
-- Local backend client URL: `CLIENT_URL=http://localhost:3000`
+### CORS blocked / `No Access-Control-Allow-Origin`
+
+- Set `CLIENT_URL` on Render to your exact Vercel URL.
+- Redeploy the backend after changing env vars.
+- Check logs for `CORS blocked origin:` — it shows what the browser sent vs what is allowed.
+
+### QR never appears / "Waiting for QR code..."
+
+- Upgrade Render to **Standard (2 GB)** or higher.
+- Logs like `Timed out after 30000 ms while waiting for the WS endpoint` mean Chrome failed to start (usually out of memory).
+- Logs like `==> Running 'npm start'` right after Connect mean the process crashed and restarted.
+
+### WebSocket disconnects
+
+- Ensure `NEXT_PUBLIC_WS_URL` uses `wss://` (not `ws://`).
+- Render free tier spin-down can drop connections; Standard keeps the service warm.
+
+## Local development
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:5000`
+- `NEXT_PUBLIC_API_URL=http://localhost:5000`
+- `NEXT_PUBLIC_WS_URL=ws://localhost:5000`
+- `CLIENT_URL=http://localhost:3000`
