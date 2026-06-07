@@ -537,7 +537,9 @@ export default function AutoReplyPage() {
                       />
                       <div className="min-w-0">
                         <div className="text-sm font-medium truncate">{contact.name}</div>
-                        <div className="text-xs text-gray-400">{contact.phoneNumber}</div>
+                        {contact.phoneNumber ? (
+                          <div className="text-xs text-gray-400">{contact.phoneNumber}</div>
+                        ) : null}
                       </div>
                     </label>
                   ))

@@ -170,7 +170,7 @@ const getWhatsAppContacts = async (req, res) => {
     const contacts = await Promise.race([
       fetchWhatsAppContacts(client),
       new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Loading WhatsApp contacts timed out')), 25000);
+        setTimeout(() => reject(new Error('Loading WhatsApp contacts timed out')), 35000);
       })
     ]);
 
