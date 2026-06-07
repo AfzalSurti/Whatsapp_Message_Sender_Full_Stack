@@ -105,4 +105,14 @@ export const templatesAPI = {
   deleteTemplate: (id) => api.delete(`/api/templates/${id}`),
 };
 
+// ─── AUTO REPLY ────────────────────────────────────────────────
+export const autoReplyAPI = {
+  getConfig: () => api.get('/api/auto-reply/config'),
+  updateConfig: (data) => api.put('/api/auto-reply/config', data),
+  getLogs: (params) => api.get('/api/auto-reply/logs', { params }),
+  getContacts: () => api.get('/api/auto-reply/contacts'),
+  deleteLog: (id) => api.delete(`/api/auto-reply/logs/${id}`),
+  clearLogs: () => api.delete('/api/auto-reply/logs'),
+};
+
 export default api;

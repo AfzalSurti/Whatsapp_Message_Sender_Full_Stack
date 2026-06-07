@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { Activity, BarChart3, ClipboardList, History, Key, Loader2, LogOut, MessageSquare, Send, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { Activity, BarChart3, Bot, ClipboardList, History, Key, Loader2, LogOut, MessageSquare, Send, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { whatsappAPI } from '@/lib/api';
 import useWebSocket from '@/hooks/useWebSocket';
@@ -15,6 +15,7 @@ const mainNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { href: '/dashboard/live-feed', label: 'Live Feed', icon: Activity },
   { href: '/dashboard/groups', label: 'Contacts', icon: Users },
+  { href: '/dashboard/auto-reply', label: 'Auto Reply', icon: Bot },
   { href: '/dashboard/scheduled', label: 'Scheduler', icon: Send },
   { href: '/dashboard/templates', label: 'Templates', icon: ClipboardList },
   { href: '/dashboard/history', label: 'History', icon: History },
