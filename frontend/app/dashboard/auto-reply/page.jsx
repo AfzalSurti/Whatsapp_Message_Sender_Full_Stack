@@ -287,13 +287,14 @@ export default function AutoReplyPage() {
   const toggleContact = (contact) => {
     const value = getContactSelectionValue(contact);
     const chatId = contact.chatId;
+    const keys = [...new Set([value, chatId].filter(Boolean))];
 
     setSelectedContacts((prev) => {
-      const isSelected = prev.includes(value) || (chatId && prev.includes(chatId));
+      const isSelected = keys.some((key) => prev.includes(key));
       if (isSelected) {
-        return prev.filter((item) => item !== value && item !== chatId);
+        return prev.filter((item) => !keys.includes(item));
       }
-      return [...prev, value];
+      return [...prev, ...keys.filter((key) => !prev.includes(key))];
     });
   };
 

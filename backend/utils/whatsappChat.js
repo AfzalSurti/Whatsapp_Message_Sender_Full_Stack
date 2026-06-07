@@ -65,8 +65,26 @@ const resolvePhoneFromContact = async (contact) => {
   }
 };
 
+const isValidResolvedPhone = (value = '') => {
+  const raw = String(value || '').trim();
+  if (!raw || raw.includes('@')) return false;
+  const digits = extractDigits(raw);
+  return digits.length >= 7 && digits.length <= 15;
+};
+
+const resolvePhoneFromChatId = (chatId) => {
+  const server = getChatServer(chatId);
+  if (server === 'lid') return null;
+
+  const userPart = chatId.split('@')[0];
+  if (!looksLikePhoneDigits(userPart)) return null;
+
+  return normalizePhoneValue(userPart);
+};
+
 const resolveMessageContact = async (msg) => {
   const chatId = String(msg.from || '');
+  const server = getChatServer(chatId);
   let contactName = '';
   let contactPhone = '';
   let contact = null;
@@ -79,12 +97,25 @@ const resolveMessageContact = async (msg) => {
     console.warn(`Could not resolve WhatsApp contact for auto-reply: ${err.message}`);
   }
 
-  if (!contactPhone) {
-    const userPart = chatId.split('@')[0];
-    if (looksLikePhoneDigits(userPart)) {
-      contactPhone = normalizePhoneValue(userPart) || chatId;
-    } else {
+  if (contact && (!isValidResolvedPhone(contactPhone) || server === 'lid')) {
+    try {
+      const formatted = await contact.getFormattedNumber();
+      const normalized = normalizePhoneValue(formatted);
+      if (normalized) contactPhone = normalized;
+    } catch {
+      // keep trying other fallbacks
+    }
+  }
+
+  if (!isValidResolvedPhone(contactPhone)) {
+    const fromChatId = resolvePhoneFromChatId(chatId);
+    if (fromChatId) {
+      contactPhone = fromChatId;
+    } else if (server === 'lid') {
       contactPhone = chatId;
+    } else {
+      const userPart = chatId.split('@')[0];
+      contactPhone = looksLikePhoneDigits(userPart) ? normalizePhoneValue(userPart) || chatId : chatId;
     }
   }
 
@@ -105,21 +136,36 @@ const contactMatchesSelection = (selection, chatId, contactPhone) => {
   }
 
   const selectedDigits = extractDigits(selected);
-  const phoneDigits = extractDigits(contactPhone);
-  const chatDigits = extractDigits(chatId.split('@')[0]);
+  const phoneDigits = isValidResolvedPhone(contactPhone) ? extractDigits(contactPhone) : '';
+  const chatDigits =
+    getChatServer(chatId) !== 'lid' && looksLikePhoneDigits(chatId.split('@')[0])
+      ? extractDigits(chatId.split('@')[0])
+      : '';
 
   if (!selectedDigits) return false;
 
-  return (
-    selectedDigits === phoneDigits ||
-    selectedDigits === chatDigits ||
-    phoneDigits.endsWith(selectedDigits) ||
-    selectedDigits.endsWith(phoneDigits)
-  );
+  if (phoneDigits) {
+    return (
+      selectedDigits === phoneDigits ||
+      phoneDigits.endsWith(selectedDigits) ||
+      selectedDigits.endsWith(phoneDigits)
+    );
+  }
+
+  if (chatDigits) {
+    return selectedDigits === chatDigits || chatDigits.endsWith(selectedDigits) || selectedDigits.endsWith(chatDigits);
+  }
+
+  return false;
 };
 
-const isContactSelected = (selectedContacts = [], chatId, contactPhone) =>
-  selectedContacts.some((selection) => contactMatchesSelection(selection, chatId, contactPhone));
+const isContactSelected = (selectedContacts = [], chatId, contactPhone) => {
+  const selected = selectedContacts.map((value) => String(value || '').trim()).filter(Boolean);
+
+  if (selected.includes(chatId)) return true;
+
+  return selected.some((selection) => contactMatchesSelection(selection, chatId, contactPhone));
+};
 
 const looksLikeFormattedPhone = (value = '') => {
   const raw = String(value || '').trim();
@@ -142,16 +188,6 @@ const pickContactDisplayName = (contact, chat, fallback) => {
   if (chatName && !looksLikeFormattedPhone(chatName)) return chatName;
 
   return pushName || chatName || fallback;
-};
-
-const resolvePhoneFromChatId = (chatId) => {
-  const server = getChatServer(chatId);
-  if (server === 'lid') return null;
-
-  const userPart = chatId.split('@')[0];
-  if (!looksLikePhoneDigits(userPart)) return null;
-
-  return normalizePhoneValue(userPart);
 };
 
 const mapWithConcurrency = async (items, limit, mapper) => {

@@ -7,6 +7,14 @@ const {
   isContactSelected
 } = require('../utils/whatsappChat');
 
+const DEFAULT_SYSTEM_PROMPT =
+  'You are a helpful WhatsApp assistant. Reply naturally and concisely.';
+
+const resolveSystemPrompt = (config) => {
+  const prompt = String(config?.systemPrompt || '').trim();
+  return prompt || DEFAULT_SYSTEM_PROMPT;
+};
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const requestAIReply = async ({ systemPrompt, messages }) => {
@@ -91,6 +99,18 @@ const saveAutoReplyLog = async ({
   });
 };
 
+const findRecentLogs = async (userId, contactPhone, chatId) => {
+  const keys = [...new Set([contactPhone, chatId].filter(Boolean))];
+
+  return AutoReplyLog.find({
+    userId,
+    contactPhone: { $in: keys }
+  })
+    .sort({ createdAt: -1 })
+    .limit(10)
+    .lean();
+};
+
 const handleIncomingMessage = async (client, userId, msg) => {
   try {
     if (!isAutoReplyEligibleMessage(msg)) return;
@@ -99,38 +119,53 @@ const handleIncomingMessage = async (client, userId, msg) => {
     if (!incomingMessage) return;
 
     const config = await AutoReplyConfig.findOne({ userId });
-    if (!config || !config.isEnabled) return;
+    if (!config || !config.isEnabled) {
+      return;
+    }
 
     const { chatId, contactName, contactPhone } = await resolveMessageContact(msg);
     if (!chatId) return;
 
     if (config.mode === 'selected') {
-      if (!isContactSelected(config.selectedContacts, chatId, contactPhone)) return;
+      const allowed = isContactSelected(config.selectedContacts, chatId, contactPhone);
+      if (!allowed) {
+        console.log(
+          `Auto-reply skipped (not selected): chatId=${chatId} phone=${contactPhone} selected=${JSON.stringify(config.selectedContacts || [])}`
+        );
+        await saveAutoReplyLog({
+          userId,
+          contactPhone: contactPhone || chatId,
+          contactName,
+          incomingMessage,
+          aiReply: '',
+          status: 'skipped',
+          failReason: 'Contact not in your selected list. Add this number or switch to All Messages.'
+        });
+        return;
+      }
     }
 
-    const recentLogs = await AutoReplyLog.find({
-      userId,
-      contactPhone
-    })
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .lean();
-
+    const recentLogs = await findRecentLogs(userId, contactPhone, chatId);
     recentLogs.reverse();
 
+    const systemPrompt = resolveSystemPrompt(config);
     const aiMessages = buildConversationMessages(recentLogs, incomingMessage);
     let aiReply = '';
 
+    console.log(
+      `Auto-reply processing message from ${contactName || contactPhone || chatId}: "${incomingMessage.slice(0, 80)}"`
+    );
+
     try {
       aiReply = await requestAIReply({
-        systemPrompt: config.systemPrompt,
+        systemPrompt,
         messages: aiMessages
       });
     } catch (err) {
       console.error(`Auto-reply AI failed for user ${userId}:`, err.message);
       await saveAutoReplyLog({
         userId,
-        contactPhone,
+        contactPhone: contactPhone || chatId,
         contactName,
         incomingMessage,
         aiReply: '',
@@ -150,9 +185,11 @@ const handleIncomingMessage = async (client, userId, msg) => {
         throw new Error('WhatsApp did not confirm the message was sent');
       }
 
+      console.log(`Auto-reply sent to ${contactPhone || chatId}`);
+
       await saveAutoReplyLog({
         userId,
-        contactPhone,
+        contactPhone: contactPhone || chatId,
         contactName,
         incomingMessage,
         aiReply,
@@ -163,7 +200,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
       console.error(`Auto-reply send failed for user ${userId}:`, err.message);
       await saveAutoReplyLog({
         userId,
-        contactPhone,
+        contactPhone: contactPhone || chatId,
         contactName,
         incomingMessage,
         aiReply,
