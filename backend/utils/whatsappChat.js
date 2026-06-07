@@ -120,56 +120,51 @@ const contactMatchesSelection = (selection, chatId, contactPhone) => {
 const isContactSelected = (selectedContacts = [], chatId, contactPhone) =>
   selectedContacts.some((selection) => contactMatchesSelection(selection, chatId, contactPhone));
 
-const serializeChatContact = (chat, contactById = new Map()) => {
+const serializeChatContact = (chat) => {
   if (!chat || chat.isGroup) return null;
 
   const chatId = chat.id?._serialized || '';
   const server = getChatServer(chatId);
   if (!chatId || !PERSONAL_CHAT_SERVERS.has(server)) return null;
 
-  const savedContact = contactById.get(chatId);
-  let phoneNumber = resolvePhoneFromContactSync(savedContact);
+  const userPart = chatId.split('@')[0];
+  const phoneNumber = looksLikePhoneDigits(userPart)
+    ? normalizePhoneValue(userPart) || chatId
+    : chatId;
 
-  if (!phoneNumber) {
-    const userPart = chatId.split('@')[0];
-    phoneNumber = looksLikePhoneDigits(userPart) ? normalizePhoneValue(userPart) || chatId : chatId;
-  }
-
-  const name =
-    chat.name ||
-    savedContact?.name ||
-    savedContact?.pushname ||
-    savedContact?.shortName ||
-    phoneNumber;
+  const name = chat.name || phoneNumber;
 
   return {
     chatId,
     name,
     phoneNumber,
-    isMyContact: Boolean(savedContact?.isMyContact)
+    source: 'whatsapp'
   };
 };
 
-const fetchWhatsAppContacts = async (client) => {
+const getChatTimestamp = (chat) => {
+  const ts = chat?.timestamp;
+  if (ts && typeof ts === 'object' && ts.low !== undefined) return ts.low;
+  return Number(ts) || 0;
+};
+
+const fetchWhatsAppContacts = async (client, { limit = 300 } = {}) => {
   const chats = await client.getChats();
 
-  let contactById = new Map();
-  try {
-    const contacts = await client.getContacts();
-    contactById = new Map(
-      contacts
-        .filter((contact) => contact.id?._serialized)
-        .map((contact) => [contact.id._serialized, contact])
-    );
-  } catch (err) {
-    console.warn(`Could not load WhatsApp contact index: ${err.message}`);
-  }
+  const personalChats = chats
+    .filter((chat) => !chat.isGroup)
+    .filter((chat) => {
+      const chatId = chat.id?._serialized || '';
+      return chatId && PERSONAL_CHAT_SERVERS.has(getChatServer(chatId));
+    })
+    .sort((a, b) => getChatTimestamp(b) - getChatTimestamp(a))
+    .slice(0, limit);
 
   const serialized = [];
   const seen = new Set();
 
-  for (const chat of chats) {
-    const item = serializeChatContact(chat, contactById);
+  for (const chat of personalChats) {
+    const item = serializeChatContact(chat);
     if (!item || seen.has(item.chatId)) continue;
     seen.add(item.chatId);
     serialized.push(item);

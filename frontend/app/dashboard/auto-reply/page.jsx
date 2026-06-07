@@ -12,7 +12,8 @@ import {
   XCircle
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { autoReplyAPI, whatsappAPI } from '@/lib/api';
+import { autoReplyAPI, groupsAPI } from '@/lib/api';
+import { useDashboardShell } from '../DashboardShellContext';
 
 const statusConfig = {
   sent: {
@@ -40,7 +41,9 @@ const formatDate = (date) =>
 
 export default function AutoReplyPage() {
   const { user, loading } = useAuth();
+  const { waStatus } = useDashboardShell();
   const router = useRouter();
+  const waConnected = waStatus === 'connected';
 
   const [configLoading, setConfigLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(true);
@@ -56,9 +59,11 @@ export default function AutoReplyPage() {
   const [delay, setDelay] = useState(2000);
 
   const [whatsappContacts, setWhatsappContacts] = useState([]);
+  const [savedContacts, setSavedContacts] = useState([]);
+  const [savedContactsLoading, setSavedContactsLoading] = useState(false);
+  const [contactSource, setContactSource] = useState('saved');
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactsError, setContactsError] = useState('');
-  const [waConnected, setWaConnected] = useState(false);
   const [contactSearch, setContactSearch] = useState('');
 
   const [logs, setLogs] = useState([]);
@@ -91,21 +96,49 @@ export default function AutoReplyPage() {
     }
   }, []);
 
+  const fetchSavedContacts = useCallback(async () => {
+    setSavedContactsLoading(true);
+    try {
+      const res = await groupsAPI.getGroups();
+      const groups = res.data.groups || [];
+      const flattened = [];
+      const seenPhones = new Set();
+
+      for (const group of groups) {
+        for (const entry of group.numbers || []) {
+          const phone = String(entry.phone || '').trim();
+          if (!phone || seenPhones.has(phone)) continue;
+          seenPhones.add(phone);
+          flattened.push({
+            id: `${group._id}-${phone}`,
+            name: entry.name?.trim() || phone,
+            phoneNumber: phone,
+            groupName: group.name,
+            source: 'saved'
+          });
+        }
+      }
+
+      flattened.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+      setSavedContacts(flattened);
+    } catch {
+      // Non-blocking; saved contacts are optional fallback
+    } finally {
+      setSavedContactsLoading(false);
+    }
+  }, []);
+
   const fetchWhatsAppContacts = useCallback(async () => {
+    if (!waConnected) {
+      setContactsError('Connect WhatsApp from the header, then click Refresh.');
+      setWhatsappContacts([]);
+      return;
+    }
+
     setContactsLoading(true);
     setContactsError('');
 
     try {
-      const statusRes = await whatsappAPI.getStatus();
-      const connected = statusRes.data.status === 'connected' && statusRes.data.clientReady;
-      setWaConnected(connected);
-
-      if (!connected) {
-        setContactsError('Connect WhatsApp first, then click Refresh.');
-        setWhatsappContacts([]);
-        return;
-      }
-
       const res = await autoReplyAPI.getWhatsAppContacts();
       setWhatsappContacts(res.data.contacts || []);
     } catch (err) {
@@ -115,7 +148,7 @@ export default function AutoReplyPage() {
     } finally {
       setContactsLoading(false);
     }
-  }, []);
+  }, [waConnected]);
 
   const fetchLogContacts = useCallback(async () => {
     try {
@@ -190,29 +223,13 @@ export default function AutoReplyPage() {
     if (!user) return;
     fetchConfig();
     fetchLogContacts();
-  }, [user, fetchConfig, fetchLogContacts]);
+    fetchSavedContacts();
+  }, [user, fetchConfig, fetchLogContacts, fetchSavedContacts]);
 
   useEffect(() => {
-    if (!user) return;
-
-    const syncStatus = async () => {
-      try {
-        const res = await whatsappAPI.getStatus();
-        setWaConnected(res.data.status === 'connected' && res.data.clientReady);
-      } catch {
-        setWaConnected(false);
-      }
-    };
-
-    syncStatus();
-    const intervalId = setInterval(syncStatus, 5000);
-    return () => clearInterval(intervalId);
-  }, [user]);
-
-  useEffect(() => {
-    if (!user || mode !== 'selected' || !waConnected) return;
+    if (!user || mode !== 'selected' || contactSource !== 'whatsapp' || !waConnected) return;
     fetchWhatsAppContacts();
-  }, [user, mode, waConnected, fetchWhatsAppContacts]);
+  }, [user, mode, contactSource, waConnected, fetchWhatsAppContacts]);
 
   useEffect(() => {
     if (!user) return;
@@ -238,17 +255,25 @@ export default function AutoReplyPage() {
     return contact.chatId || phone;
   };
 
-  const filteredWhatsAppContacts = useMemo(() => {
-    const query = contactSearch.trim().toLowerCase();
-    if (!query) return whatsappContacts;
+  const activeContacts = contactSource === 'saved' ? savedContacts : whatsappContacts;
 
-    return whatsappContacts.filter((contact) => {
+  const filteredContacts = useMemo(() => {
+    const query = contactSearch.trim().toLowerCase();
+    if (!query) return activeContacts;
+
+    return activeContacts.filter((contact) => {
       const name = String(contact.name || '').toLowerCase();
       const phone = String(contact.phoneNumber || '').toLowerCase();
       const chatId = String(contact.chatId || '').toLowerCase();
-      return name.includes(query) || phone.includes(query) || chatId.includes(query);
+      const groupName = String(contact.groupName || '').toLowerCase();
+      return (
+        name.includes(query) ||
+        phone.includes(query) ||
+        chatId.includes(query) ||
+        groupName.includes(query)
+      );
     });
-  }, [contactSearch, whatsappContacts]);
+  }, [activeContacts, contactSearch]);
 
   const isContactChecked = (contact) => {
     const value = getContactSelectionValue(contact);
@@ -386,6 +411,31 @@ export default function AutoReplyPage() {
 
           {mode === 'selected' && (
             <div className="space-y-3 border border-white/5 rounded-xl p-3 bg-[#0a0a0a]">
+              <div className="flex gap-1 p-1 bg-[#111] rounded-xl border border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setContactSource('saved')}
+                  className={`flex-1 text-xs py-2 rounded-lg transition-colors ${
+                    contactSource === 'saved'
+                      ? 'bg-[#25D366] text-black font-semibold'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Saved Contacts
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setContactSource('whatsapp')}
+                  className={`flex-1 text-xs py-2 rounded-lg transition-colors ${
+                    contactSource === 'whatsapp'
+                      ? 'bg-[#25D366] text-black font-semibold'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  WhatsApp Chats
+                </button>
+              </div>
+
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -393,37 +443,88 @@ export default function AutoReplyPage() {
                     type="text"
                     value={contactSearch}
                     onChange={(e) => setContactSearch(e.target.value)}
-                    placeholder="Search WhatsApp contacts..."
+                    placeholder={
+                      contactSource === 'saved'
+                        ? 'Search saved contacts...'
+                        : 'Search WhatsApp chats...'
+                    }
                     className="w-full bg-[#111] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm outline-none focus:border-[#25D366]/40"
                   />
                 </div>
                 <button
                   type="button"
-                  onClick={fetchWhatsAppContacts}
-                  disabled={contactsLoading}
+                  onClick={
+                    contactSource === 'saved' ? fetchSavedContacts : fetchWhatsAppContacts
+                  }
+                  disabled={contactSource === 'saved' ? savedContactsLoading : contactsLoading}
                   className="text-xs border border-white/10 hover:border-[#25D366]/40 px-3 py-2 rounded-xl transition-colors disabled:opacity-50"
                 >
-                  {contactsLoading ? 'Loading...' : 'Refresh'}
+                  {contactSource === 'saved'
+                    ? savedContactsLoading
+                      ? 'Loading...'
+                      : 'Refresh'
+                    : contactsLoading
+                      ? 'Loading...'
+                      : 'Refresh'}
                 </button>
               </div>
 
+              {contactSource === 'saved' && (
+                <p className="text-xs text-gray-500">
+                  Numbers from your Contacts page. No WhatsApp connection required.
+                </p>
+              )}
+
+              {contactSource === 'whatsapp' && !waConnected && (
+                <p className="text-xs text-amber-400">
+                  Connect WhatsApp from the header, then click Refresh.
+                </p>
+              )}
+
               <div className="max-h-48 overflow-y-auto space-y-2">
-                {contactsLoading ? (
+                {contactSource === 'saved' ? (
+                  savedContactsLoading ? (
+                    <div className="py-6 flex justify-center">
+                      <Loader2 size={18} className="animate-spin text-[#25D366]" />
+                    </div>
+                  ) : filteredContacts.length === 0 ? (
+                    <p className="text-xs text-gray-500">
+                      No saved contacts yet. Add numbers on the Contacts page first.
+                    </p>
+                  ) : (
+                    filteredContacts.map((contact) => (
+                      <label
+                        key={contact.id || contact.chatId || contact.phoneNumber}
+                        className="flex items-start gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isContactChecked(contact)}
+                          onChange={() => toggleContact(contact)}
+                          className="mt-1 accent-[#25D366]"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">{contact.name}</div>
+                          <div className="text-xs text-gray-400">{contact.phoneNumber}</div>
+                          {contact.groupName && (
+                            <div className="text-[10px] text-gray-500 mt-0.5">{contact.groupName}</div>
+                          )}
+                        </div>
+                      </label>
+                    ))
+                  )
+                ) : contactsLoading ? (
                   <div className="py-6 flex justify-center">
                     <Loader2 size={18} className="animate-spin text-[#25D366]" />
                   </div>
                 ) : contactsError ? (
                   <p className="text-xs text-amber-400">{contactsError}</p>
-                ) : !waConnected ? (
+                ) : filteredContacts.length === 0 ? (
                   <p className="text-xs text-gray-500">
-                    Connect WhatsApp from the header, then click Refresh.
-                  </p>
-                ) : filteredWhatsAppContacts.length === 0 ? (
-                  <p className="text-xs text-gray-500">
-                    No WhatsApp contacts found. Connect WhatsApp and click Refresh.
+                    No WhatsApp chats found. Click Refresh after connecting.
                   </p>
                 ) : (
-                  filteredWhatsAppContacts.map((contact) => (
+                  filteredContacts.map((contact) => (
                     <label
                       key={contact.chatId || contact.phoneNumber}
                       className="flex items-start gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer"
@@ -442,6 +543,12 @@ export default function AutoReplyPage() {
                   ))
                 )}
               </div>
+
+              {selectedContacts.length > 0 && (
+                <p className="text-xs text-gray-500">
+                  {selectedContacts.length} contact{selectedContacts.length === 1 ? '' : 's'} selected
+                </p>
+              )}
             </div>
           )}
 

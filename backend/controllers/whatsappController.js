@@ -44,18 +44,29 @@ const connectWhatsApp = async (req, res) => {
   }
 };
 
+const reconnectCooldownMs = 60_000;
+const lastReconnectAttempt = new Map();
+
 const getWhatsAppStatus = async (req, res) => {
   try {
     const userId = req.user._id;
+    const userIdStr = userId.toString();
     const sendToUser = req.app.get('sendToUser');
     let status = clientManager.getStatus(userId);
     const session = await Session.findOne({ userId });
     const recoverable = await clientManager.canRecoverSession(userId);
 
     if (session?.isActive && recoverable && status === 'disconnected') {
-      clientManager.ensureClientConnected(userId, sendToUser).catch((err) => {
-        console.warn(`Background WhatsApp reconnect failed for ${userId}: ${err.message}`);
-      });
+      const now = Date.now();
+      const lastAttempt = lastReconnectAttempt.get(userIdStr) || 0;
+
+      if (now - lastAttempt >= reconnectCooldownMs) {
+        lastReconnectAttempt.set(userIdStr, now);
+        clientManager.ensureClientConnected(userId, sendToUser).catch((err) => {
+          console.warn(`Background WhatsApp reconnect failed for ${userIdStr}: ${err.message}`);
+        });
+      }
+
       status = clientManager.getStatus(userId);
     }
 
