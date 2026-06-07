@@ -1,7 +1,8 @@
 'use client';
-import { createContext, useContext, useState, useEffect } from 'react';
+
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { authAPI } from '@/lib/api';
-import { saveToken, removeToken, getToken } from '@/lib/auth';
+import { getToken, removeToken, saveToken } from '@/lib/auth';
 
 const AuthContext = createContext();
 
@@ -9,7 +10,18 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // On app load — check if token exists and fetch user
+  const refreshUser = useCallback(async () => {
+    const token = getToken();
+    if (!token) {
+      setUser(null);
+      return null;
+    }
+
+    const res = await authAPI.getMe();
+    setUser(res.data.user);
+    return res.data.user;
+  }, []);
+
   useEffect(() => {
     const initAuth = async () => {
       const token = getToken();
@@ -17,17 +29,21 @@ export const AuthProvider = ({ children }) => {
         setLoading(false);
         return;
       }
+
       try {
-        const res = await authAPI.getMe();
-        setUser(res.data.user);
-      } catch {
-        removeToken(); // token invalid — clear it
+        await refreshUser();
+      } catch (err) {
+        if (err.response?.status === 401) {
+          removeToken();
+          setUser(null);
+        }
       } finally {
         setLoading(false);
       }
     };
+
     initAuth();
-  }, []);
+  }, [refreshUser]);
 
   const login = async (email, password) => {
     const res = await authAPI.login({ email, password });
@@ -47,7 +63,7 @@ export const AuthProvider = ({ children }) => {
     try {
       await authAPI.logout();
     } catch {
-      // Fail silently — still proceed with logout even if API fails
+      // Still clear local session if API is unavailable.
     }
     removeToken();
     setUser(null);
@@ -55,12 +71,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, signup, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
 export const useAuth = () => useContext(AuthContext);
-
-// what commit message should I write for this file ? - This file implements the AuthContext for managing user authentication state in the frontend. It provides functions for login, signup, and logout, and checks for an existing token on app load to maintain user sessions.

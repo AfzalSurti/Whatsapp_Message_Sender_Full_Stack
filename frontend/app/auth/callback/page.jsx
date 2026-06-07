@@ -1,4 +1,5 @@
 'use client';
+
 import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { saveToken } from '@/lib/auth';
@@ -9,12 +10,14 @@ function AuthCallbackContent() {
 
   useEffect(() => {
     const token = searchParams.get('token');
-    if (token) {
-      saveToken(token);
-      router.push('/dashboard');
-    } else {
-      router.push('/login?error=oauth_failed');
+
+    if (!token) {
+      router.replace('/login?error=oauth_failed');
+      return;
     }
+
+    saveToken(token);
+    window.location.replace('/dashboard');
   }, [router, searchParams]);
 
   return (

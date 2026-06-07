@@ -1,5 +1,6 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
+import { removeToken } from './auth';
 
 // Base axios instance — all requests go through here
 const api = axios.create({
@@ -22,9 +23,14 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      Cookies.remove('token');
-      window.location.href = '/login';
+    if (error.response?.status === 401 && typeof window !== 'undefined') {
+      const isAuthRoute = error.config?.url?.includes('/api/auth/login')
+        || error.config?.url?.includes('/api/auth/signup');
+
+      if (!isAuthRoute) {
+        removeToken();
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

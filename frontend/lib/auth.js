@@ -1,25 +1,53 @@
 import Cookies from 'js-cookie';
 
-// Save token after login/signup
+const TOKEN_KEY = 'wa_sender_token';
+const TOKEN_COOKIE = 'token';
+
+const getCookieOptions = () => {
+  const options = {
+    expires: 30,
+    path: '/',
+    sameSite: 'lax'
+  };
+
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    options.secure = true;
+  }
+
+  return options;
+};
+
 export const saveToken = (token) => {
-  Cookies.set('token', token, { expires: 7 }); // 7 days
+  if (!token) return;
+
+  Cookies.set(TOKEN_COOKIE, token, getCookieOptions());
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(TOKEN_KEY, token);
+  }
 };
 
-// Get token
 export const getToken = () => {
-  return Cookies.get('token');
+  const cookieToken = Cookies.get(TOKEN_COOKIE);
+  if (cookieToken) return cookieToken;
+
+  if (typeof window !== 'undefined') {
+    const storedToken = localStorage.getItem(TOKEN_KEY);
+    if (storedToken) {
+      Cookies.set(TOKEN_COOKIE, storedToken, getCookieOptions());
+      return storedToken;
+    }
+  }
+
+  return null;
 };
 
-// Remove token on logout
 export const removeToken = () => {
-  Cookies.remove('token');
+  Cookies.remove(TOKEN_COOKIE, { path: '/' });
+
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(TOKEN_KEY);
+  }
 };
 
-// Check if logged in
-export const isAuthenticated = () => {
-  return !!Cookies.get('token'); // Returns true if token exists
-};
-
-
-
-// what this fiel do ? - This file provides utility functions for managing authentication tokens in the frontend. It allows you to save, retrieve, and remove JWT tokens using cookies, as well as check if a user is authenticated based on the presence of a token.
+export const isAuthenticated = () => Boolean(getToken());
