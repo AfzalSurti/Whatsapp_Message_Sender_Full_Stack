@@ -109,6 +109,7 @@ export const templatesAPI = {
 export const autoReplyAPI = {
   getConfig: () => api.get('/api/auto-reply/config'),
   updateConfig: (data) => api.put('/api/auto-reply/config', data),
+  getWhatsAppContacts: () => api.get('/api/auto-reply/whatsapp-contacts'),
   getLogs: (params) => api.get('/api/auto-reply/logs', { params }),
   getContacts: () => api.get('/api/auto-reply/contacts'),
   deleteLog: (id) => api.delete(`/api/auto-reply/logs/${id}`),

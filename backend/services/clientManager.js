@@ -312,10 +312,10 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
     });
 
     client.on('message', async (msg) => {
-        if (msg.fromMe) return;
-        if (msg.isGroupMsg) return;
-
         try {
+            const { isAutoReplyEligibleMessage } = require('../utils/whatsappChat');
+            if (!isAutoReplyEligibleMessage(msg)) return;
+
             const { handleIncomingMessage } = require('./autoReplyService');
             await handleIncomingMessage(client, userId, msg);
         } catch (err) {

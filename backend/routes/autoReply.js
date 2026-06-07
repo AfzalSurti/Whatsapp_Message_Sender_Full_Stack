@@ -7,6 +7,7 @@ const {
   updateConfig,
   getLogs,
   getContacts,
+  getWhatsAppContacts,
   deleteLog,
   clearLogs
 } = require('../controllers/autoReplyController');
@@ -35,6 +36,7 @@ const logsQueryValidation = [
 
 router.get('/config', protect, getConfig);
 router.put('/config', protect, updateValidation, updateConfig);
+router.get('/whatsapp-contacts', protect, getWhatsAppContacts);
 router.get('/logs', protect, logsQueryValidation, getLogs);
 router.get('/contacts', protect, getContacts);
 router.delete('/logs/:id', protect, param('id').isMongoId(), deleteLog);

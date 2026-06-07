@@ -1,7 +1,12 @@
 const { validationResult } = require('express-validator');
 const AutoReplyConfig = require('../models/AutoReplyConfig');
 const AutoReplyLog = require('../models/AutoReplyLog');
-const { normalizePhoneNumber } = require('../utils/phone');
+const clientManager = require('../services/clientManager');
+const {
+  isChatId,
+  fetchWhatsAppContacts,
+  normalizePhoneValue
+} = require('../utils/whatsappChat');
 
 const getOrCreateConfig = async (userId) => {
   let config = await AutoReplyConfig.findOne({ userId });
@@ -24,13 +29,18 @@ const normalizeSelectedContacts = (contacts = []) => {
     const value = String(raw || '').trim();
     if (!value) continue;
 
-    const parsed = normalizePhoneNumber(value);
+    if (isChatId(value)) {
+      if (!normalized.includes(value)) normalized.push(value);
+      continue;
+    }
+
+    const parsed = normalizePhoneValue(value);
     if (!parsed) {
       return { valid: false, error: `Invalid phone number: ${value}` };
     }
 
-    if (!normalized.includes(parsed.e164)) {
-      normalized.push(parsed.e164);
+    if (!normalized.includes(parsed)) {
+      normalized.push(parsed);
     }
   }
 
@@ -142,6 +152,28 @@ const getContacts = async (req, res) => {
   }
 };
 
+const getWhatsAppContacts = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const status = clientManager.getStatus(userId);
+
+    if (status !== 'connected') {
+      return res.status(400).json({ error: 'WhatsApp not connected. Connect first to load contacts.' });
+    }
+
+    const client = clientManager.getClient(userId);
+    if (!client) {
+      return res.status(400).json({ error: 'WhatsApp client is not ready yet.' });
+    }
+
+    const contacts = await fetchWhatsAppContacts(client);
+    res.json({ contacts });
+  } catch (err) {
+    console.error('Get WhatsApp contacts failed:', err.message);
+    res.status(500).json({ error: 'Failed to load WhatsApp contacts' });
+  }
+};
+
 const deleteLog = async (req, res) => {
   try {
     const log = await AutoReplyLog.findOneAndDelete({
@@ -175,6 +207,7 @@ module.exports = {
   updateConfig,
   getLogs,
   getContacts,
+  getWhatsAppContacts,
   deleteLog,
   clearLogs
 };

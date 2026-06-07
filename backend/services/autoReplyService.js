@@ -1,32 +1,13 @@
 const axios = require('axios');
 const AutoReplyConfig = require('../models/AutoReplyConfig');
 const AutoReplyLog = require('../models/AutoReplyLog');
-const { normalizePhoneNumber } = require('../utils/phone');
+const {
+  isAutoReplyEligibleMessage,
+  resolveMessageContact,
+  isContactSelected
+} = require('../utils/whatsappChat');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const extractPhoneFromJid = (jid) => String(jid || '').split('@')[0].replace(/\D/g, '');
-
-const phonesMatch = (jid, storedPhone) => {
-  const jidDigits = extractPhoneFromJid(jid);
-  const storedDigits = String(storedPhone || '').replace(/\D/g, '');
-
-  if (!jidDigits || !storedDigits) return false;
-
-  return (
-    jidDigits === storedDigits ||
-    jidDigits.endsWith(storedDigits) ||
-    storedDigits.endsWith(jidDigits)
-  );
-};
-
-const resolveContactPhone = (jid) => {
-  const digits = extractPhoneFromJid(jid);
-  if (!digits) return digits;
-
-  const normalized = normalizePhoneNumber(digits.startsWith('+') ? digits : `+${digits}`);
-  return normalized?.e164 || `+${digits}`;
-};
 
 const requestAIReply = async ({ systemPrompt, messages }) => {
   if (!process.env.OPENROUTER_API_KEY) {
@@ -112,8 +93,7 @@ const saveAutoReplyLog = async ({
 
 const handleIncomingMessage = async (client, userId, msg) => {
   try {
-    if (msg.fromMe) return;
-    if (msg.isGroupMsg) return;
+    if (!isAutoReplyEligibleMessage(msg)) return;
 
     const incomingMessage = String(msg.body || '').trim();
     if (!incomingMessage) return;
@@ -121,23 +101,11 @@ const handleIncomingMessage = async (client, userId, msg) => {
     const config = await AutoReplyConfig.findOne({ userId });
     if (!config || !config.isEnabled) return;
 
-    const contactPhone = resolveContactPhone(msg.from);
-    if (!contactPhone) return;
+    const { chatId, contactName, contactPhone } = await resolveMessageContact(msg);
+    if (!chatId) return;
 
     if (config.mode === 'selected') {
-      const isSelected = (config.selectedContacts || []).some((phone) =>
-        phonesMatch(msg.from, phone)
-      );
-
-      if (!isSelected) return;
-    }
-
-    let contactName = '';
-    try {
-      const contact = await msg.getContact();
-      contactName = contact.pushname || contact.name || contact.shortName || '';
-    } catch (err) {
-      console.warn(`Could not resolve contact name for auto-reply: ${err.message}`);
+      if (!isContactSelected(config.selectedContacts, chatId, contactPhone)) return;
     }
 
     const recentLogs = await AutoReplyLog.find({
@@ -176,7 +144,11 @@ const handleIncomingMessage = async (client, userId, msg) => {
     await sleep(config.delay || 2000);
 
     try {
-      await client.sendMessage(msg.from, aiReply);
+      const sentMsg = await msg.reply(aiReply);
+
+      if (!sentMsg?.id?._serialized) {
+        throw new Error('WhatsApp did not confirm the message was sent');
+      }
 
       await saveAutoReplyLog({
         userId,
@@ -206,8 +178,5 @@ const handleIncomingMessage = async (client, userId, msg) => {
 };
 
 module.exports = {
-  handleIncomingMessage,
-  extractPhoneFromJid,
-  phonesMatch,
-  resolveContactPhone
+  handleIncomingMessage
 };

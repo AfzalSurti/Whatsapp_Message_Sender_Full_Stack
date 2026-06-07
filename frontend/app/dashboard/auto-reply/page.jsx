@@ -12,7 +12,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { autoReplyAPI, contactsAPI } from '@/lib/api';
+import { autoReplyAPI } from '@/lib/api';
 
 const statusConfig = {
   sent: {
@@ -55,7 +55,9 @@ export default function AutoReplyPage() {
   );
   const [delay, setDelay] = useState(2000);
 
-  const [savedContacts, setSavedContacts] = useState([]);
+  const [whatsappContacts, setWhatsappContacts] = useState([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactsError, setContactsError] = useState('');
   const [contactSearch, setContactSearch] = useState('');
 
   const [logs, setLogs] = useState([]);
@@ -88,12 +90,18 @@ export default function AutoReplyPage() {
     }
   }, []);
 
-  const fetchSavedContacts = useCallback(async () => {
+  const fetchWhatsAppContacts = useCallback(async () => {
+    setContactsLoading(true);
+    setContactsError('');
     try {
-      const res = await contactsAPI.getContacts();
-      setSavedContacts(res.data.contacts || []);
-    } catch {
-      toast.error('Failed to load contacts');
+      const res = await autoReplyAPI.getWhatsAppContacts();
+      setWhatsappContacts(res.data.contacts || []);
+    } catch (err) {
+      const message = err.response?.data?.error || 'Failed to load WhatsApp contacts';
+      setContactsError(message);
+      setWhatsappContacts([]);
+    } finally {
+      setContactsLoading(false);
     }
   }, []);
 
@@ -169,9 +177,14 @@ export default function AutoReplyPage() {
   useEffect(() => {
     if (!user) return;
     fetchConfig();
-    fetchSavedContacts();
+    fetchWhatsAppContacts();
     fetchLogContacts();
-  }, [user, fetchConfig, fetchSavedContacts, fetchLogContacts]);
+  }, [user, fetchConfig, fetchWhatsAppContacts, fetchLogContacts]);
+
+  useEffect(() => {
+    if (!user || mode !== 'selected') return;
+    fetchWhatsAppContacts();
+  }, [user, mode, fetchWhatsAppContacts]);
 
   useEffect(() => {
     if (!user) return;
@@ -191,23 +204,41 @@ export default function AutoReplyPage() {
     return () => clearInterval(intervalId);
   }, [user, fetchLogs, fetchLogContacts]);
 
-  const filteredSavedContacts = useMemo(() => {
-    const query = contactSearch.trim().toLowerCase();
-    if (!query) return savedContacts;
+  const getContactSelectionValue = (contact) => {
+    const phone = String(contact.phoneNumber || '').trim();
+    if (phone && !phone.includes('@')) return phone;
+    return contact.chatId || phone;
+  };
 
-    return savedContacts.filter((contact) => {
+  const filteredWhatsAppContacts = useMemo(() => {
+    const query = contactSearch.trim().toLowerCase();
+    if (!query) return whatsappContacts;
+
+    return whatsappContacts.filter((contact) => {
       const name = String(contact.name || '').toLowerCase();
       const phone = String(contact.phoneNumber || '').toLowerCase();
-      return name.includes(query) || phone.includes(query);
+      const chatId = String(contact.chatId || '').toLowerCase();
+      return name.includes(query) || phone.includes(query) || chatId.includes(query);
     });
-  }, [contactSearch, savedContacts]);
+  }, [contactSearch, whatsappContacts]);
 
-  const toggleContact = (phoneNumber) => {
-    setSelectedContacts((prev) =>
-      prev.includes(phoneNumber)
-        ? prev.filter((phone) => phone !== phoneNumber)
-        : [...prev, phoneNumber]
-    );
+  const isContactChecked = (contact) => {
+    const value = getContactSelectionValue(contact);
+    const chatId = contact.chatId;
+    return selectedContacts.includes(value) || (chatId && selectedContacts.includes(chatId));
+  };
+
+  const toggleContact = (contact) => {
+    const value = getContactSelectionValue(contact);
+    const chatId = contact.chatId;
+
+    setSelectedContacts((prev) => {
+      const isSelected = prev.includes(value) || (chatId && prev.includes(chatId));
+      if (isSelected) {
+        return prev.filter((item) => item !== value && item !== chatId);
+      }
+      return [...prev, value];
+    });
   };
 
   const handleSave = async () => {
@@ -327,30 +358,48 @@ export default function AutoReplyPage() {
 
           {mode === 'selected' && (
             <div className="space-y-3 border border-white/5 rounded-xl p-3 bg-[#0a0a0a]">
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input
-                  type="text"
-                  value={contactSearch}
-                  onChange={(e) => setContactSearch(e.target.value)}
-                  placeholder="Search contacts..."
-                  className="w-full bg-[#111] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm outline-none focus:border-[#25D366]/40"
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input
+                    type="text"
+                    value={contactSearch}
+                    onChange={(e) => setContactSearch(e.target.value)}
+                    placeholder="Search WhatsApp contacts..."
+                    className="w-full bg-[#111] border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm outline-none focus:border-[#25D366]/40"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchWhatsAppContacts}
+                  disabled={contactsLoading}
+                  className="text-xs border border-white/10 hover:border-[#25D366]/40 px-3 py-2 rounded-xl transition-colors disabled:opacity-50"
+                >
+                  {contactsLoading ? 'Loading...' : 'Refresh'}
+                </button>
               </div>
 
               <div className="max-h-48 overflow-y-auto space-y-2">
-                {filteredSavedContacts.length === 0 ? (
-                  <p className="text-xs text-gray-500">No contacts found. Add contacts first.</p>
+                {contactsLoading ? (
+                  <div className="py-6 flex justify-center">
+                    <Loader2 size={18} className="animate-spin text-[#25D366]" />
+                  </div>
+                ) : contactsError ? (
+                  <p className="text-xs text-amber-400">{contactsError}</p>
+                ) : filteredWhatsAppContacts.length === 0 ? (
+                  <p className="text-xs text-gray-500">
+                    No WhatsApp contacts found. Connect WhatsApp and click Refresh.
+                  </p>
                 ) : (
-                  filteredSavedContacts.map((contact) => (
+                  filteredWhatsAppContacts.map((contact) => (
                     <label
-                      key={contact._id}
+                      key={contact.chatId || contact.phoneNumber}
                       className="flex items-start gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer"
                     >
                       <input
                         type="checkbox"
-                        checked={selectedContacts.includes(contact.phoneNumber)}
-                        onChange={() => toggleContact(contact.phoneNumber)}
+                        checked={isContactChecked(contact)}
+                        onChange={() => toggleContact(contact)}
                         className="mt-1 accent-[#25D366]"
                       />
                       <div className="min-w-0">
