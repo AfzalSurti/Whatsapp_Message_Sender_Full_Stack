@@ -10,6 +10,7 @@ const { resolveChromeExecutable } = require('../config/puppeteerEnv');
 const {
   AUTH_DATA_PATH,
   canRecoverSession,
+  cleanupLocalAuthArtifacts,
   deleteStoredRemoteSession
 } = require('../utils/whatsappSession');
 
@@ -323,7 +324,7 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
 
     //remote session saved event
     client.on('remote_session_saved', async () => {
-        console.log(`Remote session saved for user: ${userIdStr}`);
+        console.log(`Remote session saved to MongoDB for user: ${userIdStr}`);
         await markSessionLinked(
             userId,
             client.info?.wid?.user ? `+${client.info.wid.user}` : null
@@ -403,6 +404,8 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
         if (isPermanentDisconnectReason(reason)) {
             await markSessionUnlinked(userId);
             await deleteStoredRemoteSession(userId);
+        } else {
+            cleanupLocalAuthArtifacts(userId);
         }
 
         onDisconnected(reason); // notify frontend
@@ -502,7 +505,9 @@ const disconnectClient=async(userId)=>{
 
     clientsBeingCreated.delete(userIdStr);
 
-    console.log(`Client disconnected for user: ${userIdStr} (stored session preserved)`);
+    cleanupLocalAuthArtifacts(userId);
+
+    console.log(`Client disconnected for user: ${userIdStr} (MongoDB session preserved)`);
 };
 
 const clearWhatsAppSession = async (userId) => {
@@ -619,5 +624,6 @@ module.exports={
     disconnectClient,
     clearWhatsAppSession,
     recoverSessions,
-    canRecoverSession
+    canRecoverSession,
+    cleanupLocalAuthArtifacts
 };

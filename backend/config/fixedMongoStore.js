@@ -1,8 +1,20 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { MongoStore } = require('wwebjs-mongo');
 
-const AUTH_DATA_PATH = path.join(__dirname, '..', '.wwebjs_auth');
+// Runtime-only temp folder for Puppeteer while a client is active.
+// Persistent WhatsApp auth is stored in MongoDB via FixedMongoStore — not here.
+const AUTH_DATA_PATH = process.env.WHATSAPP_AUTH_TEMP_PATH
+  || path.join(os.tmpdir(), 'wa-sender-whatsapp-auth');
+
+const ensureAuthTempDir = () => {
+  if (!fs.existsSync(AUTH_DATA_PATH)) {
+    fs.mkdirSync(AUTH_DATA_PATH, { recursive: true });
+  }
+};
+
+ensureAuthTempDir();
 
 class FixedMongoStore extends MongoStore {
   constructor({ mongoose, authDataPath = AUTH_DATA_PATH } = {}) {
@@ -47,3 +59,4 @@ class FixedMongoStore extends MongoStore {
 
 module.exports = FixedMongoStore;
 module.exports.AUTH_DATA_PATH = AUTH_DATA_PATH;
+module.exports.ensureAuthTempDir = ensureAuthTempDir;

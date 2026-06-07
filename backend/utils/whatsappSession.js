@@ -9,9 +9,12 @@ const getRemoteSessionName = (userId) => `RemoteAuth-${userId.toString()}`;
 
 const getMongoStore = () => new FixedMongoStore({ mongoose, authDataPath: AUTH_DATA_PATH });
 
-const hasLocalAuthSession = (userId) => {
-  const sessionDir = path.join(AUTH_DATA_PATH, getRemoteSessionName(userId));
-  return fs.existsSync(sessionDir);
+const getLocalAuthPaths = (userId) => {
+  const sessionName = getRemoteSessionName(userId);
+  return {
+    sessionDir: path.join(AUTH_DATA_PATH, sessionName),
+    zipPath: path.join(AUTH_DATA_PATH, `${sessionName}.zip`)
+  };
 };
 
 const hasStoredRemoteSession = async (userId) => {
@@ -24,9 +27,22 @@ const hasStoredRemoteSession = async (userId) => {
   }
 };
 
-const canRecoverSession = async (userId) => {
-  if (hasLocalAuthSession(userId)) return true;
-  return hasStoredRemoteSession(userId);
+// Recovery uses MongoDB only — not leftover temp files.
+const canRecoverSession = async (userId) => hasStoredRemoteSession(userId);
+
+const cleanupLocalAuthArtifacts = (userId) => {
+  const { sessionDir, zipPath } = getLocalAuthPaths(userId);
+
+  try {
+    if (fs.existsSync(sessionDir)) {
+      fs.rmSync(sessionDir, { recursive: true, force: true });
+    }
+    if (fs.existsSync(zipPath)) {
+      fs.unlinkSync(zipPath);
+    }
+  } catch (err) {
+    console.warn(`Failed to remove temp WhatsApp auth files: ${err.message}`);
+  }
 };
 
 const deleteStoredRemoteSession = async (userId) => {
@@ -37,27 +53,15 @@ const deleteStoredRemoteSession = async (userId) => {
     console.error(`Failed to delete stored WhatsApp session: ${err.message}`);
   }
 
-  const sessionDir = path.join(AUTH_DATA_PATH, getRemoteSessionName(userId));
-  const zipPath = path.join(AUTH_DATA_PATH, `${getRemoteSessionName(userId)}.zip`);
-
-  try {
-    if (fs.existsSync(sessionDir)) {
-      fs.rmSync(sessionDir, { recursive: true, force: true });
-    }
-    if (fs.existsSync(zipPath)) {
-      fs.unlinkSync(zipPath);
-    }
-  } catch (err) {
-    console.warn(`Failed to remove local auth files: ${err.message}`);
-  }
+  cleanupLocalAuthArtifacts(userId);
 };
 
 module.exports = {
   AUTH_DATA_PATH,
   getRemoteSessionName,
-  hasLocalAuthSession,
   hasStoredRemoteSession,
   canRecoverSession,
+  cleanupLocalAuthArtifacts,
   deleteStoredRemoteSession,
   getMongoStore
 };
