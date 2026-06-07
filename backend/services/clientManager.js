@@ -6,6 +6,10 @@ const os = require('os');
 const qrcode = require('qrcode');
 const Session = require('../models/Session');
 const { resolveChromeExecutable } = require('../config/puppeteerEnv');
+const {
+  hasStoredRemoteSession,
+  deleteStoredRemoteSession
+} = require('../utils/whatsappSession');
 
 //client store
 const clients=new Map();
@@ -123,9 +127,33 @@ const resolveExecutablePath = () => {
     return candidates.find(candidate => fs.existsSync(candidate)) || null;
 };
 
+const isPermanentDisconnectReason = (reason = '') =>
+    ['LOGOUT', 'UNPAIRED', 'UNPAIRED_IDLE'].includes(String(reason).toUpperCase());
+
+const markSessionLinked = async (userId, phoneNumber = null) => {
+    await Session.findOneAndUpdate(
+        { userId },
+        {
+            isActive: true,
+            lastSeen: new Date(),
+            ...(phoneNumber ? { phoneNumber } : {})
+        },
+        { upsert: true, returnDocument: 'after' }
+    );
+};
+
+const markSessionUnlinked = async (userId) => {
+    await Session.findOneAndUpdate(
+        { userId },
+        { isActive: false, phoneNumber: null, lastSeen: new Date() },
+        { upsert: true }
+    );
+};
+
 //create client
 
-const createClient=async(userId,onQR,onReady,onDisconnected)=>{
+const createClient = async (userId, onQR, onReady, onDisconnected, options = {}) => {
+    const { suppressQrNotification = false } = options;
     const userIdStr=userId.toString(); // ensure it's a string
 
     // Prevent duplicate client creation
@@ -216,14 +244,6 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
     //store client and status
     clients.set(userIdStr,{client,status:'pending',pendingStartTime:Date.now()});
 
-    // Ensure the session is marked active as soon as initialization starts,
-    // so restart recovery can find it even if the process restarts before ready.
-    await Session.findOneAndUpdate(
-        {userId},
-        {isActive:true,lastSeen:new Date()},
-        {upsert:true,returnDocument:'after'}
-    );
-
     // Add health check interval — periodically verify client is still alive
     const healthCheckInterval = setInterval(async () => {
         const entry = clients.get(userIdStr);
@@ -257,6 +277,10 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
     //fires when whatsapp needs QR scan
     client.on('qr',async(qr)=>{
         console.log(`🔄 QR Code received for user: ${userIdStr}`);
+        if (suppressQrNotification) {
+            console.log(`ℹ️  Suppressing QR notification for user: ${userIdStr} (startup recovery)`);
+            return;
+        }
         try{
             const qrImage=await qrcode.toDataURL(qr);// convert QR code to image
             console.log(`✅ QR Code converted to data URL for user: ${userIdStr} (length: ${qrImage?.length || 0})`);
@@ -277,8 +301,12 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
     });
 
     //remote session saved event
-    client.on('remote_session_saved',()=>{
+    client.on('remote_session_saved', async () => {
         console.log(`Remote session saved for user: ${userIdStr}`);
+        await markSessionLinked(
+            userId,
+            client.info?.wid?.user ? `+${client.info.wid.user}` : null
+        );
     });
 
     //ready event
@@ -302,11 +330,22 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
             if(entry.qrTimeoutHandle) clearTimeout(entry.qrTimeoutHandle);
         }
 
-        await Session.findOneAndUpdate(
-            {userId},
-            {isActive:true,lastSeen:new Date()},
-            {upsert:true,returnDocument:'after'}
+        await markSessionLinked(
+            userId,
+            client.info?.wid?.user ? `+${client.info.wid.user}` : null
         );
+
+        // RemoteAuth waits 60s before the first backup by default — persist sooner so restarts recover.
+        if (client.authStrategy?.storeRemoteSession) {
+            setTimeout(async () => {
+                try {
+                    await client.authStrategy.storeRemoteSession({ emit: true });
+                    console.log(`Early RemoteAuth backup completed for user: ${userIdStr}`);
+                } catch (err) {
+                    console.warn(`Early RemoteAuth backup failed for user ${userIdStr}: ${err.message}`);
+                }
+            }, 5000);
+        }
 
         onReady(); // notify frontend
     });
@@ -335,7 +374,8 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
         clients.delete(userIdStr); // remove client on auth failure
         clientsBeingCreated.delete(userIdStr);
 
-        // Keep the session record active so a restart can recover it.
+        await markSessionUnlinked(userId);
+        await deleteStoredRemoteSession(userId);
     });
 
     //disconnected
@@ -351,8 +391,11 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
         clients.delete(userIdStr); // remove client on disconnect
         clientsBeingCreated.delete(userIdStr);
 
-        // Do not mark inactive here; a browser disconnect can be temporary and
-        // the RemoteAuth session may still be recoverable on restart.
+        if (isPermanentDisconnectReason(reason)) {
+            await markSessionUnlinked(userId);
+            await deleteStoredRemoteSession(userId);
+        }
+
         onDisconnected(reason); // notify frontend
     });
 
@@ -376,11 +419,7 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
                     console.error(`Retry after browser lock failed for user: ${userIdStr}:`, retryErr.message);
                 }
 
-                await Session.findOneAndUpdate(
-                    {userId},
-                    {isActive:false},
-                    {upsert:true}
-                );
+                await markSessionUnlinked(userId);
                 onDisconnected(`WhatsApp browser failed to start after lock recovery: ${err.message}`);
                 return;
             }
@@ -393,11 +432,6 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
                 clients.delete(userIdStr);
             }
             clientsBeingCreated.delete(userIdStr);
-            await Session.findOneAndUpdate(
-                {userId},
-                {isActive:false},
-                {upsert:true}
-            );
             onDisconnected(`WhatsApp browser failed to start: ${err.message}`);
         }); // start the client
 
@@ -436,7 +470,7 @@ const createClient=async(userId,onQR,onReady,onDisconnected)=>{
     return client;
 };
 
-//disconnect client
+// Stop the in-memory browser but keep the stored WhatsApp session for reconnect.
 const disconnectClient=async(userId)=>{
     const userIdStr=userId.toString();
     const entry=clients.get(userIdStr);
@@ -448,24 +482,44 @@ const disconnectClient=async(userId)=>{
                 entry.client._healthCheckCleanup();
             }
 
-            // Destroy client without logging out — preserves session for recovery
+            // Destroy client without logging out — preserves RemoteAuth session
             await cleanupClient(entry.client);
 
         }catch(err){
             console.error(`Error disconnecting client for user: ${userIdStr}`,err);
         }
         clients.delete(userIdStr); // remove from map
-
-        await Session.findOneAndUpdate(
-            {userId},
-            {isActive:false,lastSeen:new Date()},
-            {upsert:true}
-        );
     }
 
     clientsBeingCreated.delete(userIdStr);
 
-    console.log(`Client disconnected for user: ${userIdStr}`);
+    console.log(`Client disconnected for user: ${userIdStr} (stored session preserved)`);
+};
+
+const clearWhatsAppSession = async (userId) => {
+    const userIdStr = userId.toString();
+    const entry = clients.get(userIdStr);
+
+    if (entry?.client) {
+        try {
+            if (entry.client._healthCheckCleanup) {
+                entry.client._healthCheckCleanup();
+            }
+            await entry.client.logout();
+        } catch (err) {
+            console.warn(`WhatsApp logout failed for user ${userIdStr}: ${err.message}`);
+            await deleteStoredRemoteSession(userId);
+            await cleanupClient(entry.client);
+        }
+    } else {
+        await deleteStoredRemoteSession(userId);
+    }
+
+    clients.delete(userIdStr);
+    clientsBeingCreated.delete(userIdStr);
+    await markSessionUnlinked(userId);
+
+    console.log(`WhatsApp session cleared for user: ${userIdStr}`);
 };
 
 
@@ -485,16 +539,20 @@ const recoverSessions=async(sendToUser)=>{
         for (const session of activeSessions) {
             try {
                 const userId = session.userId;
+                const storedSession = await hasStoredRemoteSession(userId);
+
+                if (!storedSession) {
+                    console.warn(`No stored RemoteAuth session for user ${userId}. Skipping recovery.`);
+                    await markSessionUnlinked(userId);
+                    continue;
+                }
+
                 console.log(`Recovering session for user: ${userId}`);
 
-                // Try to create client silently (no new QR generation)
-                // Only used for existing authenticated sessions
                 await createClient(
                     userId,
-                    (qrImage) => {
-                        // Only notify if recovery failed and QR is needed
-                        console.log(`⚠️  QR regeneration needed for user: ${userId}`);
-                        sendToUser(userId.toString(), { type: 'qr', qr: qrImage });
+                    () => {
+                        console.log(`⚠️  Stored session expired for user: ${userId}. User must click Connect to scan QR.`);
                     },
                     () => {
                         console.log(`✅ Session recovered for user: ${userId}`);
@@ -502,8 +560,8 @@ const recoverSessions=async(sendToUser)=>{
                     },
                     (reason) => {
                         console.log(`Session recovery failed for user: ${userId}: ${reason}`);
-                        sendToUser(userId.toString(), { type: 'disconnected', reason });
-                    }
+                    },
+                    { suppressQrNotification: true }
                 );
             } catch (err) {
                 console.error(`Error recovering session for user ${session.userId}:`, err.message);
@@ -519,5 +577,7 @@ module.exports={
     getClient,
     getStatus,
     disconnectClient,
-    recoverSessions
+    clearWhatsAppSession,
+    recoverSessions,
+    hasStoredRemoteSession
 };

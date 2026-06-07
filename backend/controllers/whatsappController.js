@@ -49,6 +49,7 @@ const getWhatsAppStatus = async (req, res) => {
     const userId = req.user._id;
     const status = clientManager.getStatus(userId);
     const session = await Session.findOne({ userId });
+    const storedSession = await clientManager.hasStoredRemoteSession(userId);
 
     // Get detailed client info
     const client = clientManager.getClient(userId);
@@ -62,6 +63,7 @@ const getWhatsAppStatus = async (req, res) => {
     res.json({
       status: clientReady ? 'connected' : status,
       isActive: session?.isActive || false,
+      hasStoredSession: storedSession,
       lastSeen: session?.lastSeen || null,
       clientReady: clientReady
     });

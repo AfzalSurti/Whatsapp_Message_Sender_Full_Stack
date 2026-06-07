@@ -105,7 +105,7 @@ const logout = async (req, res) => {
     const userId = req.user._id;
 
     // Disconnect WhatsApp client and clear session
-    await clientManager.disconnectClient(userId);
+    await clientManager.clearWhatsAppSession(userId);
 
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
