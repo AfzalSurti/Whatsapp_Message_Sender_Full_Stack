@@ -89,13 +89,26 @@ app.use((err, req, res, next) => {
 
 // ─── HANDLE UNCAUGHT EXCEPTIONS ────────────────────────────────
 process.on('uncaughtException', (err) => {
+  if (err?.code === 'ENOENT' && String(err?.path || '').includes('RemoteAuth')) {
+    console.warn('RemoteAuth file access warning:', err.message);
+    return;
+  }
   console.error('💥 Uncaught Exception:', err);
-  // Don't exit - try to keep server running
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
-  // Don't exit - try to keep server running
+process.on('unhandledRejection', (reason) => {
+  const message = reason?.message || String(reason || '');
+  const reasonPath = String(reason?.path || '');
+
+  if (
+    reason?.code === 'ENOENT' &&
+    (reasonPath.includes('RemoteAuth') || reasonPath.includes('.wwebjs_auth'))
+  ) {
+    console.warn('RemoteAuth backup warning (session still active):', message);
+    return;
+  }
+
+  console.error('💥 Unhandled Rejection:', reason);
 });
 
 // ─── SETUP WEBSOCKET ──────────────────────────────────────────

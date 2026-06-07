@@ -1,13 +1,15 @@
 const {Client, RemoteAuth} = require('whatsapp-web.js');
-const {MongoStore} = require('wwebjs-mongo');
 const mongoose = require('mongoose');
 const fs = require('fs');
 const os = require('os');
+const path = require('path');
 const qrcode = require('qrcode');
 const Session = require('../models/Session');
+const FixedMongoStore = require('../config/fixedMongoStore');
 const { resolveChromeExecutable } = require('../config/puppeteerEnv');
 const {
-  hasStoredRemoteSession,
+  AUTH_DATA_PATH,
+  canRecoverSession,
   deleteStoredRemoteSession
 } = require('../utils/whatsappSession');
 
@@ -243,8 +245,9 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
     const client=new Client({
         authStrategy: new RemoteAuth({
             clientId: userIdStr,
-            store: new MongoStore({ mongoose }),
-            backupSyncIntervalMs: 300000
+            dataPath: AUTH_DATA_PATH,
+            store: new FixedMongoStore({ mongoose, authDataPath: AUTH_DATA_PATH }),
+            backupSyncIntervalMs: 180000
         }),
         puppeteer:{
             headless:true,
@@ -276,14 +279,10 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
                     console.warn(`Health check failed for user: ${userIdStr} — browser closed`);
                     clearInterval(healthCheckInterval);
                     clients.delete(userIdStr);
-                    onDisconnected('Browser process ended');
-                }
-                // Simple health check — verify client is still responsive
-                if (!client.pupPage || (client.pupPage.isClosed && client.pupPage.isClosed())) {
+                } else if (!client.pupPage || (client.pupPage.isClosed && client.pupPage.isClosed())) {
                     console.warn(`Health check failed for user: ${userIdStr} — page closed`);
                     clearInterval(healthCheckInterval);
                     clients.delete(userIdStr);
-                    onDisconnected('Browser page closed');
                 }
             } catch (err) {
                 console.error(`Health check error for user: ${userIdStr}`, err.message);
@@ -532,6 +531,34 @@ const clearWhatsAppSession = async (userId) => {
     console.log(`WhatsApp session cleared for user: ${userIdStr}`);
 };
 
+const ensureClientConnected = async (userId, sendToUser) => {
+    const userIdStr = userId.toString();
+
+    if (isClientReady(userId)) {
+        return getClient(userId);
+    }
+
+    if (clientsBeingCreated.has(userIdStr) || getStatus(userId) === 'pending') {
+        return null;
+    }
+
+    if (!(await canRecoverSession(userId))) {
+        return null;
+    }
+
+    return createClient(
+        userId,
+        () => {
+            console.log(`Stored session expired for user ${userIdStr}. QR required via Connect.`);
+        },
+        () => {
+            sendToUser?.(userIdStr, { type: 'ready' });
+        },
+        () => {},
+        { suppressQrNotification: true }
+    );
+};
+
 
 //recover sessions on backend startup
 const recoverSessions=async(sendToUser)=>{
@@ -549,10 +576,10 @@ const recoverSessions=async(sendToUser)=>{
         for (const session of activeSessions) {
             try {
                 const userId = session.userId;
-                const storedSession = await hasStoredRemoteSession(userId);
+                const recoverable = await canRecoverSession(userId);
 
-                if (!storedSession) {
-                    console.warn(`No stored RemoteAuth session for user ${userId}. Skipping recovery.`);
+                if (!recoverable) {
+                    console.warn(`No recoverable WhatsApp session for user ${userId}. Skipping recovery.`);
                     await markSessionUnlinked(userId);
                     continue;
                 }
@@ -588,8 +615,9 @@ module.exports={
     getStatus,
     isClientReady,
     waitForClientReady,
+    ensureClientConnected,
     disconnectClient,
     clearWhatsAppSession,
     recoverSessions,
-    hasStoredRemoteSession
+    canRecoverSession
 };

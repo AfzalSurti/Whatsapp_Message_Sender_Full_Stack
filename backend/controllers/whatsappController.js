@@ -47,25 +47,31 @@ const connectWhatsApp = async (req, res) => {
 const getWhatsAppStatus = async (req, res) => {
   try {
     const userId = req.user._id;
-    const status = clientManager.getStatus(userId);
+    const sendToUser = req.app.get('sendToUser');
+    let status = clientManager.getStatus(userId);
     const session = await Session.findOne({ userId });
-    const storedSession = await clientManager.hasStoredRemoteSession(userId);
+    const recoverable = await clientManager.canRecoverSession(userId);
 
-    // Get detailed client info
+    if (session?.isActive && recoverable && status === 'disconnected') {
+      clientManager.ensureClientConnected(userId, sendToUser).catch((err) => {
+        console.warn(`Background WhatsApp reconnect failed for ${userId}: ${err.message}`);
+      });
+      status = clientManager.getStatus(userId);
+    }
+
     const client = clientManager.getClient(userId);
     let clientReady = false;
 
     if (client && status === 'connected') {
-      // Double-check client is actually ready
-      clientReady = (typeof client.sendMessage === 'function');
+      clientReady = typeof client.sendMessage === 'function';
     }
 
     res.json({
       status: clientReady ? 'connected' : status,
       isActive: session?.isActive || false,
-      hasStoredSession: storedSession,
+      hasStoredSession: recoverable,
       lastSeen: session?.lastSeen || null,
-      clientReady: clientReady
+      clientReady
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
