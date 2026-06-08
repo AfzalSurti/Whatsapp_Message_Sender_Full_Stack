@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { MessageMedia } = require('whatsapp-web.js');
 const AutoReplyConfig = require('../models/AutoReplyConfig');
 const AutoReplyLog = require('../models/AutoReplyLog');
 const AITemplate = require('../models/AITemplate');
@@ -8,6 +9,14 @@ const {
   resolveMessageContact,
   isContactSelected
 } = require('../utils/whatsappChat');
+const {
+  buildPlaceholderMap,
+  applyPlaceholders,
+  formatExampleConversations,
+  formatCustomFields,
+  matchSharedDocuments,
+  parseDataUrl
+} = require('../utils/aiTemplateHelpers');
 
 const DEFAULT_SYSTEM_PROMPT =
   'You are a helpful WhatsApp assistant. Reply naturally and concisely.';
@@ -91,26 +100,27 @@ const detectIntent = async (message, history, templates) => {
   if (!templates.length) return null;
 
   const templateList = templates
-    .map(
-      (template) =>
-        `- ${template.name}: ${template.intentDescription}\n  Examples: ${(template.triggerExamples || []).join(', ') || 'none'}`
-    )
+    .map((template) => {
+      const userExamples = (template.exampleConversations || [])
+        .map((item) => item.userMessage)
+        .filter(Boolean)
+        .join(', ');
+      return `- ${template.name}: ${template.description}\n  User examples: ${userExamples || 'none'}`;
+    })
     .join('\n');
 
   const prompt = `You are an intent detection system.
-Analyze this message and conversation history.
-Choose the most appropriate template or return 'none'.
+Pick the best matching template for this WhatsApp message, using template name, description, and user examples.
 
 Message: ${message}
 
 Recent history:
 ${formatHistoryLines(history, 3) || 'No prior messages'}
 
-Available templates:
+Templates:
 ${templateList}
 
-Return ONLY the exact template name or 'none'.
-No explanation.`;
+Return ONLY the exact template name or 'none'.`;
 
   const response = await callOpenRouter(prompt, {
     systemPrompt: 'You classify user intent into predefined template names. Return only the template name or none.',
@@ -129,97 +139,109 @@ No explanation.`;
   return matched || null;
 };
 
-const extractFieldValue = async (message, fieldName) => {
-  if (!fieldName) return null;
+const findExampleMatch = (message, examples = []) => {
+  const normalized = String(message || '').trim().toLowerCase();
+  if (!normalized) return null;
 
-  const prompt = `Extract the value for "${fieldName}" from this WhatsApp message.
-Return ONLY the extracted value with no explanation.
-If not present, return "none".
+  const exact = examples.find(
+    (item) => String(item.userMessage || '').trim().toLowerCase() === normalized
+  );
+  if (exact) return exact;
 
-Message: ${message}`;
-
-  const value = await callOpenRouter(prompt, {
-    systemPrompt: 'You extract structured data from messages.',
-    maxTokens: 80
-  });
-
-  const cleaned = value.trim().replace(/^["']|["']$/g, '');
-  if (!cleaned || cleaned.toLowerCase() === 'none') {
-    return null;
-  }
-
-  return cleaned;
+  return (
+    examples.find((item) => {
+      const sample = String(item.userMessage || '').trim().toLowerCase();
+      return sample && (normalized.includes(sample) || sample.includes(normalized));
+    }) || null
+  );
 };
 
-const advanceWorkflowStep = (state, template) => {
-  const steps = template.workflowSteps || [];
-  if (steps.length === 0) {
-    state.isCompleted = true;
-    return;
+const sendMediaFiles = async (client, chatId, files = [], placeholderMap = {}) => {
+  for (const file of files) {
+    const parsed = parseDataUrl(file.dataUrl);
+    if (!parsed) continue;
+
+    try {
+      const media = new MessageMedia(parsed.mimeType, parsed.base64, file.name || 'file');
+      const caption = applyPlaceholders(file.caption || '', placeholderMap);
+      await client.sendMessage(chatId, media, caption ? { caption } : undefined);
+    } catch (err) {
+      console.warn(`Failed to send media ${file.name}: ${err.message}`);
+    }
+  }
+};
+
+const collectMediaToSend = (message, template, exampleMatch = null) => {
+  const files = [];
+  const seen = new Set();
+
+  const addFile = (file) => {
+    if (!file?.dataUrl || seen.has(file.dataUrl)) return;
+    seen.add(file.dataUrl);
+    files.push(file);
+  };
+
+  if (exampleMatch?.mediaFiles?.length) {
+    exampleMatch.mediaFiles.forEach(addFile);
   }
 
-  const currentStepData = steps[state.currentStep];
-  if (currentStepData?.isLastStep || state.currentStep >= steps.length - 1) {
-    state.isCompleted = true;
-    return;
-  }
+  matchSharedDocuments(message, template.sharedDocuments || []).forEach((doc) => {
+    addFile({
+      name: doc.name,
+      mimeType: doc.mimeType,
+      dataUrl: doc.dataUrl,
+      caption: doc.caption
+    });
+  });
 
-  state.currentStep += 1;
+  return files;
 };
 
 const generateTemplateResponse = async (message, state, template) => {
-  const steps = template.workflowSteps || [];
-  const currentStepData = steps[state.currentStep] || steps[steps.length - 1] || null;
-  const documentsText = (template.attachedDocuments || [])
-    .map((doc) => `${doc.name}: ${doc.content}`)
-    .join('\n');
+  const placeholderMap = {
+    ...buildPlaceholderMap(template),
+    ...(state.collectedInfo || {})
+  };
 
-  const prompt = `You are an AI assistant for a business.
+  const exampleMatch = findExampleMatch(message, template.exampleConversations || []);
+  if (exampleMatch?.botReply) {
+    return applyPlaceholders(exampleMatch.botReply, placeholderMap);
+  }
 
-Business Instructions: ${template.aiInstructions || 'Be helpful and professional.'}
+  const prompt = `You are a WhatsApp assistant for a business.
 
-Knowledge Base:
-${template.knowledgeBase || 'No additional knowledge provided.'}
+Template name: ${template.name}
+What this template is for: ${template.description}
 
-Attached Documents:
-${documentsText || 'None'}
+Business details:
+${formatCustomFields(template.customFields || [])}
 
-Escalation Rules:
-${template.escalationRules || 'None'}
+Advice for how you should reply:
+${template.aiAdvice || 'Be helpful, warm, and concise.'}
 
-Current workflow step ${state.currentStep + 1}${currentStepData ? `: ${currentStepData.instruction}` : ''}
+Example conversations to follow:
+${formatExampleConversations(template.exampleConversations || [], placeholderMap) || 'No examples provided.'}
 
-Field to collect at this step: ${currentStepData?.collectField || 'none'}
+Shared files you may send when user asks (keywords):
+${(template.sharedDocuments || [])
+  .map((doc) => `- ${doc.name}: keywords ${(doc.keywords || []).join(', ')}`)
+  .join('\n') || 'None'}
 
-Collected information so far: ${JSON.stringify(state.collectedInfo || {})}
-
-Conversation history:
-${formatHistoryLines(state.conversationHistory, 10)}
+Current conversation:
+${formatHistoryLines(state.conversationHistory, 12)}
 
 User just said: ${message}
 
-Generate a natural response following the workflow step.
-If the user provides information for the requested field, acknowledge it naturally.
-Keep the response concise and WhatsApp-friendly.
-Do not use markdown formatting.`;
+Write the next bot reply only.
+Keep it WhatsApp-friendly, 1-3 short lines, no markdown.
+Use placeholders only if their values are already known.`;
 
   const reply = await callOpenRouter(prompt, {
-    systemPrompt: 'You follow business workflow steps in WhatsApp conversations.',
+    systemPrompt: 'You handle WhatsApp customer conversations using the provided template.',
     maxTokens: 300
   });
 
-  if (currentStepData?.collectField) {
-    const extracted = await extractFieldValue(message, currentStepData.collectField);
-    if (extracted) {
-      state.collectedInfo = {
-        ...(state.collectedInfo || {}),
-        [currentStepData.collectField]: extracted
-      };
-    }
-  }
-
-  advanceWorkflowStep(state, template);
-  return reply;
+  return applyPlaceholders(reply, placeholderMap);
 };
 
 const generatePersonalityResponse = async (message, state, config) => {
@@ -351,6 +373,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
     }
 
     let reply = '';
+    let mediaFiles = [];
 
     console.log(
       `Auto-reply processing message from ${contactName || contactPhone}: "${incomingMessage.slice(0, 80)}"`
@@ -363,15 +386,12 @@ const handleIncomingMessage = async (client, userId, msg) => {
         if (!template) {
           state.activeTemplateId = null;
           reply = await generatePersonalityResponse(incomingMessage, state, config);
-        } else if (newlyActivatedTemplate && template.initialMessage) {
-          reply = template.initialMessage;
-          if ((template.workflowSteps || []).length > 0) {
-            advanceWorkflowStep(state, template);
-          } else {
-            state.isCompleted = true;
-          }
         } else {
+          const placeholderMap = buildPlaceholderMap(template);
+          const exampleMatch = findExampleMatch(incomingMessage, template.exampleConversations || []);
           reply = await generateTemplateResponse(incomingMessage, state, template);
+          mediaFiles = collectMediaToSend(incomingMessage, template, exampleMatch);
+          state.collectedInfo = { ...placeholderMap, ...(state.collectedInfo || {}) };
         }
       } else {
         reply = await generatePersonalityResponse(incomingMessage, state, config);
@@ -396,6 +416,16 @@ const handleIncomingMessage = async (client, userId, msg) => {
 
     try {
       await sendWhatsAppReply(client, msg, chatId, reply);
+
+      if (state.activeTemplateId && mediaFiles.length > 0) {
+        const template = await AITemplate.findById(state.activeTemplateId);
+        const placeholderMap = {
+          ...buildPlaceholderMap(template || {}),
+          ...(state.collectedInfo || {})
+        };
+        await sendMediaFiles(client, chatId, mediaFiles, placeholderMap);
+      }
+
       console.log(`Auto-reply sent to ${contactPhone}`);
     } catch (err) {
       console.error(`Auto-reply send failed for user ${userId}:`, err.message);

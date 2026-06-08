@@ -1,34 +1,14 @@
 const { validationResult } = require('express-validator');
 const AITemplate = require('../models/AITemplate');
 const ConversationState = require('../models/ConversationState');
+const exampleAITemplate = require('../data/exampleAITemplate');
+const {
+  normalizeCustomFields,
+  normalizeExampleConversations,
+  normalizeSharedDocuments
+} = require('../utils/aiTemplateHelpers');
 
-const normalizeWorkflowSteps = (steps = []) => {
-  if (!Array.isArray(steps)) return [];
-
-  return steps
-    .map((step, index) => ({
-      step: Number(step.step) || index + 1,
-      instruction: String(step.instruction || '').trim(),
-      collectField: String(step.collectField || '').trim(),
-      isLastStep: Boolean(step.isLastStep)
-    }))
-    .filter((step) => step.instruction);
-};
-
-const normalizeTriggerExamples = (value) => {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item || '').trim()).filter(Boolean);
-  }
-
-  if (typeof value === 'string') {
-    return value
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-  }
-
-  return [];
-};
+const serializeTemplate = (template) => template.toObject ? template.toObject() : template;
 
 const getTemplates = async (req, res) => {
   try {
@@ -37,11 +17,15 @@ const getTemplates = async (req, res) => {
       createdAt: -1
     });
 
-    res.json({ templates });
+    res.json({ templates: templates.map(serializeTemplate) });
   } catch (err) {
     console.error('Get AI templates failed:', err.message);
     res.status(500).json({ error: 'Failed to load templates' });
   }
+};
+
+const getExampleTemplate = async (req, res) => {
+  res.json({ template: exampleAITemplate });
 };
 
 const createTemplate = async (req, res) => {
@@ -51,42 +35,30 @@ const createTemplate = async (req, res) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const {
-      name,
-      description,
-      intentDescription,
-      triggerExamples,
-      initialMessage,
-      workflowSteps,
-      aiInstructions,
-      knowledgeBase,
-      attachedDocuments,
-      leadFields,
-      escalationRules,
-      priority,
-      isActive
-    } = req.body;
+    const { name, description, customFields, exampleConversations, aiAdvice, sharedDocuments, priority, isActive } =
+      req.body;
+
+    const normalizedFields = normalizeCustomFields(customFields);
+    const missingValues = normalizedFields.filter((field) => !field.value);
+    if (missingValues.length > 0) {
+      return res.status(400).json({
+        error: `Fill in values for: ${missingValues.map((field) => field.label).join(', ')}`
+      });
+    }
 
     const template = await AITemplate.create({
       userId: req.user._id,
       name: String(name).trim(),
-      description: String(description || '').trim(),
-      intentDescription: String(intentDescription).trim(),
-      triggerExamples: normalizeTriggerExamples(triggerExamples),
-      initialMessage: String(initialMessage || '').trim(),
-      workflowSteps: normalizeWorkflowSteps(workflowSteps),
-      aiInstructions: String(aiInstructions || '').trim(),
-      knowledgeBase: String(knowledgeBase || ''),
-      attachedDocuments: Array.isArray(attachedDocuments) ? attachedDocuments : [],
-      leadFields: Array.isArray(leadFields)
-        ? leadFields.map((field) => String(field).trim()).filter(Boolean)
-        : [],
-      escalationRules: String(escalationRules || '').trim(),
+      description: String(description).trim(),
+      customFields: normalizedFields,
+      exampleConversations: normalizeExampleConversations(exampleConversations),
+      aiAdvice: String(aiAdvice || '').trim(),
+      sharedDocuments: normalizeSharedDocuments(sharedDocuments),
       priority: Number(priority) || 1,
       isActive: isActive !== false
     });
 
-    res.status(201).json({ template });
+    res.status(201).json({ template: serializeTemplate(template) });
   } catch (err) {
     console.error('Create AI template failed:', err.message);
     res.status(500).json({ error: 'Failed to create template' });
@@ -102,18 +74,22 @@ const updateTemplate = async (req, res) => {
 
     const updates = { ...req.body };
 
-    if (updates.triggerExamples !== undefined) {
-      updates.triggerExamples = normalizeTriggerExamples(updates.triggerExamples);
+    if (updates.customFields !== undefined) {
+      updates.customFields = normalizeCustomFields(updates.customFields);
+      const missingValues = updates.customFields.filter((field) => !field.value);
+      if (missingValues.length > 0) {
+        return res.status(400).json({
+          error: `Fill in values for: ${missingValues.map((field) => field.label).join(', ')}`
+        });
+      }
     }
 
-    if (updates.workflowSteps !== undefined) {
-      updates.workflowSteps = normalizeWorkflowSteps(updates.workflowSteps);
+    if (updates.exampleConversations !== undefined) {
+      updates.exampleConversations = normalizeExampleConversations(updates.exampleConversations);
     }
 
-    if (updates.leadFields !== undefined) {
-      updates.leadFields = Array.isArray(updates.leadFields)
-        ? updates.leadFields.map((field) => String(field).trim()).filter(Boolean)
-        : [];
+    if (updates.sharedDocuments !== undefined) {
+      updates.sharedDocuments = normalizeSharedDocuments(updates.sharedDocuments);
     }
 
     const template = await AITemplate.findOneAndUpdate(
@@ -126,7 +102,7 @@ const updateTemplate = async (req, res) => {
       return res.status(404).json({ error: 'Template not found' });
     }
 
-    res.json({ template });
+    res.json({ template: serializeTemplate(template) });
   } catch (err) {
     console.error('Update AI template failed:', err.message);
     res.status(500).json({ error: 'Failed to update template' });
@@ -170,7 +146,7 @@ const toggleTemplate = async (req, res) => {
     template.isActive = !template.isActive;
     await template.save();
 
-    res.json({ template });
+    res.json({ template: serializeTemplate(template) });
   } catch (err) {
     console.error('Toggle AI template failed:', err.message);
     res.status(500).json({ error: 'Failed to toggle template' });
@@ -194,7 +170,7 @@ const getConversations = async (req, res) => {
 
     const [conversations, total] = await Promise.all([
       ConversationState.find(filter)
-        .populate('activeTemplateId', 'name workflowSteps')
+        .populate('activeTemplateId', 'name description')
         .sort({ lastMessageAt: -1, updatedAt: -1 })
         .skip(skip)
         .limit(limit),
@@ -277,6 +253,7 @@ const getLeads = async (req, res) => {
 
 module.exports = {
   getTemplates,
+  getExampleTemplate,
   createTemplate,
   updateTemplate,
   deleteTemplate,

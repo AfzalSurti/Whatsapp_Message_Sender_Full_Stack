@@ -114,6 +114,7 @@ export const templatesAPI = {
 // ─── AI TEMPLATES (INTENT + WORKFLOW) ──────────────────────────
 export const aiTemplateAPI = {
   getTemplates: () => api.get('/api/ai-templates'),
+  getExampleTemplate: () => api.get('/api/ai-templates/example'),
   createTemplate: (data) => api.post('/api/ai-templates', data),
   updateTemplate: (id, data) => api.put(`/api/ai-templates/${id}`, data),
   deleteTemplate: (id) => api.delete(`/api/ai-templates/${id}`),

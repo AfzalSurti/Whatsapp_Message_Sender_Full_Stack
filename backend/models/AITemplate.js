@@ -1,20 +1,40 @@
 const mongoose = require('mongoose');
 
-const WorkflowStepSchema = new mongoose.Schema(
+const CustomFieldSchema = new mongoose.Schema(
   {
-    step: { type: Number, required: true },
-    instruction: { type: String, default: '', trim: true },
-    collectField: { type: String, default: '', trim: true },
-    isLastStep: { type: Boolean, default: false }
+    key: { type: String, required: true, trim: true },
+    label: { type: String, default: '', trim: true },
+    value: { type: String, default: '', trim: true }
   },
   { _id: false }
 );
 
-const AttachedDocumentSchema = new mongoose.Schema(
+const MediaFileSchema = new mongoose.Schema(
   {
     name: { type: String, default: '', trim: true },
-    content: { type: String, default: '' },
-    fileUrl: { type: String, default: '', trim: true }
+    mimeType: { type: String, default: '', trim: true },
+    dataUrl: { type: String, default: '' },
+    caption: { type: String, default: '', trim: true }
+  },
+  { _id: false }
+);
+
+const ExampleConversationSchema = new mongoose.Schema(
+  {
+    userMessage: { type: String, default: '', trim: true },
+    botReply: { type: String, default: '', trim: true },
+    mediaFiles: { type: [MediaFileSchema], default: [] }
+  },
+  { _id: false }
+);
+
+const SharedDocumentSchema = new mongoose.Schema(
+  {
+    name: { type: String, default: '', trim: true },
+    keywords: { type: [String], default: [] },
+    mimeType: { type: String, default: '', trim: true },
+    dataUrl: { type: String, default: '' },
+    caption: { type: String, default: '', trim: true }
   },
   { _id: false }
 );
@@ -35,54 +55,27 @@ const AITemplateSchema = new mongoose.Schema(
     },
     description: {
       type: String,
-      default: '',
-      trim: true,
-      maxlength: 500
-    },
-    intentDescription: {
-      type: String,
       required: true,
       trim: true,
       maxlength: 2000
     },
-    triggerExamples: {
-      type: [String],
+    customFields: {
+      type: [CustomFieldSchema],
       default: []
     },
-    initialMessage: {
-      type: String,
-      default: '',
-      trim: true,
-      maxlength: 2000
-    },
-    workflowSteps: {
-      type: [WorkflowStepSchema],
+    exampleConversations: {
+      type: [ExampleConversationSchema],
       default: []
     },
-    aiInstructions: {
+    aiAdvice: {
       type: String,
       default: '',
       trim: true,
       maxlength: 4000
     },
-    knowledgeBase: {
-      type: String,
-      default: '',
-      maxlength: 10000
-    },
-    attachedDocuments: {
-      type: [AttachedDocumentSchema],
+    sharedDocuments: {
+      type: [SharedDocumentSchema],
       default: []
-    },
-    leadFields: {
-      type: [String],
-      default: []
-    },
-    escalationRules: {
-      type: String,
-      default: '',
-      trim: true,
-      maxlength: 2000
     },
     priority: {
       type: Number,
@@ -93,6 +86,10 @@ const AITemplateSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true
+    },
+    isExample: {
+      type: Boolean,
+      default: false
     }
   },
   {
