@@ -2,79 +2,68 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
-import InternationalPhoneInput from '@/components/InternationalPhoneInput';
-import TemplateCard from '@/components/dashboard/TemplateCard';
-import { scheduledAPI, groupsAPI, aiAPI, templatesAPI } from '@/lib/api';
-import toast from 'react-hot-toast';
-import { ChevronLeft, X, Loader2, Zap, Bot, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
-import { DEFAULT_PHONE_COUNTRY, formatPhoneNumber, normalizePhoneNumber } from '@/lib/phone';
-import { getTagStyle, TAG_CATEGORIES } from '@/lib/segmentTags';
+import toast from 'react-hot-toast';
+import { useAuth } from '@/context/AuthContext';
+import { scheduledAPI, groupsAPI, aiAPI, templatesAPI } from '@/lib/api';
+import CampaignWizardStepper from '@/components/dashboard/campaign/CampaignWizardStepper';
+import Step1CampaignType from '@/components/dashboard/campaign/Step1CampaignType';
+import Step2Audience from '@/components/dashboard/campaign/Step2Audience';
+import Step3Message from '@/components/dashboard/campaign/Step3Message';
+import Step4Schedule from '@/components/dashboard/campaign/Step4Schedule';
+import Step5Review from '@/components/dashboard/campaign/Step5Review';
 import {
-  AI_AUDIENCES,
-  AI_FESTIVALS,
-  AI_LANGUAGES,
-  AI_PRESETS,
-  AI_TONES,
-  formatCampaignDate
+  CAMPAIGN_TYPES,
+  WIZARD_STEPS
 } from '@/lib/scheduledCampaign';
 import {
-  extractVariables,
   getMissingScheduleVariables,
   validateScheduleOnClient,
-  variableLabel,
-  SCHEDULE_REQUIRED_VARIABLES
+  variableLabel
 } from '@/lib/template';
+import { ChevronLeft, ChevronRight, Loader2, Send } from 'lucide-react';
+
+const DEFAULT_MANUAL_DETAILS = {
+  name: '',
+  description: '',
+  icon: '📋',
+  category: 'custom',
+  tagsInput: '',
+  languagesInput: 'English'
+};
 
 export default function CreateCampaignForm() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const handledTemplateQueryRef = useRef(null);
 
   const [step, setStep] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
 
   const [allContacts, setAllContacts] = useState([]);
+  const [tagLibrary, setTagLibrary] = useState([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
 
-  // Step 1 state
-  const [campaignName, setCampaignName] = useState('');
-  const [messageMode, setMessageMode] = useState('manual'); // manual | template
+  const [campaignType, setCampaignType] = useState('');
+  const [messageSource, setMessageSource] = useState('template');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const [templateVariables, setTemplateVariables] = useState({});
+  const [manualDetails, setManualDetails] = useState(DEFAULT_MANUAL_DETAILS);
+
+  const [selectedAudienceTags, setSelectedAudienceTags] = useState([]);
   const [message, setMessage] = useState('');
-  const [aiPreset, setAiPreset] = useState('best');
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [aiTone, setAiTone] = useState('Friendly');
-  const [aiLanguage, setAiLanguage] = useState('English');
-  const [aiFestival, setAiFestival] = useState('General');
-  const [aiAudience, setAiAudience] = useState('Customers');
-  const [customAiTone, setCustomAiTone] = useState('');
-  const [customAiLanguage, setCustomAiLanguage] = useState('');
-  const [customAiFestival, setCustomAiFestival] = useState('');
-  const [customAiAudience, setCustomAiAudience] = useState('');
-  const [aiGuidance, setAiGuidance] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiSectionOpen, setAiSectionOpen] = useState(false);
+  const [templateVariables, setTemplateVariables] = useState({});
+
+  const [scheduleMode, setScheduleMode] = useState('now');
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
+  const [sendingSpeed, setSendingSpeed] = useState('safe');
 
-  // Step 2 state
-  const [selectedContactPhones, setSelectedContactPhones] = useState([]);
-  const [contactPickerSearch, setContactPickerSearch] = useState('');
-  const [individualPhone, setIndividualPhone] = useState('');
-  const [individualPhoneCountry, setIndividualPhoneCountry] = useState(DEFAULT_PHONE_COUNTRY);
-  const [selectedIndividuals, setSelectedIndividuals] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [tagLibrary, setTagLibrary] = useState([]);
-  const [selectedSegmentTags, setSelectedSegmentTags] = useState([]);
-
-  // Step 3 & submission
-  const [submitting, setSubmitting] = useState(false);
-  const handledTemplateQueryRef = useRef(null);
+  const [aiSectionOpen, setAiSectionOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
 
   const fetchContactsOverview = useCallback(async () => {
     try {
@@ -82,7 +71,7 @@ export default function CreateCampaignForm() {
       const res = await groupsAPI.getOverview();
       setAllContacts(res.data.contacts || []);
       setTagLibrary(res.data.tags || []);
-    } catch (err) {
+    } catch {
       toast.error('Failed to load contacts');
     } finally {
       setLoadingContacts(false);
@@ -95,7 +84,7 @@ export default function CreateCampaignForm() {
       const res = await templatesAPI.getTemplates();
       setTemplates(res.data.templates || []);
       return res.data.templates || [];
-    } catch (err) {
+    } catch {
       toast.error('Failed to load templates');
       return [];
     } finally {
@@ -105,7 +94,7 @@ export default function CreateCampaignForm() {
 
   useEffect(() => {
     if (!loading && !user) router.push('/login');
-  }, [user, loading, router]);
+  }, [loading, router, user]);
 
   useEffect(() => {
     if (user) {
@@ -116,40 +105,168 @@ export default function CreateCampaignForm() {
 
   const applyTemplateSelection = useCallback((template) => {
     if (!template) return;
-    setMessageMode('template');
+    setMessageSource('template');
     setSelectedTemplateId(template._id);
     setSelectedTemplate(template);
     setMessage(template.body);
-    setCampaignName((prev) => (prev.trim() ? prev : template.name));
     setTemplateVariables(template.defaultVariables || {});
+    setManualDetails((prev) => ({
+      ...prev,
+      name: prev.name.trim() ? prev.name : template.name
+    }));
   }, []);
 
   useEffect(() => {
     if (!user || templates.length === 0) return;
-
     const templateId = new URLSearchParams(window.location.search).get('template');
-    if (!templateId) return;
-    if (handledTemplateQueryRef.current === templateId) return;
+    if (!templateId || handledTemplateQueryRef.current === templateId) return;
 
     const template = templates.find((item) => item._id === templateId);
     if (template) {
       handledTemplateQueryRef.current = templateId;
       applyTemplateSelection(template);
-      setStep(1);
+      setMessageSource('template');
     }
   }, [templates, user, applyTemplateSelection]);
 
+  const campaignName = useMemo(() => {
+    if (messageSource === 'template' && selectedTemplate) return selectedTemplate.name;
+    return manualDetails.name.trim();
+  }, [messageSource, selectedTemplate, manualDetails.name]);
+
+  const audienceContacts = useMemo(() => {
+    if (selectedAudienceTags.length === 0) return [];
+    if (selectedAudienceTags.includes('__all__')) return allContacts;
+
+    return allContacts.filter((contact) =>
+      selectedAudienceTags.some((tag) => contact.tags?.includes(tag))
+    );
+  }, [allContacts, selectedAudienceTags]);
+
+  const buildRecipients = useCallback(() => {
+    return audienceContacts.map((contact) => ({
+      name: contact.name || '',
+      phone: contact.phone.replace(/\D/g, ''),
+      segment: (contact.tags || []).join(', ') || ''
+    }));
+  }, [audienceContacts]);
+
+  const recipientCount = audienceContacts.length;
+
+  const missingTemplateVariables = useMemo(
+    () => getMissingScheduleVariables(message, templateVariables),
+    [message, templateVariables]
+  );
+
+  const getStepBlockers = useCallback(
+    (currentStep) => {
+      const blockers = [];
+
+      if (currentStep === 1) {
+        if (!campaignType) blockers.push('Select a campaign type');
+        if (messageSource === 'template' && !selectedTemplateId) {
+          blockers.push('Select a template');
+        }
+        if (messageSource === 'manual' && !manualDetails.name.trim()) {
+          blockers.push('Enter a campaign / template name');
+        }
+      }
+
+      if (currentStep === 2) {
+        if (selectedAudienceTags.length === 0) blockers.push('Select at least one audience segment');
+        if (recipientCount === 0) blockers.push('Selected segments have no contacts');
+      }
+
+      if (currentStep === 3) {
+        if (!message.trim()) blockers.push('Enter a message');
+        missingTemplateVariables.forEach((variable) => {
+          blockers.push(`Fill in ${variableLabel(variable)} for {{${variable}}}`);
+        });
+      }
+
+      if (currentStep === 4) {
+        if (scheduleMode === 'later') {
+          if (!scheduleDate) blockers.push('Select a schedule date');
+          if (!scheduleTime) blockers.push('Select a schedule time');
+          if (scheduleDate && scheduleTime) {
+            const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
+            if (Number.isNaN(scheduledAt.getTime())) {
+              blockers.push('Enter a valid date and time');
+            } else if (scheduledAt <= new Date(Date.now() + 60000)) {
+              blockers.push('Schedule time must be at least 1 minute in the future');
+            }
+          }
+        }
+      }
+
+      return blockers;
+    },
+    [
+      campaignType,
+      manualDetails.name,
+      message,
+      messageSource,
+      missingTemplateVariables,
+      recipientCount,
+      scheduleDate,
+      scheduleMode,
+      scheduleTime,
+      selectedAudienceTags.length,
+      selectedTemplateId
+    ]
+  );
+
+  const handleMessageSourceChange = (source) => {
+    setMessageSource(source);
+    if (source === 'manual') {
+      setSelectedTemplateId('');
+      setSelectedTemplate(null);
+      setMessage('');
+      setTemplateVariables({});
+    }
+  };
+
+  const toggleAudienceTag = (tagName) => {
+    if (tagName === '__all__') {
+      setSelectedAudienceTags((prev) => (prev.includes('__all__') ? [] : ['__all__']));
+      return;
+    }
+
+    setSelectedAudienceTags((prev) => {
+      const withoutAll = prev.filter((tag) => tag !== '__all__');
+      return withoutAll.includes(tagName)
+        ? withoutAll.filter((tag) => tag !== tagName)
+        : [...withoutAll, tagName];
+    });
+  };
+
+  const handleSelectTemplate = (template) => {
+    if (selectedTemplateId === template._id) {
+      setSelectedTemplateId('');
+      setSelectedTemplate(null);
+      setMessage('');
+      setTemplateVariables({});
+      return;
+    }
+    applyTemplateSelection(template);
+  };
+
   const handleAIGenerate = async () => {
+    if (!aiPrompt.trim()) {
+      toast.error('Describe the message you want');
+      return;
+    }
+
     setAiLoading(true);
     try {
       const res = await aiAPI.generate({
-        preset: aiPreset,
+        preset: 'best',
         prompt: aiPrompt,
-        tone: aiTone === 'Other' ? customAiTone : aiTone,
-        language: aiLanguage === 'Other' ? customAiLanguage : aiLanguage,
-        festival: aiFestival === 'Other' ? customAiFestival : aiFestival,
-        audience: aiAudience === 'Other' ? customAiAudience : aiAudience,
-        guidance: aiGuidance
+        tone: 'Friendly',
+        language: manualDetails.languagesInput.split(',')[0]?.trim() || 'English',
+        festival: 'General',
+        audience: 'Customers',
+        guidance: 'Create a WhatsApp campaign message. Include {{name}} when useful.'
       });
       setMessage(res.data.message);
       toast.success('Message generated!');
@@ -160,315 +277,75 @@ export default function CreateCampaignForm() {
     }
   };
 
-  const tagsByCategory = useMemo(() => {
-    const map = {};
-    TAG_CATEGORIES.forEach((cat) => {
-      map[cat.id] = tagLibrary.filter((tag) => tag.category === cat.id);
-    });
-    return map;
-  }, [tagLibrary]);
-
-  const filteredContactsForPicker = useMemo(() => {
-    let list = allContacts;
-
-    if (selectedSegmentTags.length > 0) {
-      list = list.filter((contact) =>
-        selectedSegmentTags.every((tag) => contact.tags?.includes(tag))
-      );
-    }
-
-    const query = contactPickerSearch.trim().toLowerCase();
-    if (query) {
-      list = list.filter(
-        (contact) =>
-          String(contact.name || '').toLowerCase().includes(query) ||
-          String(contact.phone || '').includes(query.replace(/\D/g, ''))
-      );
-    }
-
-    return list;
-  }, [allContacts, contactPickerSearch, selectedSegmentTags]);
-
-  const visibleContactPhones = useMemo(
-    () => filteredContactsForPicker.map((contact) => contact.phone.replace(/\D/g, '')),
-    [filteredContactsForPicker]
-  );
-
-  const allVisibleSelected =
-    visibleContactPhones.length > 0 &&
-    visibleContactPhones.every((phone) => selectedContactPhones.includes(phone));
-
-  const buildRecipients = useCallback(() => {
-    const recipients = [];
-    const phoneSet = new Set();
-
-    selectedContactPhones.forEach((phone) => {
-      const clean = phone.replace(/\D/g, '');
-      if (phoneSet.has(clean)) return;
-
-      const contact = allContacts.find((item) => item.phone.replace(/\D/g, '') === clean);
-      phoneSet.add(clean);
-      recipients.push({
-        name: contact?.name || '',
-        phone: clean,
-        segment: (contact?.tags || []).join(', ') || ''
-      });
-    });
-
-    selectedIndividuals.forEach((phone) => {
-      const clean = phone.replace(/\D/g, '');
-      if (phoneSet.has(clean)) return;
-
-      const contact = allContacts.find((item) => item.phone.replace(/\D/g, '') === clean);
-      phoneSet.add(clean);
-      recipients.push({
-        name: contact?.name || '',
-        phone: clean,
-        segment: (contact?.tags || []).join(', ') || ''
-      });
-    });
-
-    return recipients;
-  }, [allContacts, selectedContactPhones, selectedIndividuals]);
-
-  const activeTemplateVariables = useMemo(
-    () => extractVariables(message),
-    [message]
-  );
-
-  const missingTemplateVariables = useMemo(
-    () => getMissingScheduleVariables(message, templateVariables),
-    [message, templateVariables]
-  );
-
-  const stepOneBlockers = useMemo(() => {
-    const blockers = [];
-
-    if (!campaignName.trim()) {
-      blockers.push('Enter a campaign name');
-    }
-
-    if (messageMode === 'template' && !selectedTemplateId) {
-      blockers.push('Select a template from the list above');
-    }
-
-    if (!message.trim()) {
-      blockers.push(messageMode === 'template' ? 'Select a template to load the message' : 'Enter a message');
-    }
-
-    if (!scheduleDate) {
-      blockers.push('Select a schedule date');
-    }
-
-    if (!scheduleTime) {
-      blockers.push('Select a schedule time');
-    }
-
-    if (scheduleDate && scheduleTime) {
-      const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
-      if (Number.isNaN(scheduledAt.getTime())) {
-        blockers.push('Enter a valid date and time');
-      } else if (scheduledAt <= new Date(Date.now() + 60000)) {
-        blockers.push('Schedule time must be at least 1 minute in the future');
-      }
-    }
-
-    missingTemplateVariables.forEach((variable) => {
-      blockers.push(`Fill in ${variableLabel(variable)} for {{${variable}}}`);
-    });
-
-    return blockers;
-  }, [
-    campaignName,
-    message,
-    messageMode,
-    missingTemplateVariables,
-    scheduleDate,
-    scheduleTime,
-    selectedTemplateId
-  ]);
-
-  const canProceedStep1 = stepOneBlockers.length === 0;
-
-  const totalContactsCount = useMemo(
-    () => buildRecipients().length,
-    [buildRecipients]
-  );
-
-  const stepTwoBlockers = useMemo(() => {
-    if (totalContactsCount > 0) return [];
-    return ['Select at least one contact or phone number'];
-  }, [totalContactsCount]);
-
-  const canProceedStep2 = stepTwoBlockers.length === 0;
-
-  const handleSearch = (query) => {
-    setSearchQuery(query);
-    if (!query.trim()) {
-      setSearchResults([]);
-      return;
-    }
-
-    const q = query.trim().toLowerCase();
-    const results = allContacts
-      .filter(
-        (contact) =>
-          String(contact.phone || '').includes(q.replace(/\D/g, '')) ||
-          String(contact.name || '').toLowerCase().includes(q)
-      )
-      .map((contact) => ({ phone: contact.phone, name: contact.name || '' }));
-
-    setSearchResults(results.slice(0, 10));
-  };
-
-  const toggleContactSelection = (phone) => {
-    const clean = phone.replace(/\D/g, '');
-    setSelectedContactPhones((prev) =>
-      prev.includes(clean) ? prev.filter((item) => item !== clean) : [...prev, clean]
-    );
-  };
-
-  const toggleSelectAllVisible = () => {
-    if (allVisibleSelected) {
-      setSelectedContactPhones((prev) =>
-        prev.filter((phone) => !visibleContactPhones.includes(phone))
-      );
-      return;
-    }
-
-    setSelectedContactPhones((prev) => [...new Set([...prev, ...visibleContactPhones])]);
-  };
-
-  const toggleSegmentTag = (tagName) => {
-    setSelectedSegmentTags((prev) =>
-      prev.includes(tagName) ? prev.filter((tag) => tag !== tagName) : [...prev, tagName]
-    );
-  };
-
-  const handleAddIndividual = (phone, name) => {
-    const clean = phone.replace(/\D/g, '');
-    if (
-      selectedIndividuals.some((item) => item.replace(/\D/g, '') === clean) ||
-      selectedContactPhones.includes(clean)
-    ) {
-      toast.error('Already added');
-      return;
-    }
-    setSelectedIndividuals([...selectedIndividuals, clean]);
-    setSearchQuery('');
-    setSearchResults([]);
-  };
-
-  const handleAddManualNumber = () => {
-    const normalized = normalizePhoneNumber(individualPhone, individualPhoneCountry);
-
-    if (!normalized) {
-      toast.error('Enter a valid international phone number');
-      return;
-    }
-
-    const clean = normalized.e164.replace(/\D/g, '');
-    if (
-      selectedIndividuals.some((number) => number.replace(/\D/g, '') === clean) ||
-      selectedContactPhones.includes(clean)
-    ) {
-      toast.error('Already added');
-      return;
-    }
-
-    setSelectedIndividuals([...selectedIndividuals, clean]);
-    setIndividualPhone('');
-    setIndividualPhoneCountry(normalized.country || individualPhoneCountry);
-  };
-
-  const handleRemoveIndividual = (phone) => {
-    setSelectedIndividuals(selectedIndividuals.filter((item) => item !== phone));
-  };
-
-  const handleSelectTemplate = (template) => {
-    if (selectedTemplateId === template._id) {
-      setMessageMode('manual');
-      setSelectedTemplateId('');
-      setSelectedTemplate(null);
-      setTemplateVariables({});
-      return;
-    }
-
-    applyTemplateSelection(template);
-  };
-
-  const validateStepOne = () => {
-    if (stepOneBlockers.length > 0) {
-      toast.error(stepOneBlockers[0]);
-      return false;
-    }
-    return true;
-  };
-
-  const handleSchedule = async () => {
-    if (!campaignName.trim()) {
-      toast.error('Enter campaign name');
-      return;
-    }
-    if (!message.trim()) {
-      toast.error('Enter message or select a template');
-      return;
-    }
-    if (!scheduleDate || !scheduleTime) {
-      toast.error('Select date and time');
-      return;
-    }
-    if (selectedContactPhones.length === 0 && selectedIndividuals.length === 0) {
-      toast.error('Select at least one contact or phone number');
+  const handleLaunch = async () => {
+    const blockers = [
+      ...getStepBlockers(1),
+      ...getStepBlockers(2),
+      ...getStepBlockers(3),
+      ...getStepBlockers(4)
+    ];
+    if (blockers.length > 0) {
+      toast.error(blockers[0]);
       return;
     }
 
     const recipients = buildRecipients();
-    if (recipients.length === 0) {
-      toast.error('No valid recipients selected');
-      return;
-    }
-
-    const missingStatic = getMissingScheduleVariables(message, templateVariables);
-    if (missingStatic.length > 0) {
-      toast.error(`Provide values for: ${missingStatic.map((v) => `{{${v}}}`).join(', ')}`);
-      return;
-    }
-
     const scheduleValidationError = validateScheduleOnClient(message, templateVariables, recipients);
     if (scheduleValidationError) {
       toast.error(scheduleValidationError);
       return;
     }
 
+    let scheduledAt;
+    if (scheduleMode === 'now') {
+      scheduledAt = new Date(Date.now() + 2 * 60 * 1000);
+    } else {
+      scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
+    }
+
+    const typeLabel = CAMPAIGN_TYPES.find((t) => t.id === campaignType)?.label || 'Campaign';
+    const finalName = campaignName || typeLabel;
+
     setSubmitting(true);
     try {
-      const dateTime = new Date(`${scheduleDate}T${scheduleTime}`);
-
       await scheduledAPI.createCampaign({
-        name: campaignName,
+        name: finalName,
         message,
-        scheduledAt: dateTime.toISOString(),
+        scheduledAt: scheduledAt.toISOString(),
         timezone: 'Asia/Kolkata',
         individualNumbers: recipients.map((recipient) => ({
           phone: recipient.phone,
           name: recipient.name
         })),
-        templateId: messageMode === 'template' ? selectedTemplateId : undefined,
+        templateId: messageSource === 'template' ? selectedTemplateId : undefined,
         templateVariables
       });
 
-      toast.success('Campaign scheduled!');
+      toast.success(scheduleMode === 'now' ? 'Campaign launched!' : 'Campaign scheduled!');
       router.push('/dashboard/scheduled');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to schedule');
+      toast.error(err.response?.data?.error || 'Failed to launch campaign');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleCancel = () => {
-    router.push('/dashboard/scheduled');
+  const goNext = () => {
+    const blockers = getStepBlockers(step);
+    if (blockers.length > 0) {
+      toast.error(blockers[0]);
+      return;
+    }
+
+    if (step === 3 && message.includes('{{name}}')) {
+      const err = validateScheduleOnClient(message, templateVariables, buildRecipients());
+      if (err) {
+        toast.error(err);
+        return;
+      }
+    }
+
+    setStep((prev) => Math.min(prev + 1, 5));
   };
 
   if (loading) {
@@ -479,779 +356,155 @@ export default function CreateCampaignForm() {
     );
   }
 
-  const totalContacts = totalContactsCount;
+  const currentStepMeta = WIZARD_STEPS.find((item) => item.id === step);
+  const stepBlockers = getStepBlockers(step);
 
   return (
-    <div className="bg-[#111] border border-white/5 rounded-2xl overflow-hidden">
-      <div className="flex items-center justify-between p-6 border-b border-white/5">
-        <div>
-          <h2 className="font-bold text-lg">Create Campaign</h2>
-          <div className="flex items-center gap-2 mt-2">
-            {[1, 2, 3].map((s) => (
-              <div
-                key={s}
-                className={`px-2.5 py-1 rounded-full text-xs border ${
-                  step === s
-                    ? 'bg-[#25D366] text-black border-[#25D366]'
-                    : 'bg-white/5 text-gray-400 border-white/10'
-                }`}
-              >
-                Step {s}
-              </div>
-            ))}
+    <div className="bg-[#111814] border border-white/10 rounded-2xl overflow-hidden">
+      <div className="p-6 border-b border-white/10 space-y-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/dashboard/scheduled"
+              className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"
+            >
+              <ChevronLeft size={16} /> Back
+            </Link>
+            <div>
+              <h2 className="font-bold text-lg">New Campaign</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Step {step} of 5 · {currentStepMeta?.label}
+              </p>
+            </div>
           </div>
         </div>
-        <Link
-          href="/dashboard/scheduled"
-          className="text-sm text-gray-400 hover:text-white transition-colors"
-        >
-          Back to campaigns
-        </Link>
+        <CampaignWizardStepper step={step} />
       </div>
 
-      <div className="p-6 space-y-4">
-              {/* STEP 1 */}
-              {step === 1 && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium text-gray-300 block mb-2">Campaign Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Diwali Promotion"
-                      value={campaignName}
-                      onChange={(e) => setCampaignName(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
-                    />
-                  </div>
+      <div className="p-6 min-h-[420px]">
+        {step === 1 && (
+          <Step1CampaignType
+            campaignType={campaignType}
+            setCampaignType={setCampaignType}
+            messageSource={messageSource}
+            setMessageSource={handleMessageSourceChange}
+            templates={templates}
+            loadingTemplates={loadingTemplates}
+            selectedTemplateId={selectedTemplateId}
+            onSelectTemplate={handleSelectTemplate}
+            manualDetails={manualDetails}
+            setManualDetails={setManualDetails}
+          />
+        )}
+        {step === 2 && (
+          <Step2Audience
+            tagLibrary={tagLibrary}
+            allContacts={allContacts}
+            loadingContacts={loadingContacts}
+            selectedAudienceTags={selectedAudienceTags}
+            toggleAudienceTag={toggleAudienceTag}
+          />
+        )}
+        {step === 3 && (
+          <Step3Message
+            message={message}
+            setMessage={setMessage}
+            messageSource={messageSource}
+            selectedTemplate={selectedTemplate}
+            templateVariables={templateVariables}
+            setTemplateVariables={setTemplateVariables}
+            aiSectionOpen={aiSectionOpen}
+            setAiSectionOpen={setAiSectionOpen}
+            aiPrompt={aiPrompt}
+            setAiPrompt={setAiPrompt}
+            aiLoading={aiLoading}
+            onGenerateAi={handleAIGenerate}
+          />
+        )}
+        {step === 4 && (
+          <Step4Schedule
+            scheduleMode={scheduleMode}
+            setScheduleMode={setScheduleMode}
+            scheduleDate={scheduleDate}
+            setScheduleDate={setScheduleDate}
+            scheduleTime={scheduleTime}
+            setScheduleTime={setScheduleTime}
+            sendingSpeed={sendingSpeed}
+            setSendingSpeed={setSendingSpeed}
+          />
+        )}
+        {step === 5 && (
+          <Step5Review
+            campaignType={campaignType}
+            selectedAudienceTags={selectedAudienceTags}
+            recipientCount={recipientCount}
+            scheduleMode={scheduleMode}
+            scheduleDate={scheduleDate}
+            scheduleTime={scheduleTime}
+            sendingSpeed={sendingSpeed}
+            message={message}
+          />
+        )}
+      </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <label className="text-sm font-medium text-gray-300">Message Source</label>
-                      <Link href="/dashboard/templates" className="text-xs text-[#25D366] hover:underline">
-                        Manage templates
-                      </Link>
-                    </div>
-                    <div className="inline-flex p-1 rounded-xl bg-[#0a0a0a] border border-white/10 gap-1 mb-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMessageMode('manual');
-                          setSelectedTemplateId('');
-                          setSelectedTemplate(null);
-                          setTemplateVariables({});
-                        }}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                          messageMode === 'manual'
-                            ? 'bg-[#25D366] text-black'
-                            : 'text-gray-400 hover:text-white'
-                        }`}
-                      >
-                        Write manually
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setMessageMode('template')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                          messageMode === 'template'
-                            ? 'bg-[#25D366] text-black'
-                            : 'text-gray-400 hover:text-white'
-                        }`}
-                      >
-                        Use template
-                      </button>
-                    </div>
+      <div className="border-t border-white/10 p-6 space-y-4">
+        {stepBlockers.length > 0 && step < 5 && (
+          <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
+            <p className="text-sm font-medium text-amber-200 mb-1">Complete to continue:</p>
+            <ul className="space-y-1">
+              {stepBlockers.map((blocker) => (
+                <li key={blocker} className="text-xs text-amber-100/90">
+                  • {blocker}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-                    {messageMode === 'template' && (
-                      <div className="mb-4">
-                        {loadingTemplates ? (
-                          <div className="flex items-center justify-center py-8">
-                            <Loader2 size={18} className="animate-spin text-[#25D366]" />
-                          </div>
-                        ) : templates.length === 0 ? (
-                          <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 text-sm text-gray-500">
-                            No templates yet.{' '}
-                            <Link href="/dashboard/templates" className="text-[#25D366] hover:underline">
-                              Create one
-                            </Link>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
-                              {templates.map((template) => (
-                                <TemplateCard
-                                  key={template._id}
-                                  template={template}
-                                  selectable
-                                  selected={selectedTemplateId === template._id}
-                                  onUse={() => handleSelectTemplate(template)}
-                                />
-                              ))}
-                            </div>
+        <div className="flex gap-3">
+          {step > 1 ? (
+            <button
+              type="button"
+              onClick={() => setStep((prev) => prev - 1)}
+              className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
+            >
+              <ChevronLeft size={16} /> Back
+            </button>
+          ) : (
+            <Link
+              href="/dashboard/scheduled"
+              className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center"
+            >
+              Cancel
+            </Link>
+          )}
 
-                            {selectedTemplate && (
-                              <div className="bg-[#0a0f0d] border border-[#25D366]/25 rounded-xl p-4 space-y-3">
-                                <div className="flex items-center justify-between gap-3">
-                                  <div>
-                                    <p className="text-sm font-medium text-white">
-                                      Selected: {selectedTemplate.icon} {selectedTemplate.name}
-                                    </p>
-                                    <p className="text-xs text-gray-500 mt-1">Template loaded into preview below</p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setMessageMode('manual');
-                                      setSelectedTemplateId('');
-                                      setSelectedTemplate(null);
-                                      setTemplateVariables({});
-                                    }}
-                                    className="text-xs text-gray-400 hover:text-white cursor-pointer"
-                                  >
-                                    Clear
-                                  </button>
-                                </div>
-
-                                {missingTemplateVariables.length > 0 && (
-                                  <div className="space-y-3 pt-1 border-t border-white/10">
-                                    <p className="text-xs font-medium text-amber-300">
-                                      Required before you can continue
-                                    </p>
-                                    {activeTemplateVariables
-                                      .filter((variable) => SCHEDULE_REQUIRED_VARIABLES.includes(variable))
-                                      .map((variable) => (
-                                        <div key={variable}>
-                                          <label className="text-xs text-gray-400 block mb-1.5">
-                                            {variableLabel(variable)} ({`{{${variable}}}`}) <span className="text-red-400">*</span>
-                                          </label>
-                                          <input
-                                            type="text"
-                                            value={templateVariables[variable] || ''}
-                                            onChange={(e) =>
-                                              setTemplateVariables((prev) => ({
-                                                ...prev,
-                                                [variable]: e.target.value
-                                              }))
-                                            }
-                                            placeholder={`Enter ${variableLabel(variable).toLowerCase()}`}
-                                            className={`w-full px-4 py-2.5 bg-[#111] border rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] ${
-                                              !(templateVariables[variable] || '').trim()
-                                                ? 'border-amber-500/40'
-                                                : 'border-white/10'
-                                            }`}
-                                          />
-                                        </div>
-                                      ))}
-                                  </div>
-                                )}
-
-                                {activeTemplateVariables.includes('name') && (
-                                  <p className="text-[11px] text-amber-400/90">
-                                    This template uses {'{{name}}'}. In Step 2, every selected contact must have a saved name.
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {messageMode !== 'template' && activeTemplateVariables.some((variable) => SCHEDULE_REQUIRED_VARIABLES.includes(variable)) && (
-                    <div className="bg-[#0a0a0a] border border-amber-500/20 rounded-xl p-4 space-y-3">
-                      <p className="text-sm font-medium text-amber-300">Template variables</p>
-                      {activeTemplateVariables
-                        .filter((variable) => SCHEDULE_REQUIRED_VARIABLES.includes(variable))
-                        .map((variable) => (
-                          <div key={variable}>
-                            <label className="text-xs text-gray-400 block mb-1.5">
-                              {variableLabel(variable)} ({`{{${variable}}}`})
-                            </label>
-                            <input
-                              type="text"
-                              value={templateVariables[variable] || ''}
-                              onChange={(e) =>
-                                setTemplateVariables((prev) => ({
-                                  ...prev,
-                                  [variable]: e.target.value
-                                }))
-                              }
-                              placeholder={`Enter ${variableLabel(variable).toLowerCase()}`}
-                              className="w-full px-4 py-2.5 bg-[#111] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
-                            />
-                          </div>
-                        ))}
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="text-sm font-medium text-gray-300 block mb-2">
-                      {messageMode === 'template' ? 'Template Preview' : 'Message'}
-                    </label>
-                    <textarea
-                      placeholder="Type your message..."
-                      value={message}
-                      onChange={(e) => {
-                        setMessage(e.target.value);
-                        if (messageMode === 'template' && selectedTemplate && e.target.value !== selectedTemplate.body) {
-                          setMessageMode('manual');
-                          setSelectedTemplateId('');
-                          setSelectedTemplate(null);
-                        }
-                      }}
-                      readOnly={messageMode === 'template' && Boolean(selectedTemplateId)}
-                      rows={4}
-                      className={`w-full px-4 py-3 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors resize-none ${
-                        messageMode === 'template' && selectedTemplateId ? 'opacity-90' : ''
-                      }`}
-                    />
-                    {message && (
-                      <p className="text-xs text-gray-600 text-right mt-1">{message.length} characters</p>
-                    )}
-                    {activeTemplateVariables.includes('name') && (
-                      <p className="text-xs text-amber-400 mt-2">
-                        This template uses {'{{name}}'}. Make sure selected contacts include names.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-4">
-                    <button
-                      onClick={() => setAiSectionOpen((prev) => !prev)}
-                      className="w-full flex items-center justify-between text-left cursor-pointer"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-gray-200">Generate with AI</p>
-                        <p className="text-[11px] text-gray-500 mt-1">Optional assistant for campaign copy and tone.</p>
-                      </div>
-                      <span className="text-xs text-[#25D366]">{aiSectionOpen ? 'Hide' : 'Show'}</span>
-                    </button>
-
-                    {aiSectionOpen && (
-                      <div className="space-y-3 mt-4">
-                        <div>
-                          <label className="text-xs text-gray-500 block mb-2">Preset</label>
-                          <select
-                            value={aiPreset}
-                            onChange={(e) => setAiPreset(e.target.value)}
-                            className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
-                          >
-                            {AI_PRESETS.map(item => (
-                              <option key={item.value} value={item.value}>{item.label}</option>
-                            ))}
-                          </select>
-                          <p className="text-[11px] text-gray-500 mt-1">
-                            {AI_PRESETS.find(item => item.value === aiPreset)?.description}
-                          </p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <select
-                            value={aiTone}
-                            onChange={(e) => setAiTone(e.target.value)}
-                            className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
-                          >
-                            {AI_TONES.map(item => <option key={item}>{item}</option>)}
-                          </select>
-                          <select
-                            value={aiLanguage}
-                            onChange={(e) => setAiLanguage(e.target.value)}
-                            className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
-                          >
-                            {AI_LANGUAGES.map(item => <option key={item}>{item}</option>)}
-                          </select>
-                          <select
-                            value={aiFestival}
-                            onChange={(e) => setAiFestival(e.target.value)}
-                            className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
-                          >
-                            {AI_FESTIVALS.map(item => <option key={item}>{item}</option>)}
-                          </select>
-                          <select
-                            value={aiAudience}
-                            onChange={(e) => setAiAudience(e.target.value)}
-                            className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-[#25D366]"
-                          >
-                            {AI_AUDIENCES.map(item => <option key={item}>{item}</option>)}
-                          </select>
-                        </div>
-                        {(aiTone === 'Other' || aiLanguage === 'Other' || aiFestival === 'Other' || aiAudience === 'Other') && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {aiTone === 'Other' && (
-                              <input
-                                type="text"
-                                placeholder="Custom tone"
-                                value={customAiTone}
-                                onChange={(e) => setCustomAiTone(e.target.value)}
-                                className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
-                              />
-                            )}
-                            {aiLanguage === 'Other' && (
-                              <input
-                                type="text"
-                                placeholder="Custom language"
-                                value={customAiLanguage}
-                                onChange={(e) => setCustomAiLanguage(e.target.value)}
-                                className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
-                              />
-                            )}
-                            {aiFestival === 'Other' && (
-                              <input
-                                type="text"
-                                placeholder="Custom festival or context"
-                                value={customAiFestival}
-                                onChange={(e) => setCustomAiFestival(e.target.value)}
-                                className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
-                              />
-                            )}
-                            {aiAudience === 'Other' && (
-                              <input
-                                type="text"
-                                placeholder="Custom audience"
-                                value={customAiAudience}
-                                onChange={(e) => setCustomAiAudience(e.target.value)}
-                                className="w-full px-3 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366]"
-                              />
-                            )}
-                          </div>
-                        )}
-                        <textarea
-                          placeholder='Optional campaign prompt, e.g. "Friendly message about Diwali sale"'
-                          value={aiPrompt}
-                          onChange={(e) => setAiPrompt(e.target.value)}
-                          rows={2}
-                          className="w-full px-4 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors resize-none"
-                        />
-                        <textarea
-                          placeholder='Optional AI guidance, e.g. "Use {{name}}, keep it premium, add urgency"'
-                          value={aiGuidance}
-                          onChange={(e) => setAiGuidance(e.target.value)}
-                          rows={2}
-                          className="w-full px-4 py-2 bg-[#111] border border-white/10 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors resize-none"
-                        />
-                        <button
-                          onClick={handleAIGenerate}
-                          disabled={aiLoading}
-                          className="w-full flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold py-2 rounded-lg transition-colors text-sm cursor-pointer"
-                        >
-                          {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Bot size={14} />}
-                          {aiLoading ? 'Generating...' : 'Generate'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-sm font-medium text-gray-300 block mb-2">Date</label>
-                      <input
-                        type="date"
-                        value={scheduleDate}
-                        onChange={(e) => setScheduleDate(e.target.value)}
-                        onClick={(e) => e.currentTarget.showPicker?.()}
-                        onFocus={(e) => e.currentTarget.showPicker?.()}
-                        className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366] transition-colors cursor-pointer"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-300 block mb-2">Time</label>
-                      <input
-                        type="time"
-                        value={scheduleTime}
-                        onChange={(e) => setScheduleTime(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366] transition-colors"
-                      />
-                    </div>
-                  </div>
-                </div>
+          {step < 5 ? (
+            <button
+              type="button"
+              onClick={goNext}
+              disabled={stepBlockers.length > 0}
+              className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
+            >
+              Continue <ChevronRight size={16} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleLaunch}
+              disabled={submitting}
+              className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
+            >
+              {submitting ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Send size={16} />
               )}
-
-              {/* STEP 2 */}
-              {step === 2 && (
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-medium text-gray-300">Filter by Segment Tags</p>
-                      <Link href="/dashboard/groups" className="text-xs text-[#25D366] hover:underline">
-                        Manage contacts
-                      </Link>
-                    </div>
-                    {tagLibrary.length === 0 ? (
-                      <p className="text-xs text-gray-500">
-                        No tags yet.{' '}
-                        <Link href="/dashboard/groups" className="text-[#25D366] hover:underline">
-                          Add tags on Contacts
-                        </Link>
-                      </p>
-                    ) : (
-                      <div className="space-y-4">
-                        {TAG_CATEGORIES.map((category) => {
-                          const tags = tagsByCategory[category.id] || [];
-                          if (tags.length === 0) return null;
-
-                          return (
-                            <div key={category.id}>
-                              <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">
-                                {category.label}
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {tags.map((tag) => {
-                                  const active = selectedSegmentTags.includes(tag.name);
-                                  const style = getTagStyle(tag.name, tagLibrary);
-                                  return (
-                                    <button
-                                      key={tag._id}
-                                      type="button"
-                                      onClick={() => toggleSegmentTag(tag.name)}
-                                      className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                                        active ? 'ring-1 ring-white/25' : 'opacity-75 hover:opacity-100'
-                                      }`}
-                                      style={
-                                        active
-                                          ? style
-                                          : { borderColor: 'rgba(255,255,255,0.12)', color: '#d1d5db' }
-                                      }
-                                    >
-                                      {tag.name}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {selectedSegmentTags.length > 0 && (
-                      <div className="flex items-center justify-between mt-3">
-                        <p className="text-xs text-gray-500">
-                          Showing contacts matching all selected tags.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedSegmentTags([])}
-                          className="text-xs text-gray-400 hover:text-white"
-                        >
-                          Clear tag filters
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-                      <p className="text-sm font-medium text-gray-300">Select Contacts</p>
-                      {filteredContactsForPicker.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={toggleSelectAllVisible}
-                          className="text-xs text-[#25D366] hover:underline"
-                        >
-                          {allVisibleSelected ? 'Deselect all visible' : 'Select all visible'}
-                        </button>
-                      )}
-                    </div>
-
-                    <input
-                      type="text"
-                      placeholder="Search contacts by name or phone..."
-                      value={contactPickerSearch}
-                      onChange={(e) => setContactPickerSearch(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors mb-3"
-                    />
-
-                    {loadingContacts ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 size={16} className="animate-spin text-[#25D366]" />
-                      </div>
-                    ) : allContacts.length === 0 ? (
-                      <p className="text-xs text-gray-500">
-                        No contacts yet.{' '}
-                        <Link href="/dashboard/groups" className="text-[#25D366] hover:underline">
-                          Add contacts
-                        </Link>
-                      </p>
-                    ) : filteredContactsForPicker.length === 0 ? (
-                      <p className="text-xs text-gray-500 py-6 text-center">
-                        No contacts match your tag filters.
-                      </p>
-                    ) : (
-                      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                        {filteredContactsForPicker.map((contact) => {
-                          const clean = contact.phone.replace(/\D/g, '');
-                          const checked = selectedContactPhones.includes(clean);
-
-                          return (
-                            <label
-                              key={contact.phone}
-                              className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-                                checked
-                                  ? 'border-[#25D366]/40 bg-[#25D366]/5'
-                                  : 'border-white/10 bg-[#0a0a0a] hover:border-white/20'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleContactSelection(contact.phone)}
-                                className="mt-1 cursor-pointer"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm text-white truncate">
-                                  {contact.name || 'Unknown'}
-                                </p>
-                                <p className="text-xs text-gray-500 truncate">
-                                  {formatPhoneNumber(contact.phone) || contact.phone}
-                                </p>
-                                {(contact.tags || []).length > 0 && (
-                                  <div className="flex flex-wrap gap-1.5 mt-2">
-                                    {contact.tags.map((tag) => {
-                                      const style = getTagStyle(tag, tagLibrary);
-                                      return (
-                                        <span
-                                          key={`${contact.phone}-${tag}`}
-                                          className="text-[10px] px-2 py-0.5 rounded-full border"
-                                          style={style}
-                                        >
-                                          {tag}
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="border-t border-white/5 pt-4">
-                    <p className="text-sm font-medium text-gray-300 mb-3">Add Individual Numbers</p>
-
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs text-gray-500 block mb-2">Search saved contacts</label>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            placeholder="Search by name or number"
-                            value={searchQuery}
-                            onChange={(e) => handleSearch(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors"
-                          />
-                          {searchResults.length > 0 && (
-                            <div className="absolute top-full left-0 right-0 mt-1 bg-[#0a0a0a] border border-white/10 rounded-lg overflow-hidden z-10 max-h-48 overflow-y-auto">
-                              {searchResults.map((result, idx) => (
-                                <button
-                                  key={idx}
-                                  onClick={() => handleAddIndividual(result.phone, result.name)}
-                                  className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm border-b border-white/5 last:border-0 transition-colors cursor-pointer"
-                                >
-                                  {result.name && <p className="text-white">{result.name}</p>}
-                                  <p className="text-xs text-gray-500">{result.phone}</p>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="text-xs text-gray-500 block mb-2">Add manual number</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-2 items-start">
-                          <InternationalPhoneInput
-                            value={individualPhone}
-                            defaultCountry={individualPhoneCountry}
-                            onChange={(phone, meta) => {
-                              setIndividualPhone(phone);
-                              setIndividualPhoneCountry(meta?.country?.iso2?.toUpperCase() || individualPhoneCountry);
-                            }}
-                            onCountryChange={setIndividualPhoneCountry}
-                            placeholder="Phone number"
-                            label={null}
-                          />
-                          <button
-                            onClick={handleAddManualNumber}
-                            className="bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-                          >
-                            Add
-                          </button>
-                        </div>
-                      </div>
-
-                      {selectedIndividuals.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {selectedIndividuals.map((phone, idx) => (
-                            <div key={idx} className="flex items-center gap-1.5 bg-[#25D366]/10 border border-[#25D366]/30 rounded-full px-3 py-1 text-xs text-[#25D366]">
-                              {formatPhoneNumber(phone)}
-                              <button
-                                onClick={() => handleRemoveIndividual(phone)}
-                                className="hover:text-red-400 transition-colors cursor-pointer"
-                              >
-                                <X size={12} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="bg-[#0a0a0a] border border-[#25D366]/30 rounded-lg p-3">
-                    <p className="text-sm font-medium text-[#25D366]">
-                      {totalContacts} contacts selected
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 3 */}
-              {step === 3 && (
-                <div className="space-y-4">
-                  <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-4 space-y-3">
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">Campaign Name</p>
-                      <p className="text-white font-medium mt-1">{campaignName}</p>
-                    </div>
-                    <div className="border-t border-white/5 pt-3">
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">Date & Time</p>
-                      <p className="text-white font-medium mt-1">
-                        {formatCampaignDate(new Date(`${scheduleDate}T${scheduleTime}`).toISOString())}
-                      </p>
-                    </div>
-                    <div className="border-t border-white/5 pt-3">
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">Message Preview</p>
-                      {selectedTemplate && (
-                        <p className="text-xs text-violet-300 mt-1">
-                          Template: {selectedTemplate.icon} {selectedTemplate.name}
-                        </p>
-                      )}
-                      <p className="text-white font-medium mt-1 line-clamp-4 whitespace-pre-wrap">{message}</p>
-                    </div>
-                    <div className="border-t border-white/5 pt-3">
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">Recipients</p>
-                      <p className="text-white font-medium mt-1">{totalContacts} contacts</p>
-                      {selectedSegmentTags.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {selectedSegmentTags.map((tag) => {
-                            const style = getTagStyle(tag, tagLibrary);
-                            return (
-                              <span
-                                key={tag}
-                                className="text-[10px] px-2 py-0.5 rounded-full border"
-                                style={style}
-                              >
-                                {tag}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="border-t border-white/5 p-6 space-y-4 bg-[#111]">
-              {step === 1 && stepOneBlockers.length > 0 && (
-                <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
-                  <p className="text-sm font-medium text-amber-200 mb-2">
-                    Complete these items to continue:
-                  </p>
-                  <ul className="space-y-1">
-                    {stepOneBlockers.map((blocker) => (
-                      <li key={blocker} className="text-xs text-amber-100/90 flex items-start gap-2">
-                        <span className="text-amber-400 mt-0.5">•</span>
-                        <span>{blocker}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {step === 2 && stepTwoBlockers.length > 0 && (
-                <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
-                  <p className="text-sm font-medium text-amber-200 mb-2">
-                    Complete these items to continue:
-                  </p>
-                  <ul className="space-y-1">
-                    {stepTwoBlockers.map((blocker) => (
-                      <li key={blocker} className="text-xs text-amber-100/90 flex items-start gap-2">
-                        <span className="text-amber-400 mt-0.5">•</span>
-                        <span>{blocker}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div className="flex gap-3">
-              {step > 1 && (
-                <button
-                  onClick={() => setStep(step - 1)}
-                  className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <ChevronLeft size={16} />
-                  Back
-                </button>
-              )}
-
-              {step < 3 && (
-                <button
-                  onClick={() => {
-                    if (step === 1 && !validateStepOne()) return;
-                    if (step === 2) {
-                      if (!canProceedStep2) {
-                        toast.error(stepTwoBlockers[0]);
-                        return;
-                      }
-                      if (message.includes('{{name}}')) {
-                        const scheduleValidationError = validateScheduleOnClient(
-                          message,
-                          templateVariables,
-                          buildRecipients()
-                        );
-                        if (scheduleValidationError) {
-                          toast.error(scheduleValidationError);
-                          return;
-                        }
-                      }
-                    }
-                    setStep(step + 1);
-                  }}
-                  disabled={
-                    (step === 1 && !canProceedStep1) ||
-                    (step === 2 && !canProceedStep2)
-                  }
-                  className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  Next <ChevronRight size={16} />
-                </button>
-              )}
-
-              {step === 3 && (
-                <button
-                  onClick={handleSchedule}
-                  disabled={submitting}
-                  className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  {submitting ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                  {submitting ? 'Scheduling...' : 'Schedule'}
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={handleCancel}
-                className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm cursor-pointer"
-              >
-                Cancel
-              </button>
-              </div>
-            </div>
+              {submitting ? 'Launching...' : 'Launch Campaign'}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

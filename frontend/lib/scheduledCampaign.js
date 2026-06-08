@@ -1,3 +1,42 @@
+export const WIZARD_STEPS = [
+  { id: 1, label: 'Campaign Type' },
+  { id: 2, label: 'Audience' },
+  { id: 3, label: 'Message' },
+  { id: 4, label: 'Schedule' },
+  { id: 5, label: 'Review' }
+];
+
+export const CAMPAIGN_TYPES = [
+  { id: 'festival', label: 'Festival Wishes', subtitle: 'Eid, Diwali, Christmas', icon: '⭐', category: 'eid' },
+  { id: 'birthday', label: 'Birthday Campaign', subtitle: 'Auto-personalized greetings', icon: '🎂', category: 'birthday' },
+  { id: 'promo', label: 'Promotional Blast', subtitle: 'Offers & announcements', icon: '⚡', category: 'promo' },
+  { id: 'followup', label: 'Follow-up Series', subtitle: 'Lead nurturing sequences', icon: '💬', category: 'custom' },
+  { id: 'reminder', label: 'Reminder', subtitle: 'Payments, appointments', icon: '⏰', category: 'reminder' },
+  { id: 'reengagement', label: 'Re-engagement', subtitle: 'Win back inactive contacts', icon: '🎯', category: 'custom' }
+];
+
+export const TEMPLATE_CATEGORIES = [
+  { value: 'custom', label: 'Custom' },
+  { value: 'eid', label: 'Eid' },
+  { value: 'diwali', label: 'Diwali' },
+  { value: 'birthday', label: 'Birthday' },
+  { value: 'promo', label: 'Promo' },
+  { value: 'reminder', label: 'Reminder' },
+  { value: 'ai', label: 'AI Generated' }
+];
+
+export const SCHEDULE_MODES = [
+  { id: 'now', label: 'Send Now', subtitle: 'Start immediately after launch', icon: 'send' },
+  { id: 'later', label: 'Schedule for Later', subtitle: 'Pick a specific date and time', icon: 'calendar' },
+  { id: 'recurring', label: 'Recurring Campaign', subtitle: 'Daily, weekly, or monthly automation', icon: 'repeat' }
+];
+
+export const SENDING_SPEEDS = [
+  { id: 'safe', label: 'Safe (30–60s delay)', description: 'Safe mode uses randomized 30–60s delays to protect your WhatsApp account.' },
+  { id: 'normal', label: 'Normal (15–30s delay)', description: 'Balanced speed with moderate delays between messages.' },
+  { id: 'fast', label: 'Fast (5–15s delay)', description: 'Faster delivery with shorter delays. Use with caution.' }
+];
+
 export const formatCampaignDate = (dateStr) => {
   const date = new Date(dateStr);
   const today = new Date();
