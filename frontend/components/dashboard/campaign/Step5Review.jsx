@@ -1,26 +1,25 @@
 'use client';
 
 import { Send, Shield } from 'lucide-react';
-import { formatCampaignDate, SENDING_SPEEDS } from '@/lib/scheduledCampaign';
+import {
+  formatCampaignDate,
+  getRecurrenceLabel,
+  SENDING_SPEEDS
+} from '@/lib/scheduledCampaign';
 
 export default function Step5Review({
   campaignName,
   messageSource,
-  selectedAudienceTags,
   recipientCount,
   scheduleMode,
   scheduleDate,
   scheduleTime,
+  recurrencePattern,
+  recurrenceStartDate,
+  recurrenceEndDate,
   sendingSpeed,
   message
 }) {
-  const audienceLabel =
-    selectedAudienceTags.length === 0
-      ? 'None selected'
-      : selectedAudienceTags.includes('__all__')
-        ? 'All Contacts'
-        : selectedAudienceTags.join(', ');
-
   const scheduleLabel =
     scheduleMode === 'now'
       ? 'Send immediately'
@@ -28,14 +27,28 @@ export default function Step5Review({
         ? formatCampaignDate(new Date(`${scheduleDate}T${scheduleTime}`).toISOString())
         : 'Schedule for later';
 
+  const recurrenceLabel = getRecurrenceLabel(recurrencePattern, scheduleDate || recurrenceStartDate);
+
   const speedLabel = SENDING_SPEEDS.find((s) => s.id === sendingSpeed)?.label || 'Safe';
 
   const rows = [
     { label: 'Campaign Name', value: campaignName || 'Untitled Campaign' },
     { label: 'Message Source', value: messageSource === 'template' ? 'Template' : 'Manual' },
-    { label: 'Target Segments', value: audienceLabel },
-    { label: 'Est. Recipients', value: `${recipientCount.toLocaleString()} contacts` },
+    { label: 'Recipients', value: `${recipientCount.toLocaleString()} contact${recipientCount !== 1 ? 's' : ''} selected` },
     { label: 'Schedule', value: scheduleLabel },
+    ...(recurrenceLabel
+      ? [
+          { label: 'Repeat', value: recurrenceLabel },
+          ...(recurrenceStartDate && recurrenceEndDate
+            ? [
+                {
+                  label: 'Repeat period',
+                  value: `${new Date(`${recurrenceStartDate}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} – ${new Date(`${recurrenceEndDate}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                }
+              ]
+            : [])
+        ]
+      : []),
     { label: 'Sending Speed', value: speedLabel }
   ];
 

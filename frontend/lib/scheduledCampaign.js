@@ -47,6 +47,28 @@ export const getMinScheduleTime = (scheduleDate) => {
   return `${hours}:${minutes}`;
 };
 
+export const getRecurrenceOptions = (anchorDate) => {
+  const d = anchorDate ? new Date(`${anchorDate}T12:00:00`) : new Date();
+  const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+  const dayNum = d.getDate();
+  const monthDay = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+
+  return [
+    { id: 'none', label: 'Does not repeat' },
+    { id: 'daily', label: 'Daily' },
+    { id: 'weekly', label: `Weekly on ${dayName}` },
+    { id: 'monthly', label: `Monthly on day ${dayNum}` },
+    { id: 'annually', label: `Annually on ${monthDay}` },
+    { id: 'custom', label: 'Custom' }
+  ];
+};
+
+export const getRecurrenceLabel = (pattern, anchorDate) => {
+  if (!pattern || pattern === 'none') return null;
+  const options = getRecurrenceOptions(anchorDate);
+  return options.find((o) => o.id === pattern)?.label || pattern;
+};
+
 export const SENDING_SPEEDS = [
   { id: 'safe', label: 'Safe (30–60s delay)', description: 'Safe mode uses randomized 30–60s delays to protect your WhatsApp account.' },
   { id: 'normal', label: 'Normal (15–30s delay)', description: 'Balanced speed with moderate delays between messages.' },

@@ -56,7 +56,7 @@ export default function Step1CampaignType({
               No templates yet. Switch to Write Manually or create templates first.
             </p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[420px] overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {templates.map((template) => (
                 <TemplateCard
                   key={template._id}

@@ -50,15 +50,9 @@ export default function TemplateCard({
     >
       <div className="text-[28px] leading-none mb-3">{template.icon || '📋'}</div>
       <h3 className="text-base font-semibold text-white mb-2">{template.name}</h3>
-      <p className="text-xs text-gray-500 leading-relaxed mb-3 flex-1">
+      <p className="text-xs text-gray-500 leading-relaxed mb-4 flex-1">
         {template.description || 'Custom message template'}
       </p>
-
-      {selectable && template.body && (
-        <p className="text-[11px] text-gray-400 font-mono line-clamp-3 mb-3 bg-[#0a0f0d] border border-white/5 rounded-lg p-2.5">
-          {template.body}
-        </p>
-      )}
 
       <div className="flex flex-wrap gap-1.5 mb-4">
         {(template.tags || []).slice(0, 4).map((tag) => (

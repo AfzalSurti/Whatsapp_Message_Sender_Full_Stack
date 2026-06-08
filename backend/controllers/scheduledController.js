@@ -25,7 +25,11 @@ const createCampaign = async (req, res) => {
       individualNumbers,
       segmentTags,
       templateId,
-      templateVariables = {}
+      templateVariables = {},
+      sendingSpeed,
+      recurrencePattern,
+      recurrenceStartDate,
+      recurrenceEndDate
     } = req.body;
 
     const scheduleTime = new Date(scheduledAt);
@@ -150,7 +154,17 @@ const createCampaign = async (req, res) => {
       timezone: timezone || 'Asia/Kolkata',
       groupIds: groupIds || [],
       individualNumbers: allNumbers,
-      totalNumbers: allNumbers.length
+      totalNumbers: allNumbers.length,
+      sendingSpeed: sendingSpeed || 'safe',
+      recurrencePattern: recurrencePattern && recurrencePattern !== 'none' ? recurrencePattern : null,
+      recurrenceStartDate:
+        recurrencePattern && recurrencePattern !== 'none' && recurrenceStartDate
+          ? new Date(recurrenceStartDate)
+          : null,
+      recurrenceEndDate:
+        recurrencePattern && recurrencePattern !== 'none' && recurrenceEndDate
+          ? new Date(recurrenceEndDate)
+          : null
     });
 
     res.status(201).json({ campaign });

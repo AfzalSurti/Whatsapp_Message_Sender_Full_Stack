@@ -73,6 +73,22 @@ const ScheduledCampaignSchema = new mongoose.Schema(
     failReason: {
       type: String,
       default: null
+    },
+    sendingSpeed: {
+      type: String,
+      default: 'safe'
+    },
+    recurrencePattern: {
+      type: String,
+      default: null
+    },
+    recurrenceStartDate: {
+      type: Date,
+      default: null
+    },
+    recurrenceEndDate: {
+      type: Date,
+      default: null
     }
   },
   {

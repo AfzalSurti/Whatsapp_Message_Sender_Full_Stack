@@ -19,7 +19,11 @@ const createValidation = [
   body('segmentTags').optional().isArray(),
   body('individualNumbers').isArray().optional(),
   body('templateId').optional().isMongoId().withMessage('Invalid template ID'),
-  body('templateVariables').optional().isObject()
+  body('templateVariables').optional().isObject(),
+  body('sendingSpeed').optional().trim(),
+  body('recurrencePattern').optional().trim(),
+  body('recurrenceStartDate').optional().isISO8601(),
+  body('recurrenceEndDate').optional().isISO8601()
 ];
 
 router.post('/', protect, createValidation, createCampaign);

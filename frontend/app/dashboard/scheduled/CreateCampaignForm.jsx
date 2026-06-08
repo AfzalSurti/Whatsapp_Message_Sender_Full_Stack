@@ -52,13 +52,17 @@ export default function CreateCampaignForm() {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [manualDetails, setManualDetails] = useState(DEFAULT_MANUAL_DETAILS);
 
-  const [selectedAudienceTags, setSelectedAudienceTags] = useState([]);
+  const [selectedContactPhones, setSelectedContactPhones] = useState([]);
+  const [expandedTag, setExpandedTag] = useState(null);
   const [message, setMessage] = useState('');
   const [templateVariables, setTemplateVariables] = useState({});
 
   const [scheduleMode, setScheduleMode] = useState('now');
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
+  const [recurrencePattern, setRecurrencePattern] = useState('none');
+  const [recurrenceStartDate, setRecurrenceStartDate] = useState('');
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
   const [sendingSpeed, setSendingSpeed] = useState('safe');
 
   const [aiSectionOpen, setAiSectionOpen] = useState(false);
@@ -135,13 +139,10 @@ export default function CreateCampaignForm() {
   }, [messageSource, selectedTemplate, manualDetails.name]);
 
   const audienceContacts = useMemo(() => {
-    if (selectedAudienceTags.length === 0) return [];
-    if (selectedAudienceTags.includes('__all__')) return allContacts;
-
-    return allContacts.filter((contact) =>
-      selectedAudienceTags.some((tag) => contact.tags?.includes(tag))
-    );
-  }, [allContacts, selectedAudienceTags]);
+    if (selectedContactPhones.length === 0) return [];
+    const phoneSet = new Set(selectedContactPhones);
+    return allContacts.filter((contact) => phoneSet.has(contact.phone.replace(/\D/g, '')));
+  }, [allContacts, selectedContactPhones]);
 
   const buildRecipients = useCallback(() => {
     return audienceContacts.map((contact) => ({
@@ -172,8 +173,7 @@ export default function CreateCampaignForm() {
       }
 
       if (currentStep === 2) {
-        if (selectedAudienceTags.length === 0) blockers.push('Select at least one audience segment');
-        if (recipientCount === 0) blockers.push('Selected segments have no contacts');
+        if (selectedContactPhones.length === 0) blockers.push('Select at least one contact');
       }
 
       if (currentStep === 3) {
@@ -202,6 +202,14 @@ export default function CreateCampaignForm() {
               blockers.push('Select a future time for today');
             }
           }
+
+          if (recurrencePattern && recurrencePattern !== 'none') {
+            if (!recurrenceStartDate) blockers.push('Select a recurrence start date');
+            if (!recurrenceEndDate) blockers.push('Select a recurrence end date');
+            if (recurrenceStartDate && recurrenceEndDate && recurrenceEndDate < recurrenceStartDate) {
+              blockers.push('End date must be on or after start date');
+            }
+          }
         }
       }
 
@@ -213,10 +221,13 @@ export default function CreateCampaignForm() {
       messageSource,
       missingTemplateVariables,
       recipientCount,
+      recurrenceEndDate,
+      recurrencePattern,
+      recurrenceStartDate,
       scheduleDate,
       scheduleMode,
       scheduleTime,
-      selectedAudienceTags.length,
+      selectedContactPhones.length,
       selectedTemplateId
     ]
   );
@@ -231,18 +242,21 @@ export default function CreateCampaignForm() {
     }
   };
 
-  const toggleAudienceTag = (tagName) => {
-    if (tagName === '__all__') {
-      setSelectedAudienceTags((prev) => (prev.includes('__all__') ? [] : ['__all__']));
-      return;
-    }
+  const toggleContactSelection = (phone) => {
+    const clean = phone.replace(/\D/g, '');
+    setSelectedContactPhones((prev) =>
+      prev.includes(clean) ? prev.filter((p) => p !== clean) : [...prev, clean]
+    );
+  };
 
-    setSelectedAudienceTags((prev) => {
-      const withoutAll = prev.filter((tag) => tag !== '__all__');
-      return withoutAll.includes(tagName)
-        ? withoutAll.filter((tag) => tag !== tagName)
-        : [...withoutAll, tagName];
-    });
+  const selectAllInTag = (contacts) => {
+    const phones = contacts.map((contact) => contact.phone.replace(/\D/g, ''));
+    setSelectedContactPhones((prev) => [...new Set([...prev, ...phones])]);
+  };
+
+  const deselectAllInTag = (contacts) => {
+    const phoneSet = new Set(contacts.map((contact) => contact.phone.replace(/\D/g, '')));
+    setSelectedContactPhones((prev) => prev.filter((phone) => !phoneSet.has(phone)));
   };
 
   const handleSelectTemplate = (template) => {
@@ -322,7 +336,17 @@ export default function CreateCampaignForm() {
           name: recipient.name
         })),
         templateId: messageSource === 'template' ? selectedTemplateId : undefined,
-        templateVariables
+        templateVariables,
+        sendingSpeed,
+        recurrencePattern: recurrencePattern !== 'none' ? recurrencePattern : undefined,
+        recurrenceStartDate:
+          recurrencePattern !== 'none' && recurrenceStartDate
+            ? new Date(`${recurrenceStartDate}T00:00:00`).toISOString()
+            : undefined,
+        recurrenceEndDate:
+          recurrencePattern !== 'none' && recurrenceEndDate
+            ? new Date(`${recurrenceEndDate}T23:59:59`).toISOString()
+            : undefined
       });
 
       toast.success(scheduleMode === 'now' ? 'Campaign launched!' : 'Campaign scheduled!');
@@ -403,8 +427,12 @@ export default function CreateCampaignForm() {
             tagLibrary={tagLibrary}
             allContacts={allContacts}
             loadingContacts={loadingContacts}
-            selectedAudienceTags={selectedAudienceTags}
-            toggleAudienceTag={toggleAudienceTag}
+            expandedTag={expandedTag}
+            setExpandedTag={setExpandedTag}
+            selectedContactPhones={selectedContactPhones}
+            toggleContactSelection={toggleContactSelection}
+            selectAllInTag={selectAllInTag}
+            deselectAllInTag={deselectAllInTag}
           />
         )}
         {step === 3 && (
@@ -431,6 +459,12 @@ export default function CreateCampaignForm() {
             setScheduleDate={setScheduleDate}
             scheduleTime={scheduleTime}
             setScheduleTime={setScheduleTime}
+            recurrencePattern={recurrencePattern}
+            setRecurrencePattern={setRecurrencePattern}
+            recurrenceStartDate={recurrenceStartDate}
+            setRecurrenceStartDate={setRecurrenceStartDate}
+            recurrenceEndDate={recurrenceEndDate}
+            setRecurrenceEndDate={setRecurrenceEndDate}
             sendingSpeed={sendingSpeed}
             setSendingSpeed={setSendingSpeed}
           />
@@ -439,11 +473,13 @@ export default function CreateCampaignForm() {
           <Step5Review
             campaignName={campaignName}
             messageSource={messageSource}
-            selectedAudienceTags={selectedAudienceTags}
             recipientCount={recipientCount}
             scheduleMode={scheduleMode}
             scheduleDate={scheduleDate}
             scheduleTime={scheduleTime}
+            recurrencePattern={recurrencePattern}
+            recurrenceStartDate={recurrenceStartDate}
+            recurrenceEndDate={recurrenceEndDate}
             sendingSpeed={sendingSpeed}
             message={message}
           />
