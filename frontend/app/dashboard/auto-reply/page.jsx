@@ -1,10 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import {
   Bot,
+  Layers,
   Loader2,
   Search,
   SkipForward,
@@ -13,7 +15,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { autoReplyAPI, groupsAPI } from '@/lib/api';
+import { aiTemplateAPI, autoReplyAPI, groupsAPI } from '@/lib/api';
 import { formatPhoneNumber } from '@/lib/phone';
 import { useDashboardShell } from '../DashboardShellContext';
 
@@ -59,6 +61,9 @@ export default function AutoReplyPage() {
     'You are a helpful WhatsApp assistant. Reply naturally and concisely.'
   );
   const [delay, setDelay] = useState(2000);
+  const [aiTemplates, setAiTemplates] = useState([]);
+  const [enabledTemplateIds, setEnabledTemplateIds] = useState([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
 
   const [whatsappContacts, setWhatsappContacts] = useState([]);
   const whatsappFetchInFlightRef = useRef(false);
@@ -80,6 +85,18 @@ export default function AutoReplyPage() {
   const latestLogIdRef = useRef(null);
   const pollInitializedRef = useRef(false);
 
+  const fetchAiTemplates = useCallback(async () => {
+    setTemplatesLoading(true);
+    try {
+      const res = await aiTemplateAPI.getTemplates();
+      setAiTemplates(res.data.templates || []);
+    } catch {
+      setAiTemplates([]);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }, []);
+
   const fetchConfig = useCallback(async () => {
     setConfigLoading(true);
     try {
@@ -93,6 +110,7 @@ export default function AutoReplyPage() {
           'You are a helpful WhatsApp assistant. Reply naturally and concisely.'
       );
       setDelay(config.delay || 2000);
+      setEnabledTemplateIds((config.enabledTemplateIds || []).map((id) => String(id)));
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to load auto-reply settings');
     } finally {
@@ -230,9 +248,23 @@ export default function AutoReplyPage() {
   useEffect(() => {
     if (!user) return;
     fetchConfig();
+    fetchAiTemplates();
     fetchLogContacts();
     fetchSavedContacts();
-  }, [user, fetchConfig, fetchLogContacts, fetchSavedContacts]);
+  }, [user, fetchConfig, fetchAiTemplates, fetchLogContacts, fetchSavedContacts]);
+
+  const activeAiTemplates = useMemo(
+    () => aiTemplates.filter((template) => template.isActive !== false),
+    [aiTemplates]
+  );
+
+  useEffect(() => {
+    if (templatesLoading || configLoading) return;
+    if (enabledTemplateIds.length > 0) return;
+    if (activeAiTemplates.length === 0) return;
+
+    setEnabledTemplateIds(activeAiTemplates.map((template) => String(template._id)));
+  }, [templatesLoading, configLoading, enabledTemplateIds.length, activeAiTemplates]);
 
   useEffect(() => {
     if (!user || mode !== 'selected' || contactSource !== 'whatsapp' || !waConnected) return;
@@ -328,7 +360,19 @@ export default function AutoReplyPage() {
     });
   }, [selectedContacts, savedContacts, whatsappContacts, logContacts]);
 
+  const toggleTemplateSelection = (templateId) => {
+    const id = String(templateId);
+    setEnabledTemplateIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
   const handleSave = async () => {
+    if (activeAiTemplates.length > 0 && enabledTemplateIds.length === 0) {
+      toast.error('Select at least one AI template for auto-reply');
+      return;
+    }
+
     setSaving(true);
     try {
       const res = await autoReplyAPI.updateConfig({
@@ -336,7 +380,8 @@ export default function AutoReplyPage() {
         mode,
         selectedContacts,
         systemPrompt,
-        delay
+        delay,
+        enabledTemplateIds
       });
       const config = res.data.config;
       setIsEnabled(Boolean(config.isEnabled));
@@ -344,6 +389,7 @@ export default function AutoReplyPage() {
       setSelectedContacts(config.selectedContacts || []);
       setSystemPrompt(config.systemPrompt || systemPrompt);
       setDelay(config.delay || delay);
+      setEnabledTemplateIds((config.enabledTemplateIds || []).map((id) => String(id)));
       toast.success('Auto-reply settings saved');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to save settings');
@@ -665,10 +711,97 @@ export default function AutoReplyPage() {
             </div>
           )}
 
+          <div className="space-y-3 border border-white/10 rounded-2xl p-4 bg-[#0a0a0a]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-200">
+                  <Layers size={16} className="text-[#25D366]" />
+                  AI Templates for Auto Reply
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Checked templates are used when a message matches. If none match, AI Personality is used.
+                </p>
+              </div>
+              <Link
+                href="/dashboard/ai-templates"
+                className="text-xs text-[#25D366] hover:underline shrink-0"
+              >
+                Manage
+              </Link>
+            </div>
+
+            {templatesLoading ? (
+              <div className="py-4 flex justify-center">
+                <Loader2 size={18} className="animate-spin text-[#25D366]" />
+              </div>
+            ) : activeAiTemplates.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No active templates yet.{' '}
+                <Link href="/dashboard/ai-templates" className="text-[#25D366] hover:underline">
+                  Create one
+                </Link>{' '}
+                and turn it on.
+              </p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-500">
+                    {enabledTemplateIds.length} of {activeAiTemplates.length} selected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEnabledTemplateIds(activeAiTemplates.map((t) => String(t._id)))
+                    }
+                    className="text-[#25D366] hover:underline"
+                  >
+                    Select all
+                  </button>
+                </div>
+                <div className="max-h-44 overflow-y-auto space-y-1">
+                  {activeAiTemplates.map((template) => {
+                    const checked = enabledTemplateIds.includes(String(template._id));
+                    return (
+                      <label
+                        key={template._id}
+                        className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer border transition-colors ${
+                          checked
+                            ? 'bg-[#25D366]/10 border-[#25D366]/20'
+                            : 'bg-[#111] border-white/10 hover:border-white/20'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleTemplateSelection(template._id)}
+                          className="accent-[#25D366] mt-0.5"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{template.name}</div>
+                          <div className="text-xs text-gray-500 line-clamp-2 mt-0.5">
+                            {template.description}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {aiTemplates.some((template) => template.isActive === false) && (
+              <p className="text-xs text-gray-500">
+                Turned-off templates are hidden. Enable them on the AI Templates page.
+              </p>
+            )}
+          </div>
+
           <div className="space-y-3">
             <div>
-              <label className="text-sm font-semibold text-gray-200">AI Personality</label>
-              <p className="text-sm text-gray-500 mt-1">How should AI behave when replying?</p>
+              <label className="text-sm font-semibold text-gray-200">AI Personality (fallback)</label>
+              <p className="text-sm text-gray-500 mt-1">
+                Used when no template matches, or no templates are selected above.
+              </p>
             </div>
             <textarea
               value={systemPrompt}

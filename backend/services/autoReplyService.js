@@ -28,6 +28,17 @@ const resolveSystemPrompt = (config) => {
   return prompt || DEFAULT_SYSTEM_PROMPT;
 };
 
+const getTemplatesForAutoReply = async (userId) => {
+  const config = await AutoReplyConfig.findOne({ userId }).lean();
+  const query = { userId, isActive: true };
+
+  if (config?.enabledTemplateIds?.length > 0) {
+    query._id = { $in: config.enabledTemplateIds };
+  }
+
+  return AITemplate.find(query).sort({ priority: 1 });
+};
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const getMessageId = (msg) => String(msg?.id?._serialized || msg?.id?.id || '').trim();
@@ -354,7 +365,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
     let newlyActivatedTemplate = null;
 
     if (!state.activeTemplateId) {
-      const templates = await AITemplate.find({ userId, isActive: true }).sort({ priority: 1 });
+      const templates = await getTemplatesForAutoReply(userId);
       if (templates.length > 0) {
         newlyActivatedTemplate = await detectIntent(
           incomingMessage,

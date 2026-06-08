@@ -151,7 +151,9 @@ const addNumber = async (req, res) => {
 
     res.json({ group });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const message = err.message || 'Failed to add number';
+    const status = /E\.164/i.test(message) ? 400 : 500;
+    res.status(status).json({ error: message });
   }
 };
 

@@ -272,7 +272,70 @@ const getChatTimestamp = (chat) => {
   return Number(ts) || 0;
 };
 
-const fetchWhatsAppContacts = async (client, { limit = 150 } = {}) => {
+const fetchRecentChatsFromStore = async (client, limit = 100) => {
+  if (!client?.pupPage || (client.pupPage.isClosed && client.pupPage.isClosed())) {
+    throw new Error('WhatsApp browser page not available');
+  }
+
+  const rows = await client.pupPage.evaluate((max) => {
+    const chats = window.Store?.Chat?.getModelsArray?.() || [];
+
+    return chats
+      .filter((chat) => !chat.isGroup)
+      .filter((chat) => {
+        const chatId = chat.id?._serialized || '';
+        const server = chatId.split('@')[1] || '';
+        return chatId && ['c.us', 's.whatsapp.net', 'lid'].includes(server);
+      })
+      .sort((a, b) => {
+        const tsA = a.t?.low ?? a.t ?? 0;
+        const tsB = b.t?.low ?? b.t ?? 0;
+        return tsB - tsA;
+      })
+      .slice(0, max)
+      .map((chat) => {
+        const chatId = chat.id._serialized;
+        const server = chatId.split('@')[1] || '';
+        const userPart = chatId.split('@')[0];
+        const name = String(chat.name || chat.formattedTitle || userPart || '').trim();
+        return { chatId, name, server, userPart };
+      });
+  }, limit);
+
+  const serialized = [];
+  const seen = new Set();
+
+  for (const row of rows) {
+    if (!row?.chatId || seen.has(row.chatId)) continue;
+    seen.add(row.chatId);
+
+    const phoneNumber =
+      row.server === 'lid'
+        ? ''
+        : resolvePhoneFromChatId(row.chatId) || normalizePhoneValue(row.userPart) || '';
+
+    serialized.push({
+      chatId: row.chatId,
+      name: row.name || row.userPart,
+      phoneNumber: phoneNumber && !String(phoneNumber).includes('@') ? phoneNumber : '',
+      source: 'whatsapp'
+    });
+  }
+
+  return serialized;
+};
+
+const fetchWhatsAppContacts = async (client, { limit = 100, enrich = false } = {}) => {
+  try {
+    const fastList = await fetchRecentChatsFromStore(client, limit);
+    if (fastList.length > 0) {
+      fastList.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+      return fastList;
+    }
+  } catch (err) {
+    console.warn(`Fast WhatsApp contact list failed, falling back to getChats: ${err.message}`);
+  }
+
   const chats = await client.getChats();
 
   const personalChats = chats
@@ -284,8 +347,10 @@ const fetchWhatsAppContacts = async (client, { limit = 150 } = {}) => {
     .sort((a, b) => getChatTimestamp(b) - getChatTimestamp(a))
     .slice(0, limit);
 
-  // Low concurrency — too many parallel getContact() calls break WA comms (sendIq before startComms)
-  const enriched = await mapWithConcurrency(personalChats, 2, enrichChatContact);
+  const mapper = enrich ? enrichChatContact : async (chat) => serializeChatContact(chat);
+  const enriched = enrich
+    ? await mapWithConcurrency(personalChats, 2, mapper)
+    : personalChats.map((chat) => serializeChatContact(chat));
 
   const serialized = [];
   const seen = new Set();

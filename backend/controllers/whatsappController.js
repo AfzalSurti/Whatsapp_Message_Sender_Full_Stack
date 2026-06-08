@@ -14,7 +14,7 @@ const connectWhatsApp = async (req, res) => {
     }
 
     if (status === 'pending') {
-      return res.json({ message: 'WhatsApp is already initializing', status: 'pending' });
+      await clientManager.abortPendingClient(userId, 'User clicked Connect — restarting with visible QR');
     }
 
     await clientManager.createClient(

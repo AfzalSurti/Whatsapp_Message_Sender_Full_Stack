@@ -69,7 +69,53 @@ const getPuppeteerLaunchOptions = (executablePath) => ({
 
 const getQrTimeoutMs = () => (isProductionLinux() ? 90000 : 30000);
 
+const RECOVERY_QR_GRACE_MS = 90000;
+const REMOTE_SESSION_BACKUP_MS = 60000;
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const sessionSaveInFlight = new Map();
+
+const persistRemoteSession = async (client, userIdStr) => {
+    if (sessionSaveInFlight.has(userIdStr)) {
+        return sessionSaveInFlight.get(userIdStr);
+    }
+
+    const strategy = client?.authStrategy;
+    if (!strategy || typeof strategy.storeRemoteSession !== 'function') return;
+
+    const savePromise = (async () => {
+        try {
+            const tempDir = strategy.tempDir;
+            if (tempDir && fs.existsSync(tempDir)) {
+                await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+            }
+
+            await strategy.storeRemoteSession({ emit: true });
+            console.log(`✅ WhatsApp session saved to MongoDB for user: ${userIdStr}`);
+        } catch (err) {
+            console.error(`Failed to save WhatsApp session for user ${userIdStr}:`, err.message);
+        } finally {
+            sessionSaveInFlight.delete(userIdStr);
+        }
+    })();
+
+    sessionSaveInFlight.set(userIdStr, savePromise);
+    return savePromise;
+};
+
+const scheduleSessionBackup = (client, userIdStr, delayMs = 20000) => {
+    const entry = clients.get(userIdStr);
+    if (!entry) return;
+
+    if (entry.sessionBackupTimer) {
+        clearTimeout(entry.sessionBackupTimer);
+    }
+
+    entry.sessionBackupTimer = setTimeout(() => {
+        persistRemoteSession(client, userIdStr).catch(() => {});
+    }, delayMs);
+};
 
 const isClientReady = (userId) => {
     const entry = clients.get(userId.toString());
@@ -298,7 +344,7 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
             clientId: userIdStr,
             dataPath: AUTH_DATA_PATH,
             store: new FixedMongoStore({ mongoose, authDataPath: AUTH_DATA_PATH }),
-            backupSyncIntervalMs: 180000
+            backupSyncIntervalMs: REMOTE_SESSION_BACKUP_MS
         }),
         puppeteer: getPuppeteerLaunchOptions(executablePath)
     });
@@ -335,8 +381,29 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
     //fires when whatsapp needs QR scan
     client.on('qr',async(qr)=>{
         console.log(`🔄 QR Code received for user: ${userIdStr}`);
+
+        const qrEntry = clients.get(userIdStr);
+        if (qrEntry?.qrTimeoutHandle) {
+            clearTimeout(qrEntry.qrTimeoutHandle);
+            qrEntry.qrTimeoutHandle = null;
+        }
+
         if (suppressQrNotification) {
-            console.log(`ℹ️  Suppressing QR notification for user: ${userIdStr} (startup recovery)`);
+            const entry = clients.get(userIdStr);
+            if (entry && !entry.recoveryQrGraceTimer) {
+                console.log(
+                    `ℹ️  QR during startup recovery for user: ${userIdStr} — waiting up to ${RECOVERY_QR_GRACE_MS / 1000}s for session restore`
+                );
+                entry.recoveryQrGraceTimer = setTimeout(async () => {
+                    const current = clients.get(userIdStr);
+                    if (!current || current.status === 'connected') return;
+
+                    console.log(
+                        `Stored session could not be recovered for user ${userIdStr}. Click Connect to scan QR.`
+                    );
+                    await abortPendingClient(userId, 'Recovery grace period elapsed after QR');
+                }, RECOVERY_QR_GRACE_MS);
+            }
             return;
         }
         try{
@@ -354,7 +421,7 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
     //authianticated event
     //fires when qr scan successful
     // RemoteAuth persists the encrypted session in MongoDB
-    client.on('authenticated',()=>{
+    client.on('authenticated', () => {
         console.log(`Client authenticated for user: ${userIdStr}`);
     });
 
@@ -386,6 +453,10 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
             entry.status='connected';
             entry.pendingStartTime=null; // Clear pending timer
             if(entry.qrTimeoutHandle) clearTimeout(entry.qrTimeoutHandle);
+            if(entry.recoveryQrGraceTimer){
+                clearTimeout(entry.recoveryQrGraceTimer);
+                entry.recoveryQrGraceTimer = null;
+            }
         }
 
         await markSessionLinked(
@@ -393,7 +464,8 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
             client.info?.wid?.user ? `+${client.info.wid.user}` : null
         );
 
-        onReady(); // notify frontend
+        onReady(); // notify frontend immediately — do not block on MongoDB backup
+        scheduleSessionBackup(client, userIdStr, 20000);
     });
 
     client.on('message', async (msg) => {
@@ -518,6 +590,36 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
     });
 
     return client;
+};
+
+// Tear down a stuck pending client (e.g. recovery that needs QR, or user clicked Connect again).
+const abortPendingClient = async (userId, reason = 'Pending client aborted') => {
+    const userIdStr = userId.toString();
+    const entry = clients.get(userIdStr);
+
+    if (!entry) {
+        clientsBeingCreated.delete(userIdStr);
+        return false;
+    }
+
+    console.log(`Aborting WhatsApp client for user ${userIdStr}: ${reason}`);
+
+    if (entry.qrTimeoutHandle) clearTimeout(entry.qrTimeoutHandle);
+    if (entry.recoveryQrGraceTimer) clearTimeout(entry.recoveryQrGraceTimer);
+    if (entry.sessionBackupTimer) clearTimeout(entry.sessionBackupTimer);
+    if (entry.client?._healthCheckCleanup) {
+        entry.client._healthCheckCleanup();
+    }
+
+    try {
+        await cleanupClient(entry.client);
+    } catch (err) {
+        console.warn(`Error aborting client for user ${userIdStr}: ${err.message}`);
+    }
+
+    clients.delete(userIdStr);
+    clientsBeingCreated.delete(userIdStr);
+    return true;
 };
 
 // Stop the in-memory browser but keep the stored WhatsApp session for reconnect.
@@ -671,6 +773,7 @@ module.exports={
     isClientReady,
     waitForClientReady,
     ensureClientConnected,
+    abortPendingClient,
     disconnectClient,
     clearWhatsAppSession,
     recoverSessions,

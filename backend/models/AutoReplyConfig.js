@@ -32,6 +32,10 @@ const AutoReplyConfigSchema = new mongoose.Schema(
       default: 2000,
       min: 1000,
       max: 10000
+    },
+    enabledTemplateIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'AITemplate' }],
+      default: []
     }
   },
   {

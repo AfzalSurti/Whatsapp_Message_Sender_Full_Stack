@@ -113,6 +113,11 @@ process.on('unhandledRejection', (reason) => {
     return;
   }
 
+  if (/file not found/i.test(message) && String(reason?.name || '').includes('Mongo')) {
+    console.warn('WhatsApp session backup warning (MongoDB file already removed):', message);
+    return;
+  }
+
   console.error('💥 Unhandled Rejection:', reason);
 });
 

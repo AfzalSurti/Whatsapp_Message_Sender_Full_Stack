@@ -1,5 +1,7 @@
+const mongoose = require('mongoose');
 const { validationResult } = require('express-validator');
 const AutoReplyConfig = require('../models/AutoReplyConfig');
+const AITemplate = require('../models/AITemplate');
 const AutoReplyLog = require('../models/AutoReplyLog');
 const clientManager = require('../services/clientManager');
 const {
@@ -64,13 +66,45 @@ const updateConfig = async (req, res) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { isEnabled, mode, selectedContacts, systemPrompt, delay } = req.body;
+    const { isEnabled, mode, selectedContacts, systemPrompt, delay, enabledTemplateIds } = req.body;
     const updates = {};
 
     if (typeof isEnabled === 'boolean') updates.isEnabled = isEnabled;
     if (mode !== undefined) updates.mode = mode;
     if (systemPrompt !== undefined) updates.systemPrompt = systemPrompt;
     if (delay !== undefined) updates.delay = delay;
+
+    if (enabledTemplateIds !== undefined) {
+      if (!Array.isArray(enabledTemplateIds)) {
+        return res.status(400).json({ error: 'enabledTemplateIds must be an array' });
+      }
+
+      const ids = enabledTemplateIds
+        .map((id) => String(id || '').trim())
+        .filter(Boolean);
+
+      for (const id of ids) {
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+          return res.status(400).json({ error: `Invalid template id: ${id}` });
+        }
+      }
+
+      if (ids.length > 0) {
+        const count = await AITemplate.countDocuments({
+          userId: req.user._id,
+          _id: { $in: ids },
+          isActive: true
+        });
+
+        if (count !== ids.length) {
+          return res.status(400).json({
+            error: 'One or more selected templates are invalid or turned off'
+          });
+        }
+      }
+
+      updates.enabledTemplateIds = ids;
+    }
 
     if (selectedContacts !== undefined) {
       const normalized = normalizeSelectedContacts(selectedContacts);
@@ -196,9 +230,9 @@ const getWhatsAppContacts = async (req, res) => {
     }
 
     const contacts = await Promise.race([
-      fetchWhatsAppContacts(client),
+      fetchWhatsAppContacts(client, { limit: 100, enrich: false }),
       new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Loading WhatsApp contacts timed out')), 35000);
+        setTimeout(() => reject(new Error('Loading WhatsApp contacts timed out')), 45000);
       })
     ]);
 

@@ -26,7 +26,15 @@ const updateValidation = [
   body('delay')
     .optional()
     .isInt({ min: 1000, max: 10000 })
-    .withMessage('delay must be between 1000 and 10000 ms')
+    .withMessage('delay must be between 1000 and 10000 ms'),
+  body('enabledTemplateIds')
+    .optional()
+    .isArray()
+    .withMessage('enabledTemplateIds must be an array'),
+  body('enabledTemplateIds.*')
+    .optional()
+    .isMongoId()
+    .withMessage('Each enabledTemplateIds entry must be a valid template id')
 ];
 
 const logsQueryValidation = [
