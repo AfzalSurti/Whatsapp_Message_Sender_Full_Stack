@@ -48,7 +48,7 @@ export default function TemplatesPageContent() {
   }, [searchParams]);
 
   const handleUseTemplate = (template) => {
-    router.push(`/dashboard/scheduled?template=${template._id}`);
+    router.push(`/dashboard/scheduled/create?template=${template._id}`);
   };
 
   const handleDeleteTemplate = async (template) => {

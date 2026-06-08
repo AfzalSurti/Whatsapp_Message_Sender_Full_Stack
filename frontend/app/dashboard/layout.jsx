@@ -187,7 +187,9 @@ export default function DashboardLayout({ children }) {
             <div className="text-xs text-gray-500 px-3 mb-2 mt-2">MAIN</div>
             <div className="space-y-1">
               {mainNavItems.map(({ href, label, icon: Icon }) => {
-                const active = pathname === href;
+                const active =
+                  pathname === href ||
+                  (href === '/dashboard/scheduled' && pathname.startsWith('/dashboard/scheduled'));
                 return (
                   <Link key={href} href={href} className={`flex items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm transition-colors ${active ? 'bg-[#25D366] text-black font-semibold' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}>
                     <Icon size={17} /> {label}
