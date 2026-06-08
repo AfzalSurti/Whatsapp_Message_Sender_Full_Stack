@@ -8,6 +8,7 @@ const connectWhatsApp = async (req, res) => {
     const userId = req.user._id;
     const sendToUser = req.app.get('sendToUser');
     const status = clientManager.getStatus(userId);
+    const freshAuth = req.body?.fresh === true;
 
     if (status === 'connected') {
       return res.json({ message: 'Already connected', status: 'connected' });
@@ -17,28 +18,27 @@ const connectWhatsApp = async (req, res) => {
       await clientManager.abortPendingClient(userId, 'User clicked Connect — restarting with visible QR');
     }
 
+    clientManager.cleanupLocalAuthArtifacts(userId);
+
     await clientManager.createClient(
       userId,
       (qrImage) => {
-        // Send QR image to frontend via WebSocket
         console.log(`📨 Sending QR to user ${userId.toString()} via WebSocket (image size: ${qrImage?.length || 0} bytes)`);
         const sent = sendToUser(userId.toString(), { type: 'qr', qr: qrImage });
         console.log(`${sent ? '✅' : '⚠️'} QR message ${sent ? 'sent' : 'not sent'} - WebSocket ${sent ? 'connected' : 'not connected or closed'}`);
       },
       () => {
-        // Send connected status
         console.log(`📨 Sending ready status to user ${userId.toString()}`);
         sendToUser(userId.toString(), { type: 'ready' });
       },
       (reason) => {
-        // Send disconnected status
         console.log(`📨 Sending disconnected status to user ${userId.toString()}: ${reason}`);
         sendToUser(userId.toString(), { type: 'disconnected', reason });
-      }
+      },
+      { freshAuth, suppressQrNotification: false }
     );
 
     res.json({ message: 'WhatsApp initializing. Scan QR.', status: 'pending' });
-
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -56,7 +56,12 @@ const getWhatsAppStatus = async (req, res) => {
     const session = await Session.findOne({ userId });
     const recoverable = await clientManager.canRecoverSession(userId);
 
-    if (session?.isActive && recoverable && status === 'disconnected') {
+    if (
+      session?.isActive &&
+      recoverable &&
+      status === 'disconnected' &&
+      !clientManager.isClientPending(userId)
+    ) {
       const now = Date.now();
       const lastAttempt = lastReconnectAttempt.get(userIdStr) || 0;
 

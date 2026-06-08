@@ -22,6 +22,7 @@ import {
   validateScheduleOnClient,
   variableLabel
 } from '@/lib/template';
+import { getPhoneValidationError, normalizePhoneNumber } from '@/lib/phone';
 import { ChevronLeft, ChevronRight, Loader2, Send } from 'lucide-react';
 
 const DEFAULT_MANUAL_DETAILS = {
@@ -53,6 +54,7 @@ export default function CreateCampaignForm() {
   const [manualDetails, setManualDetails] = useState(DEFAULT_MANUAL_DETAILS);
 
   const [selectedContactPhones, setSelectedContactPhones] = useState([]);
+  const [manualRecipients, setManualRecipients] = useState([]);
   const [expandedTag, setExpandedTag] = useState(null);
   const [message, setMessage] = useState('');
   const [templateVariables, setTemplateVariables] = useState({});
@@ -145,14 +147,32 @@ export default function CreateCampaignForm() {
   }, [allContacts, selectedContactPhones]);
 
   const buildRecipients = useCallback(() => {
-    return audienceContacts.map((contact) => ({
-      name: contact.name || '',
-      phone: contact.phone.replace(/\D/g, ''),
-      segment: (contact.tags || []).join(', ') || ''
-    }));
-  }, [audienceContacts]);
+    const manualByPhone = new Map(
+      manualRecipients.map((entry) => [entry.phone.replace(/\D/g, ''), entry])
+    );
 
-  const recipientCount = audienceContacts.length;
+    return selectedContactPhones.map((phone) => {
+      const clean = phone.replace(/\D/g, '');
+      const contact = allContacts.find((item) => item.phone.replace(/\D/g, '') === clean);
+      const manual = manualByPhone.get(clean);
+
+      if (contact) {
+        return {
+          name: contact.name || manual?.name || '',
+          phone: clean,
+          segment: (contact.tags || []).join(', ') || ''
+        };
+      }
+
+      return {
+        name: manual?.name || '',
+        phone: clean,
+        segment: 'Manual'
+      };
+    });
+  }, [allContacts, manualRecipients, selectedContactPhones]);
+
+  const recipientCount = selectedContactPhones.length;
 
   const missingTemplateVariables = useMemo(
     () => getMissingScheduleVariables(message, templateVariables),
@@ -257,6 +277,52 @@ export default function CreateCampaignForm() {
   const deselectAllInTag = (contacts) => {
     const phoneSet = new Set(contacts.map((contact) => contact.phone.replace(/\D/g, '')));
     setSelectedContactPhones((prev) => prev.filter((phone) => !phoneSet.has(phone)));
+  };
+
+  const addManualRecipient = (phoneValue, name, country) => {
+    const normalized = normalizePhoneNumber(phoneValue, country);
+    if (!normalized) {
+      toast.error(getPhoneValidationError(country));
+      return false;
+    }
+
+    const clean = normalized.e164.replace(/\D/g, '');
+    if (selectedContactPhones.includes(clean)) {
+      toast.error('This number is already selected');
+      return false;
+    }
+
+    const existingContact = allContacts.find(
+      (item) => item.phone.replace(/\D/g, '') === clean
+    );
+
+    setSelectedContactPhones((prev) => [...prev, clean]);
+
+    if (existingContact) {
+      if (name.trim()) {
+        setManualRecipients((prev) => [
+          ...prev,
+          { phone: clean, e164: normalized.e164, name: name.trim() }
+        ]);
+      }
+      return true;
+    }
+
+    setManualRecipients((prev) => [
+      ...prev,
+      {
+        phone: clean,
+        e164: normalized.e164,
+        name: name.trim()
+      }
+    ]);
+    return true;
+  };
+
+  const removeManualRecipient = (phone) => {
+    const clean = phone.replace(/\D/g, '');
+    setManualRecipients((prev) => prev.filter((entry) => entry.phone.replace(/\D/g, '') !== clean));
+    setSelectedContactPhones((prev) => prev.filter((entry) => entry !== clean));
   };
 
   const handleSelectTemplate = (template) => {
@@ -430,9 +496,12 @@ export default function CreateCampaignForm() {
             expandedTag={expandedTag}
             setExpandedTag={setExpandedTag}
             selectedContactPhones={selectedContactPhones}
+            manualRecipients={manualRecipients}
             toggleContactSelection={toggleContactSelection}
             selectAllInTag={selectAllInTag}
             deselectAllInTag={deselectAllInTag}
+            onAddManualRecipient={addManualRecipient}
+            onRemoveManualRecipient={removeManualRecipient}
           />
         )}
         {step === 3 && (

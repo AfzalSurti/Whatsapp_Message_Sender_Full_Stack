@@ -46,7 +46,7 @@ export const authAPI = {
 
 // ─── WHATSAPP ─────────────────────────────────────────────────
 export const whatsappAPI = {
-  connect: () => api.post('/api/whatsapp/connect'),
+  connect: (data = {}) => api.post('/api/whatsapp/connect', data),
   getStatus: () => api.get('/api/whatsapp/status'),
   disconnect: () => api.post('/api/whatsapp/disconnect'),
   send: (data) => api.post('/api/whatsapp/send', data),

@@ -1,8 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
-import { formatPhoneNumber } from '@/lib/phone';
+import { ChevronDown, ChevronRight, Loader2, Plus, UserPlus, X } from 'lucide-react';
+import InternationalPhoneInput from '@/components/InternationalPhoneInput';
+import { DEFAULT_PHONE_COUNTRY, formatPhoneNumber } from '@/lib/phone';
 import { getTagStyle } from '@/lib/segmentTags';
 
 export default function Step2Audience({
@@ -12,10 +14,18 @@ export default function Step2Audience({
   expandedTag,
   setExpandedTag,
   selectedContactPhones,
+  manualRecipients = [],
   toggleContactSelection,
   selectAllInTag,
-  deselectAllInTag
+  deselectAllInTag,
+  onAddManualRecipient,
+  onRemoveManualRecipient
 }) {
+  const [manualName, setManualName] = useState('');
+  const [manualPhone, setManualPhone] = useState('');
+  const [manualCountry, setManualCountry] = useState(DEFAULT_PHONE_COUNTRY);
+  const [showManualForm, setShowManualForm] = useState(false);
+
   const tagsWithContacts = tagLibrary
     .map((tag) => ({
       ...tag,
@@ -33,6 +43,14 @@ export default function Step2Audience({
   const isTagFullySelected = (contacts) =>
     contacts.length > 0 &&
     contacts.every((c) => selectedContactPhones.includes(c.phone.replace(/\D/g, '')));
+
+  const handleAddManual = () => {
+    const added = onAddManualRecipient(manualPhone, manualName, manualCountry);
+    if (!added) return;
+    setManualName('');
+    setManualPhone('');
+    setShowManualForm(false);
+  };
 
   const renderContactList = (contacts) => (
     <div className="border-t border-white/5 divide-y divide-white/5">
@@ -138,8 +156,91 @@ export default function Step2Audience({
       <div>
         <h2 className="text-xl font-semibold text-white">Select target audience</h2>
         <p className="text-sm text-gray-500 mt-1">
-          Click a tag to view contacts, then select who should receive this campaign.
+          Pick contacts from tags or add a phone number manually for this campaign.
         </p>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-[#0a0f0d] overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowManualForm((prev) => !prev)}
+          className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-white/[0.02] transition-colors"
+        >
+          <UserPlus size={16} className="text-[#25D366] shrink-0" />
+          <span className="text-sm font-medium text-white">Add number manually</span>
+          <span className="flex-1" />
+          {manualRecipients.length > 0 && (
+            <span className="text-xs text-[#25D366] font-medium">
+              {manualRecipients.length} added
+            </span>
+          )}
+          {showManualForm ? (
+            <ChevronDown size={16} className="text-gray-400 shrink-0" />
+          ) : (
+            <ChevronRight size={16} className="text-gray-400 shrink-0" />
+          )}
+        </button>
+
+        {showManualForm && (
+          <div className="border-t border-white/5 px-4 py-4 space-y-3">
+            <div>
+              <label className="text-xs text-gray-400 block mb-2">Name (optional)</label>
+              <input
+                type="text"
+                value={manualName}
+                onChange={(e) => setManualName(e.target.value)}
+                placeholder="Contact name"
+                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm"
+              />
+            </div>
+            <InternationalPhoneInput
+              label="Phone number"
+              value={manualPhone}
+              onChange={setManualPhone}
+              defaultCountry={manualCountry}
+              onCountryChange={setManualCountry}
+              helperText="Add numbers that are not in your contacts list."
+            />
+            <button
+              type="button"
+              onClick={handleAddManual}
+              disabled={!manualPhone.trim()}
+              className="inline-flex items-center gap-2 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl text-sm"
+            >
+              <Plus size={16} />
+              Add to campaign
+            </button>
+          </div>
+        )}
+
+        {manualRecipients.length > 0 && (
+          <div className="border-t border-white/5 divide-y divide-white/5">
+            {manualRecipients.map((entry) => (
+              <div
+                key={entry.phone}
+                className="flex items-center gap-3 px-4 py-3 bg-[#25D366]/5"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-white truncate">
+                    {entry.name || 'Manual contact'}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {formatPhoneNumber(entry.e164 || entry.phone) || entry.phone}
+                  </p>
+                </div>
+                <span className="text-[10px] uppercase tracking-wide text-[#25D366]/80">Manual</span>
+                <button
+                  type="button"
+                  onClick={() => onRemoveManualRecipient(entry.phone)}
+                  className="text-gray-500 hover:text-red-400 transition-colors"
+                  aria-label="Remove number"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {loadingContacts ? (
@@ -147,11 +248,12 @@ export default function Step2Audience({
           <Loader2 size={24} className="animate-spin text-[#25D366]" />
         </div>
       ) : allContacts.length === 0 ? (
-        <div className="text-center py-10 text-sm text-gray-500">
-          No contacts yet.{' '}
+        <div className="text-center py-6 text-sm text-gray-500">
+          No saved contacts yet. Add numbers above or{' '}
           <Link href="/dashboard/groups" className="text-[#25D366] hover:underline">
-            Add contacts
+            import contacts
           </Link>
+          .
         </div>
       ) : (
         <div className="space-y-3">
@@ -173,6 +275,12 @@ export default function Step2Audience({
         <div className="rounded-xl border border-[#25D366]/30 bg-[#25D366]/10 px-4 py-3">
           <p className="text-sm font-medium text-[#25D366]">
             {selectedContactPhones.length} contact{selectedContactPhones.length !== 1 ? 's' : ''} selected
+            {manualRecipients.length > 0 && (
+              <span className="text-[#25D366]/80 font-normal">
+                {' '}
+                ({manualRecipients.length} manual)
+              </span>
+            )}
           </p>
         </div>
       )}

@@ -63,9 +63,20 @@ const getPuppeteerLaunchOptions = (executablePath) => ({
   headless: true,
   executablePath: executablePath || undefined,
   args: getPuppeteerArgs(),
-  timeout: isProductionLinux() ? 120000 : 60000,
-  protocolTimeout: isProductionLinux() ? 120000 : 60000
+  timeout: isProductionLinux() ? 120000 : 90000,
+  protocolTimeout: isProductionLinux() ? 120000 : 90000
 });
+
+const isRecoverableInitError = (err) => {
+  const message = String(err?.message || '');
+  return (
+    /execution context was destroyed/i.test(message) ||
+    /protocol error/i.test(message) ||
+    /target closed/i.test(message) ||
+    /session closed/i.test(message) ||
+    /navigation/i.test(message)
+  );
+};
 
 const getQrTimeoutMs = () => (isProductionLinux() ? 90000 : 30000);
 
@@ -140,6 +151,11 @@ const isClientReady = (userId) => {
     );
 };
 
+const isClientPending = (userId) => {
+    const entry = clients.get(userId.toString());
+    return Boolean(entry && (entry.status === 'pending' || clientsBeingCreated.has(userId.toString())));
+};
+
 const waitForClientReady = async (userId, maxMs = 20000) => {
     const started = Date.now();
 
@@ -211,55 +227,68 @@ const getStatus=(userId)=>{
     return entry.status;
 };
 
-const resolvePuppeteerChrome = () => resolveChromeExecutable();
+const resolvePuppeteerChrome = () => {
+  const fromConfig = resolveChromeExecutable();
+  if (fromConfig && fs.existsSync(fromConfig)) {
+    return fromConfig;
+  }
+  return null;
+};
 
 const resolveExecutablePath = () => {
-    if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
-        return process.env.PUPPETEER_EXECUTABLE_PATH;
-    }
+  if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
 
-    const puppeteerChrome = resolvePuppeteerChrome();
-    if (puppeteerChrome) {
-        return puppeteerChrome;
-    }
+  const puppeteerChrome = resolvePuppeteerChrome();
+  if (puppeteerChrome) {
+    return puppeteerChrome;
+  }
 
-    if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
-        return process.env.CHROME_PATH;
-    }
+  if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
+    return process.env.CHROME_PATH;
+  }
 
-    if (process.env.EDGE_PATH && fs.existsSync(process.env.EDGE_PATH)) {
-        return process.env.EDGE_PATH;
-    }
+  if (process.env.EDGE_PATH && fs.existsSync(process.env.EDGE_PATH)) {
+    return process.env.EDGE_PATH;
+  }
 
-    const platform = os.platform();
-    const candidates = [];
+  const platform = os.platform();
+  const candidates = [];
 
-    if (platform === 'win32') {
-        candidates.push(
-            'C:/Program Files/Google/Chrome/Application/chrome.exe',
-            'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
-            'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
-            'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
-        );
-    }
+  if (platform === 'win32') {
+    candidates.push(
+      'C:/Program Files/Google/Chrome/Application/chrome.exe',
+      'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+      'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+      'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
+    );
+  }
 
-    if (platform === 'darwin') {
-        candidates.push(
-            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-            '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
-        );
-    }
+  if (platform === 'darwin') {
+    candidates.push(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'
+    );
+  }
 
-    if (platform === 'linux') {
-        candidates.push(
-            '/usr/bin/google-chrome',
-            '/usr/bin/google-chrome-stable',
-            '/usr/bin/chromium',
-            '/usr/bin/chromium-browser'
-        );
-    }
+  if (platform === 'linux') {
+    candidates.push(
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser'
+    );
+  }
 
-    return candidates.find(candidate => fs.existsSync(candidate)) || null;
+  const systemBrowser = candidates.find((candidate) => fs.existsSync(candidate)) || null;
+  if (systemBrowser) {
+    console.warn(
+      `Puppeteer bundled Chrome not found — using system browser: ${systemBrowser}. ` +
+        'Run "npm run postinstall" in backend/ for best compatibility.'
+    );
+  }
+  return systemBrowser;
 };
 
 const isPermanentDisconnectReason = (reason = '') =>
@@ -288,8 +317,31 @@ const markSessionUnlinked = async (userId) => {
 //create client
 
 const createClient = async (userId, onQR, onReady, onDisconnected, options = {}) => {
-    const { suppressQrNotification = false } = options;
+    const {
+        suppressQrNotification = false,
+        freshAuth = false,
+        initRetry = false
+    } = options;
     const userIdStr=userId.toString(); // ensure it's a string
+
+    if (freshAuth && !initRetry) {
+        const existingEntry = clients.get(userIdStr);
+        if (existingEntry?.client) {
+            if (existingEntry.qrTimeoutHandle) clearTimeout(existingEntry.qrTimeoutHandle);
+            if (existingEntry.recoveryQrGraceTimer) clearTimeout(existingEntry.recoveryQrGraceTimer);
+            existingEntry.sessionBackupTimers?.forEach((timer) => clearTimeout(timer));
+            if (existingEntry.client._healthCheckCleanup) {
+                existingEntry.client._healthCheckCleanup();
+            }
+            await cleanupClient(existingEntry.client);
+            clients.delete(userIdStr);
+        }
+        clientsBeingCreated.delete(userIdStr);
+        await deleteStoredRemoteSession(userId);
+        cleanupLocalAuthArtifacts(userId);
+        await markSessionUnlinked(userId);
+        await sleep(500);
+    }
 
     // Prevent duplicate client creation
     if(clientsBeingCreated.has(userIdStr)){
@@ -588,6 +640,28 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
                 clients.delete(userIdStr);
             }
             clientsBeingCreated.delete(userIdStr);
+
+            if (!initRetry && isRecoverableInitError(err)) {
+                console.warn(
+                    `Clearing stored WhatsApp session for ${userIdStr} and retrying so QR can be shown...`
+                );
+                await deleteStoredRemoteSession(userId);
+                cleanupLocalAuthArtifacts(userId);
+                await markSessionUnlinked(userId);
+                await sleep(2000);
+                try {
+                    await createClient(userId, onQR, onReady, onDisconnected, {
+                        ...options,
+                        suppressQrNotification: false,
+                        freshAuth: false,
+                        initRetry: true
+                    });
+                    return;
+                } catch (retryErr) {
+                    console.error(`Retry after session clear failed for user: ${userIdStr}:`, retryErr.message);
+                }
+            }
+
             onDisconnected(`WhatsApp browser failed to start: ${err.message}`);
         }); // start the client
 
@@ -791,6 +865,7 @@ module.exports={
     getClient,
     getStatus,
     isClientReady,
+    isClientPending,
     waitForClientReady,
     ensureClientConnected,
     abortPendingClient,

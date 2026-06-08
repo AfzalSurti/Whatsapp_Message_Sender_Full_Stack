@@ -12,10 +12,9 @@ import { whatsappAPI } from '@/lib/api';
 import useWebSocket from '@/hooks/useWebSocket';
 import { DashboardShellProvider } from './DashboardShellContext';
 
-// Flip to true when you want Auto Reply + AI Templates visible in the sidebar again.
 const FEATURE_FLAGS = {
-  showAutoReply: false,
-  showAiTemplates: false
+  showAutoReply: true,
+  showAiTemplates: true
 };
 
 const mainNavItems = [
@@ -97,9 +96,8 @@ export default function DashboardLayout({ children }) {
     }
     if (data.type === 'disconnected') {
       setWaStatus('disconnected');
-      setShowQR(false);
-      setQrImage(null);
-      setQrStatusText('Connection closed. Click Connect to start again.');
+      setConnectError(data.reason || 'WhatsApp disconnected');
+      setQrStatusText('Connection failed. Try again or regenerate QR.');
       setSending(false);
       toast.error(data.reason || 'WhatsApp disconnected');
     }
@@ -148,13 +146,15 @@ export default function DashboardLayout({ children }) {
 
   const handleRegenerateQr = async () => {
     try {
-      setQrStatusText('Restarting WhatsApp connection...');
-      await whatsappAPI.disconnect();
-      setWaStatus('disconnected');
+      setShowQR(true);
       setQrImage(null);
-      await handleConnect({ silent: true });
+      setConnectError('');
+      setQrStatusText('Clearing old session and generating new QR...');
+      setWaStatus('pending');
+      await whatsappAPI.connect({ fresh: true });
     } catch (err) {
       setConnectError(err.response?.data?.error || 'Could not regenerate QR');
+      setQrStatusText('Could not regenerate QR.');
       toast.error(err.response?.data?.error || 'Could not regenerate QR');
     }
   };

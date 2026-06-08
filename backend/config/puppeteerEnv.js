@@ -56,8 +56,6 @@ const resolveChromeExecutable = () => {
   } catch (err) {
     console.warn(`Puppeteer executablePath lookup failed: ${err.message}`);
   }
-
-  return findChromeInCache();
 };
 
 module.exports = {
