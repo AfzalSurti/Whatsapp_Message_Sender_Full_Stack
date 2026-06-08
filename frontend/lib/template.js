@@ -1,6 +1,10 @@
-export const ALLOWED_VARIABLES = ['name', 'phone', 'segment', 'due_date', 'offer_code', 'city'];
+export const ALLOWED_VARIABLES = ['name', 'phone', 'segment', 'due_date', 'offer_code', 'city', 'link'];
 
-export const SCHEDULE_REQUIRED_VARIABLES = ['due_date', 'offer_code', 'city'];
+export const CONTACT_VARIABLES = ['name', 'phone', 'segment'];
+
+export const TEMPLATE_DEFAULT_VARIABLES = ['due_date', 'offer_code', 'city', 'link'];
+
+export const SCHEDULE_REQUIRED_VARIABLES = ['due_date', 'offer_code', 'city', 'link'];
 
 const VARIABLE_REGEX = /\{\{(\w+)\}\}/g;
 
@@ -12,6 +16,14 @@ export const extractVariables = (body = '') => {
   }
   return [...vars];
 };
+
+export const getTemplateDefaultVariables = (body = '') =>
+  extractVariables(body).filter((variable) => TEMPLATE_DEFAULT_VARIABLES.includes(variable));
+
+export const getMissingTemplateDefaults = (body = '', defaultVariables = {}) =>
+  getTemplateDefaultVariables(body).filter(
+    (variable) => !String(defaultVariables[variable] || '').trim()
+  );
 
 export const getMissingScheduleVariables = (body = '', templateVariables = {}) => {
   return extractVariables(body).filter(
@@ -54,7 +66,8 @@ export const variableLabel = (variable) => {
     segment: 'Group / segment',
     due_date: 'Due date',
     offer_code: 'Offer code',
-    city: 'City'
+    city: 'City',
+    link: 'Link / URL'
   };
   return labels[variable] || variable;
 };

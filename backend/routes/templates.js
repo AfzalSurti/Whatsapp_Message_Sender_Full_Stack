@@ -17,7 +17,8 @@ const templateValidation = [
   body('body').trim().notEmpty().withMessage('Template body is required'),
   body('tags').optional().isArray(),
   body('category').optional().isIn(['eid', 'diwali', 'birthday', 'promo', 'reminder', 'custom', 'ai']),
-  body('languages').optional().isArray()
+  body('languages').optional().isArray(),
+  body('defaultVariables').optional().isObject()
 ];
 
 router.get('/', protect, getTemplates);

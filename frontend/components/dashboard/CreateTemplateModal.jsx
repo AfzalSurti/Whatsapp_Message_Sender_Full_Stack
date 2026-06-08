@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Bot, Loader2, Sparkles, X } from 'lucide-react';
 import { aiAPI, templatesAPI } from '@/lib/api';
-import { extractVariables } from '@/lib/template';
+import { extractVariables, getMissingTemplateDefaults, getTemplateDefaultVariables, variableLabel } from '@/lib/template';
 
 const CATEGORIES = [
   { value: 'custom', label: 'Custom' },
@@ -34,6 +34,7 @@ export default function CreateTemplateModal({
   const [aiLoading, setAiLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(startWithAi);
+  const [defaultVariables, setDefaultVariables] = useState({});
 
   useEffect(() => {
     if (!open) return;
@@ -46,6 +47,7 @@ export default function CreateTemplateModal({
       setTagsInput((initialTemplate.tags || []).join(', '));
       setCategory(initialTemplate.category || 'custom');
       setLanguagesInput((initialTemplate.languages || ['English']).join(', '));
+      setDefaultVariables(initialTemplate.defaultVariables || {});
       setShowAiPanel(false);
     } else {
       setName('');
@@ -56,6 +58,7 @@ export default function CreateTemplateModal({
       setCategory(startWithAi ? 'ai' : 'custom');
       setLanguagesInput('English');
       setAiPrompt('');
+      setDefaultVariables({});
       setShowAiPanel(startWithAi);
     }
   }, [open, initialTemplate, startWithAi]);
@@ -63,6 +66,8 @@ export default function CreateTemplateModal({
   if (!open) return null;
 
   const variables = extractVariables(body);
+  const defaultVariableFields = getTemplateDefaultVariables(body);
+  const missingDefaults = getMissingTemplateDefaults(body, defaultVariables);
 
   const handleGenerateAi = async () => {
     if (!aiPrompt.trim()) {
@@ -79,7 +84,7 @@ export default function CreateTemplateModal({
         language: languagesInput.split(',')[0]?.trim() || 'English',
         festival: 'General',
         audience: 'Customers',
-        guidance: 'Create a reusable WhatsApp template. You may include {{name}}, {{offer_code}}, or {{due_date}} when useful.'
+        guidance: 'Create a reusable WhatsApp template. You may include {{name}}, {{offer_code}}, {{due_date}}, or {{link}} when useful.'
       });
 
       setBody(res.data.message);
@@ -108,6 +113,13 @@ export default function CreateTemplateModal({
       return;
     }
 
+    if (missingDefaults.length > 0) {
+      toast.error(
+        `Set default values for: ${missingDefaults.map((v) => `{{${v}}}`).join(', ')}`
+      );
+      return;
+    }
+
     const payload = {
       name: name.trim(),
       description: description.trim(),
@@ -115,7 +127,8 @@ export default function CreateTemplateModal({
       body: body.trim(),
       tags: tagsInput.split(',').map((tag) => tag.trim()).filter(Boolean),
       category,
-      languages: languagesInput.split(',').map((lang) => lang.trim()).filter(Boolean)
+      languages: languagesInput.split(',').map((lang) => lang.trim()).filter(Boolean),
+      defaultVariables
     };
 
     setSaving(true);
@@ -143,7 +156,7 @@ export default function CreateTemplateModal({
               {initialTemplate ? 'Edit Template' : 'Create Template'}
             </h3>
             <p className="text-xs text-gray-500 mt-1">
-              Allowed variables: {'{{name}}'}, {'{{phone}}'}, {'{{segment}}'}, {'{{due_date}}'}, {'{{offer_code}}'}, {'{{city}}'}
+              Allowed variables: {'{{name}}'}, {'{{phone}}'}, {'{{segment}}'}, {'{{due_date}}'}, {'{{offer_code}}'}, {'{{city}}'}, {'{{link}}'}
             </p>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors cursor-pointer" aria-label="Close">
@@ -275,6 +288,46 @@ export default function CreateTemplateModal({
               )}
             </div>
           </div>
+
+          {defaultVariableFields.length > 0 && (
+            <div className="bg-[#0a0f0d] border border-amber-500/20 rounded-xl p-4 space-y-3">
+              <div>
+                <p className="text-sm font-medium text-amber-300">Default variable values</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Set these now. They will auto-fill when you use this template in campaigns.
+                </p>
+              </div>
+              {defaultVariableFields.map((variable) => (
+                <div key={variable}>
+                  <label className="text-xs text-gray-400 block mb-1.5">
+                    {variableLabel(variable)} ({`{{${variable}}}`}) <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={defaultVariables[variable] || ''}
+                    onChange={(e) =>
+                      setDefaultVariables((prev) => ({
+                        ...prev,
+                        [variable]: e.target.value
+                      }))
+                    }
+                    placeholder={`Enter default ${variableLabel(variable).toLowerCase()}`}
+                    className={`w-full px-4 py-2.5 bg-[#111814] border rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] ${
+                      !(defaultVariables[variable] || '').trim()
+                        ? 'border-amber-500/40'
+                        : 'border-white/10'
+                    }`}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {variables.includes('name') && (
+            <p className="text-xs text-amber-400/90">
+              {'{{name}}'} is filled automatically from each contact when sending. You do not need to set it here.
+            </p>
+          )}
         </div>
 
         <div className="flex gap-3 p-6 border-t border-white/10">

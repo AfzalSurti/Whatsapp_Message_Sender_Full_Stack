@@ -1,7 +1,7 @@
 const { validationResult } = require('express-validator');
 const MessageTemplate = require('../models/MessageTemplate');
 const defaultTemplates = require('../data/defaultTemplates');
-const { extractVariables, validateTemplateBody } = require('../utils/template');
+const { extractVariables, validateTemplateDefaults, normalizeDefaultVariables } = require('../utils/template');
 
 const ensureSystemTemplates = async () => {
   for (const template of defaultTemplates) {
@@ -15,7 +15,11 @@ const ensureSystemTemplates = async () => {
 
 const serializeTemplate = (template) => ({
   ...template.toObject(),
-  variables: extractVariables(template.body)
+  variables: extractVariables(template.body),
+  defaultVariables:
+    template.defaultVariables instanceof Map
+      ? Object.fromEntries(template.defaultVariables)
+      : template.defaultVariables || {}
 });
 
 const getTemplates = async (req, res) => {
@@ -60,8 +64,8 @@ const createTemplate = async (req, res) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, description, icon, body, tags, category, languages } = req.body;
-    const bodyCheck = validateTemplateBody(body);
+    const { name, description, icon, body, tags, category, languages, defaultVariables } = req.body;
+    const bodyCheck = validateTemplateDefaults(body, defaultVariables);
     if (!bodyCheck.valid) {
       return res.status(400).json({ error: bodyCheck.error });
     }
@@ -75,6 +79,7 @@ const createTemplate = async (req, res) => {
       tags: Array.isArray(tags) ? tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
       category: category || 'custom',
       languages: Array.isArray(languages) ? languages.map((lang) => String(lang).trim()).filter(Boolean) : [],
+      defaultVariables: bodyCheck.defaultVariables,
       isSystem: false
     });
 
@@ -102,14 +107,30 @@ const updateTemplate = async (req, res) => {
       return res.status(404).json({ error: 'Template not found or cannot be edited' });
     }
 
-    const { name, description, icon, body, tags, category, languages } = req.body;
+    const { name, description, icon, body, tags, category, languages, defaultVariables } = req.body;
 
     if (body !== undefined) {
-      const bodyCheck = validateTemplateBody(body);
+      const bodyCheck = validateTemplateDefaults(
+        body,
+        defaultVariables !== undefined
+          ? defaultVariables
+          : template.defaultVariables instanceof Map
+            ? Object.fromEntries(template.defaultVariables)
+            : template.defaultVariables || {}
+      );
       if (!bodyCheck.valid) {
         return res.status(400).json({ error: bodyCheck.error });
       }
       template.body = body.trim();
+      if (defaultVariables !== undefined) {
+        template.defaultVariables = bodyCheck.defaultVariables;
+      }
+    } else if (defaultVariables !== undefined) {
+      const bodyCheck = validateTemplateDefaults(template.body, defaultVariables);
+      if (!bodyCheck.valid) {
+        return res.status(400).json({ error: bodyCheck.error });
+      }
+      template.defaultVariables = bodyCheck.defaultVariables;
     }
 
     if (name !== undefined) template.name = name.trim();

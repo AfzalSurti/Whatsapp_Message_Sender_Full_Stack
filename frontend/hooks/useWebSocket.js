@@ -6,42 +6,66 @@ const useWebSocket = (onMessage) => {
   const connectRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const shouldReconnectRef = useRef(true);
+  const intentionalCloseRef = useRef(false);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
   const baseReconnectDelay = 2000;
+  const onMessageRef = useRef(onMessage);
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
 
   const connect = useCallback(() => {
     const token = getToken();
+    const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL;
+
     if (!token) {
-      console.warn('No auth token available for WebSocket');
       return;
     }
 
+    if (!wsBaseUrl) {
+      console.warn('NEXT_PUBLIC_WS_URL is not set. WebSocket disabled.');
+      return;
+    }
+
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    if (ws.current) {
+      intentionalCloseRef.current = true;
+      ws.current.close();
+      ws.current = null;
+    }
+
     try {
-      const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL}?token=${token}`;
-      console.log('Connecting to WebSocket:', wsUrl.replace(/token=.*/, 'token=***'));
+      const wsUrl = `${wsBaseUrl}?token=${token}`;
 
       ws.current = new WebSocket(wsUrl);
 
       ws.current.onopen = () => {
-        console.log('✅ WebSocket connected');
+        console.log('WebSocket connected');
         reconnectAttemptsRef.current = 0;
       };
 
       ws.current.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
-          onMessage(data);
+          onMessageRef.current?.(data);
         } catch (err) {
           console.error('WebSocket message parse error:', err);
         }
       };
 
       ws.current.onclose = () => {
-        console.log('👋 WebSocket disconnected');
+        if (intentionalCloseRef.current) {
+          intentionalCloseRef.current = false;
+          return;
+        }
+
         if (shouldReconnectRef.current && reconnectAttemptsRef.current < maxReconnectAttempts) {
           const delay = baseReconnectDelay * Math.pow(2, reconnectAttemptsRef.current);
-          console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})`);
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectAttemptsRef.current += 1;
             connectRef.current?.();
@@ -49,13 +73,14 @@ const useWebSocket = (onMessage) => {
         }
       };
 
-      ws.current.onerror = (err) => {
-        console.error('❌ WebSocket error:', err);
+      ws.current.onerror = () => {
+        // Browser fires this when the socket cannot connect or drops abruptly.
+        // Details come from onclose; avoid noisy [object Event] logs in dev.
       };
     } catch (err) {
       console.error('WebSocket connection error:', err);
     }
-  }, [onMessage]);
+  }, []);
 
   useEffect(() => {
     connectRef.current = connect;
@@ -67,7 +92,9 @@ const useWebSocket = (onMessage) => {
       clearTimeout(reconnectTimeoutRef.current);
     }
     if (ws.current) {
+      intentionalCloseRef.current = true;
       ws.current.close();
+      ws.current = null;
     }
   }, []);
 

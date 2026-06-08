@@ -226,7 +226,7 @@ export default function ScheduledPage() {
     setSelectedTemplate(template);
     setMessage(template.body);
     setCampaignName((prev) => (prev.trim() ? prev : template.name));
-    setTemplateVariables({});
+    setTemplateVariables(template.defaultVariables || {});
   }, []);
 
   useEffect(() => {

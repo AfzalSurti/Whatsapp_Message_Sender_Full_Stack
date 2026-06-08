@@ -51,6 +51,11 @@ const MessageTemplateSchema = new mongoose.Schema(
     isSystem: {
       type: Boolean,
       default: false
+    },
+    defaultVariables: {
+      type: Map,
+      of: String,
+      default: {}
     }
   },
   {

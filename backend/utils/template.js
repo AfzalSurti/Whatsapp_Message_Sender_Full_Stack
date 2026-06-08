@@ -4,10 +4,15 @@ const ALLOWED_VARIABLES = new Set([
   'segment',
   'due_date',
   'offer_code',
-  'city'
+  'city',
+  'link'
 ]);
 
-const SCHEDULE_REQUIRED_VARIABLES = new Set(['due_date', 'offer_code', 'city']);
+const CONTACT_VARIABLES = new Set(['name', 'phone', 'segment']);
+
+const TEMPLATE_DEFAULT_VARIABLES = new Set(['due_date', 'offer_code', 'city', 'link']);
+
+const SCHEDULE_REQUIRED_VARIABLES = new Set(['due_date', 'offer_code', 'city', 'link']);
 
 const VARIABLE_REGEX = /\{\{(\w+)\}\}/g;
 
@@ -39,6 +44,37 @@ const validateTemplateBody = (body = '') => {
   }
 
   return { valid: true, variables };
+};
+
+const normalizeDefaultVariables = (defaultVariables = {}) => {
+  if (!defaultVariables || typeof defaultVariables !== 'object') return {};
+
+  return Object.fromEntries(
+    Object.entries(defaultVariables)
+      .map(([key, value]) => [String(key).trim(), String(value ?? '').trim()])
+      .filter(([key]) => key)
+  );
+};
+
+const validateTemplateDefaults = (body = '', defaultVariables = {}) => {
+  const bodyCheck = validateTemplateBody(body);
+  if (!bodyCheck.valid) {
+    return bodyCheck;
+  }
+
+  const defaults = normalizeDefaultVariables(defaultVariables);
+  const missing = bodyCheck.variables
+    .filter((variable) => TEMPLATE_DEFAULT_VARIABLES.has(variable))
+    .filter((variable) => !defaults[variable]);
+
+  if (missing.length > 0) {
+    return {
+      valid: false,
+      error: `Set default values for: ${missing.map((v) => `{{${v}}}`).join(', ')}`
+    };
+  }
+
+  return { valid: true, variables: bodyCheck.variables, defaultVariables: defaults };
 };
 
 const validateScheduleVariables = (body, templateVariables = {}, recipients = []) => {
@@ -89,16 +125,21 @@ const buildRecipientMessage = (body, recipient, templateVariables = {}) => {
     segment: recipient.segment || '',
     due_date: templateVariables.due_date || '',
     offer_code: templateVariables.offer_code || '',
-    city: templateVariables.city || ''
+    city: templateVariables.city || '',
+    link: templateVariables.link || ''
   });
 };
 
 module.exports = {
   ALLOWED_VARIABLES,
+  CONTACT_VARIABLES,
+  TEMPLATE_DEFAULT_VARIABLES,
   SCHEDULE_REQUIRED_VARIABLES,
   extractVariables,
   validateTemplateBody,
+  validateTemplateDefaults,
   validateScheduleVariables,
   applyTemplate,
-  buildRecipientMessage
+  buildRecipientMessage,
+  normalizeDefaultVariables
 };
