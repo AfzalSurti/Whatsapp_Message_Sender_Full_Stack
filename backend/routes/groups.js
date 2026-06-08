@@ -19,6 +19,7 @@ const {
   createTag,
   deleteTag,
   updateContact,
+  deleteContact,
   importContacts
 } = require('../controllers/segmentsController');
 
@@ -58,11 +59,17 @@ const updateContactValidation = [
   body('tags').optional().isArray()
 ];
 
+const deleteContactValidation = [
+  body('phone').trim().notEmpty().withMessage('Phone is required'),
+  validateAndNormalizePhoneField({ field: 'phone' })
+];
+
 router.get('/overview', protect, getOverview);
 router.get('/tags', protect, getTags);
 router.post('/tags', protect, tagValidation, createTag);
 router.delete('/tags/:id', protect, param('id').isMongoId(), deleteTag);
 router.put('/contacts', protect, updateContactValidation, updateContact);
+router.delete('/contacts', protect, deleteContactValidation, deleteContact);
 router.post('/import', protect, body('rows').isArray({ min: 1 }), importContacts);
 
 router.post('/', protect, createValidation, createGroup);

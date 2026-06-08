@@ -23,6 +23,7 @@ import {
   Loader2,
   Plus,
   Search,
+  Trash2,
   Upload,
   UserPlus,
   X
@@ -61,6 +62,7 @@ export default function GroupsPage() {
   const [newTagCategory, setNewTagCategory] = useState('custom');
   const [newTagColor, setNewTagColor] = useState('#25D366');
   const [creatingTag, setCreatingTag] = useState(false);
+  const [deletingPhone, setDeletingPhone] = useState(null);
 
   const fetchOverview = useCallback(async () => {
     try {
@@ -228,6 +230,25 @@ export default function GroupsPage() {
       toast.error(err.response?.data?.error || 'Failed to update contact');
     } finally {
       setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteContact = async (contact) => {
+    const label = contact.name || formatPhoneNumber(contact.phone) || contact.phone;
+    if (!window.confirm(`Delete contact "${label}"? This cannot be undone.`)) return;
+
+    setDeletingPhone(contact.phone);
+    try {
+      await groupsAPI.deleteContact(contact.phone);
+      toast.success('Contact deleted');
+      if (editPhone === contact.phone) {
+        setShowEditModal(false);
+      }
+      await fetchOverview();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to delete contact');
+    } finally {
+      setDeletingPhone(null);
     }
   };
 
@@ -417,13 +438,28 @@ export default function GroupsPage() {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => openEdit(contact)}
-                        className="text-sm px-4 py-2 rounded-lg border border-white/10 hover:border-[#25D366]/40 shrink-0"
-                      >
-                        Edit
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(contact)}
+                          className="text-sm px-4 py-2 rounded-lg border border-white/10 hover:border-[#25D366]/40"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          disabled={deletingPhone === contact.phone}
+                          onClick={() => handleDeleteContact(contact)}
+                          className="p-2 rounded-lg border border-white/10 hover:border-red-500/40 text-red-400 disabled:opacity-50"
+                          title="Delete contact"
+                        >
+                          {deletingPhone === contact.phone ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={16} />
+                          )}
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

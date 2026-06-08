@@ -7,6 +7,7 @@ const {
   ensureDefaultGroup,
   flattenContacts,
   updateContactInGroups,
+  deleteContactFromGroups,
   normalizeTags
 } = require('../utils/contactSegments');
 const { normalizeGroupNumbers } = require('../models/ContactGroup');
@@ -135,6 +136,22 @@ const updateContact = async (req, res) => {
   }
 };
 
+const deleteContact = async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone is required' });
+    }
+
+    await deleteContactFromGroups(req.user._id, phone);
+    res.json({ message: 'Contact deleted' });
+  } catch (err) {
+    const message = err.message || 'Failed to delete contact';
+    const status = /not found|valid international/i.test(message) ? 400 : 500;
+    res.status(status).json({ error: message });
+  }
+};
+
 const importContacts = async (req, res) => {
   try {
     const { rows } = req.body;
@@ -187,5 +204,6 @@ module.exports = {
   createTag,
   deleteTag,
   updateContact,
+  deleteContact,
   importContacts
 };

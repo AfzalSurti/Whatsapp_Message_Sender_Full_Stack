@@ -88,6 +88,7 @@ export const groupsAPI = {
   createTag: (data) => api.post('/api/groups/tags', data),
   deleteTag: (id) => api.delete(`/api/groups/tags/${id}`),
   updateContact: (data) => api.put('/api/groups/contacts', data),
+  deleteContact: (phone) => api.delete('/api/groups/contacts', { data: { phone } }),
   importContacts: (rows) => api.post('/api/groups/import', { rows }),
   getGroups: () => api.get('/api/groups'),
   getGroup: (id) => api.get(`/api/groups/${id}`),

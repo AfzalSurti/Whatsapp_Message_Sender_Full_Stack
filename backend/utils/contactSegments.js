@@ -107,6 +107,30 @@ const updateContactInGroups = async (userId, phone, { name, tags }) => {
   return cleanPhone;
 };
 
+const deleteContactFromGroups = async (userId, phone) => {
+  const normalized = normalizePhoneNumber(phone);
+  if (!normalized?.e164) {
+    throw new Error('Enter a valid international phone number');
+  }
+
+  const cleanPhone = normalized.e164;
+  const groups = await ContactGroup.find({ userId, 'numbers.phone': cleanPhone });
+
+  if (groups.length === 0) {
+    throw new Error('Contact not found');
+  }
+
+  for (const group of groups) {
+    const before = group.numbers.length;
+    group.numbers = group.numbers.filter((entry) => entry.phone !== cleanPhone);
+    if (group.numbers.length !== before) {
+      await group.save();
+    }
+  }
+
+  return cleanPhone;
+};
+
 const collectContactsByTags = (groups, segmentTags = [], { matchAll = false } = {}) => {
   const wanted = normalizeTags(segmentTags);
   if (wanted.length === 0) return [];
@@ -142,5 +166,6 @@ module.exports = {
   ensureDefaultGroup,
   flattenContacts,
   updateContactInGroups,
+  deleteContactFromGroups,
   collectContactsByTags
 };
