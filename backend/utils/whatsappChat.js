@@ -230,6 +230,17 @@ const enrichChatContact = async (chat) => {
   const base = serializeChatContact(chat);
   if (!base) return null;
 
+  const nameFromChat = pickContactDisplayName(null, chat, base.name);
+
+  // LID chats: avoid getContact() — it often fails and can disrupt WA comms for auto-reply
+  if (getChatServer(base.chatId) === 'lid') {
+    return {
+      ...base,
+      name: nameFromChat,
+      phoneNumber: ''
+    };
+  }
+
   try {
     const contact = await chat.getContact();
     const phoneNumber =
@@ -238,7 +249,7 @@ const enrichChatContact = async (chat) => {
       base.phoneNumber;
 
     const safePhone = phoneNumber && !String(phoneNumber).includes('@') ? phoneNumber : base.phoneNumber;
-    const name = pickContactDisplayName(contact, chat, safePhone || base.name);
+    const name = pickContactDisplayName(contact, chat, safePhone || nameFromChat);
 
     return {
       ...base,
@@ -249,6 +260,7 @@ const enrichChatContact = async (chat) => {
     console.warn(`Could not enrich WhatsApp chat contact ${base.chatId}: ${err.message}`);
     return {
       ...base,
+      name: nameFromChat,
       phoneNumber: base.phoneNumber && !String(base.phoneNumber).includes('@') ? base.phoneNumber : ''
     };
   }
@@ -260,7 +272,7 @@ const getChatTimestamp = (chat) => {
   return Number(ts) || 0;
 };
 
-const fetchWhatsAppContacts = async (client, { limit = 300 } = {}) => {
+const fetchWhatsAppContacts = async (client, { limit = 150 } = {}) => {
   const chats = await client.getChats();
 
   const personalChats = chats
@@ -272,7 +284,8 @@ const fetchWhatsAppContacts = async (client, { limit = 300 } = {}) => {
     .sort((a, b) => getChatTimestamp(b) - getChatTimestamp(a))
     .slice(0, limit);
 
-  const enriched = await mapWithConcurrency(personalChats, 12, enrichChatContact);
+  // Low concurrency — too many parallel getContact() calls break WA comms (sendIq before startComms)
+  const enriched = await mapWithConcurrency(personalChats, 2, enrichChatContact);
 
   const serialized = [];
   const seen = new Set();
@@ -287,13 +300,21 @@ const fetchWhatsAppContacts = async (client, { limit = 300 } = {}) => {
   return serialized;
 };
 
+const isPersonalChat = (chat) => {
+  if (!chat || chat.isGroup) return false;
+  const chatId = chat.id?._serialized || '';
+  return Boolean(chatId && PERSONAL_CHAT_SERVERS.has(getChatServer(chatId)));
+};
+
 module.exports = {
   isChatId,
   isAutoReplyEligibleMessage,
+  isPersonalChat,
   resolveMessageContact,
   isContactSelected,
   contactMatchesSelection,
   enrichChatContact,
   fetchWhatsAppContacts,
+  getChatTimestamp,
   normalizePhoneValue
 };

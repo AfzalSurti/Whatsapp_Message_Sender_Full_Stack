@@ -17,6 +17,30 @@ const resolveSystemPrompt = (config) => {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const getMessageId = (msg) => String(msg?.id?._serialized || msg?.id?.id || '').trim();
+
+const isMessageAlreadyHandled = async (userId, sourceMessageId) => {
+  if (!sourceMessageId) return false;
+  const existing = await AutoReplyLog.findOne({ userId, sourceMessageId }).lean();
+  return Boolean(existing);
+};
+
+const sendWhatsAppReply = async (client, msg, chatId, aiReply) => {
+  try {
+    const sentMsg = await msg.reply(aiReply);
+    if (sentMsg?.id?._serialized) return sentMsg;
+  } catch (err) {
+    console.warn(`msg.reply failed, trying sendMessage: ${err.message}`);
+  }
+
+  const sentMsg = await client.sendMessage(chatId, aiReply);
+  if (!sentMsg?.id?._serialized) {
+    throw new Error('WhatsApp did not confirm the message was sent');
+  }
+
+  return sentMsg;
+};
+
 const requestAIReply = async ({ systemPrompt, messages }) => {
   if (!process.env.OPENROUTER_API_KEY) {
     throw new Error('OpenRouter API key is not configured');
@@ -85,6 +109,7 @@ const saveAutoReplyLog = async ({
   aiReply,
   status,
   failReason = '',
+  sourceMessageId = '',
   conversationHistory = []
 }) => {
   return AutoReplyLog.create({
@@ -95,6 +120,7 @@ const saveAutoReplyLog = async ({
     aiReply,
     status,
     failReason,
+    sourceMessageId,
     conversationHistory
   });
 };
@@ -118,6 +144,11 @@ const handleIncomingMessage = async (client, userId, msg) => {
     const incomingMessage = String(msg.body || '').trim();
     if (!incomingMessage) return;
 
+    const sourceMessageId = getMessageId(msg);
+    if (await isMessageAlreadyHandled(userId, sourceMessageId)) {
+      return;
+    }
+
     const config = await AutoReplyConfig.findOne({ userId });
     if (!config || !config.isEnabled) {
       return;
@@ -139,6 +170,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
           incomingMessage,
           aiReply: '',
           status: 'skipped',
+          sourceMessageId,
           failReason: 'Contact not in your selected list. Add this number or switch to All Messages.'
         });
         return;
@@ -170,6 +202,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
         incomingMessage,
         aiReply: '',
         status: 'failed',
+        sourceMessageId,
         failReason: err.message,
         conversationHistory: buildStoredHistory(recentLogs, incomingMessage, '')
       });
@@ -179,11 +212,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
     await sleep(config.delay || 2000);
 
     try {
-      const sentMsg = await msg.reply(aiReply);
-
-      if (!sentMsg?.id?._serialized) {
-        throw new Error('WhatsApp did not confirm the message was sent');
-      }
+      await sendWhatsAppReply(client, msg, chatId, aiReply);
 
       console.log(`Auto-reply sent to ${contactPhone || chatId}`);
 
@@ -194,6 +223,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
         incomingMessage,
         aiReply,
         status: 'sent',
+        sourceMessageId,
         conversationHistory: buildStoredHistory(recentLogs, incomingMessage, aiReply)
       });
     } catch (err) {
@@ -205,6 +235,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
         incomingMessage,
         aiReply,
         status: 'failed',
+        sourceMessageId,
         failReason: err.message,
         conversationHistory: buildStoredHistory(recentLogs, incomingMessage, aiReply)
       });

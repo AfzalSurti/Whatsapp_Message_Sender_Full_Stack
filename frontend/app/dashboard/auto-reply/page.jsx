@@ -61,6 +61,7 @@ export default function AutoReplyPage() {
   const [delay, setDelay] = useState(2000);
 
   const [whatsappContacts, setWhatsappContacts] = useState([]);
+  const whatsappFetchInFlightRef = useRef(false);
   const [savedContacts, setSavedContacts] = useState([]);
   const [savedContactsLoading, setSavedContactsLoading] = useState(false);
   const [contactSource, setContactSource] = useState('saved');
@@ -138,6 +139,9 @@ export default function AutoReplyPage() {
       return;
     }
 
+    if (whatsappFetchInFlightRef.current) return;
+
+    whatsappFetchInFlightRef.current = true;
     setContactsLoading(true);
     setContactsError('');
 
@@ -149,6 +153,7 @@ export default function AutoReplyPage() {
       setContactsError(message);
       setWhatsappContacts([]);
     } finally {
+      whatsappFetchInFlightRef.current = false;
       setContactsLoading(false);
     }
   }, [waConnected]);

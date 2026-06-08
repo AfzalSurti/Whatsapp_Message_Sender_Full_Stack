@@ -52,6 +52,11 @@ const AutoReplyLogSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    sourceMessageId: {
+      type: String,
+      default: '',
+      trim: true
+    },
     conversationHistory: {
       type: [ConversationMessageSchema],
       default: []
@@ -64,5 +69,6 @@ const AutoReplyLogSchema = new mongoose.Schema(
 
 AutoReplyLogSchema.index({ userId: 1, createdAt: -1 });
 AutoReplyLogSchema.index({ userId: 1, contactPhone: 1, createdAt: -1 });
+AutoReplyLogSchema.index({ userId: 1, sourceMessageId: 1 });
 
 module.exports = mongoose.model('AutoReplyLog', AutoReplyLogSchema);
