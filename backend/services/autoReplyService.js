@@ -1,6 +1,8 @@
 const axios = require('axios');
 const AutoReplyConfig = require('../models/AutoReplyConfig');
 const AutoReplyLog = require('../models/AutoReplyLog');
+const AITemplate = require('../models/AITemplate');
+const ConversationState = require('../models/ConversationState');
 const {
   isAutoReplyEligibleMessage,
   resolveMessageContact,
@@ -9,6 +11,8 @@ const {
 
 const DEFAULT_SYSTEM_PROMPT =
   'You are a helpful WhatsApp assistant. Reply naturally and concisely.';
+
+const MAX_HISTORY = 40;
 
 const resolveSystemPrompt = (config) => {
   const prompt = String(config?.systemPrompt || '').trim();
@@ -23,6 +27,42 @@ const isMessageAlreadyHandled = async (userId, sourceMessageId) => {
   if (!sourceMessageId) return false;
   const existing = await AutoReplyLog.findOne({ userId, sourceMessageId }).lean();
   return Boolean(existing);
+};
+
+const callOpenRouter = async (userPrompt, { systemPrompt = 'You are a helpful assistant.', maxTokens = 300 } = {}) => {
+  if (!process.env.OPENROUTER_API_KEY) {
+    throw new Error('OpenRouter API key is not configured');
+  }
+
+  if (!process.env.MODEL_NAME) {
+    throw new Error('AI model name is not configured');
+  }
+
+  const response = await axios.post(
+    'https://openrouter.ai/api/v1/chat/completions',
+    {
+      model: process.env.MODEL_NAME,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: maxTokens
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    }
+  );
+
+  const content = response.data?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('AI returned an empty response');
+  }
+
+  return content.trim();
 };
 
 const sendWhatsAppReply = async (client, msg, chatId, aiReply) => {
@@ -41,20 +81,163 @@ const sendWhatsAppReply = async (client, msg, chatId, aiReply) => {
   return sentMsg;
 };
 
-const requestAIReply = async ({ systemPrompt, messages }) => {
-  if (!process.env.OPENROUTER_API_KEY) {
-    throw new Error('OpenRouter API key is not configured');
+const formatHistoryLines = (history = [], limit = 10) =>
+  history
+    .slice(-limit)
+    .map((entry) => `${entry.role === 'assistant' ? 'Assistant' : 'User'}: ${entry.content}`)
+    .join('\n');
+
+const detectIntent = async (message, history, templates) => {
+  if (!templates.length) return null;
+
+  const templateList = templates
+    .map(
+      (template) =>
+        `- ${template.name}: ${template.intentDescription}\n  Examples: ${(template.triggerExamples || []).join(', ') || 'none'}`
+    )
+    .join('\n');
+
+  const prompt = `You are an intent detection system.
+Analyze this message and conversation history.
+Choose the most appropriate template or return 'none'.
+
+Message: ${message}
+
+Recent history:
+${formatHistoryLines(history, 3) || 'No prior messages'}
+
+Available templates:
+${templateList}
+
+Return ONLY the exact template name or 'none'.
+No explanation.`;
+
+  const response = await callOpenRouter(prompt, {
+    systemPrompt: 'You classify user intent into predefined template names. Return only the template name or none.',
+    maxTokens: 60
+  });
+
+  const normalized = response.trim().replace(/^["']|["']$/g, '');
+  if (!normalized || normalized.toLowerCase() === 'none') {
+    return null;
   }
 
-  if (!process.env.MODEL_NAME) {
-    throw new Error('AI model name is not configured');
+  const matched = templates.find(
+    (template) => template.name.trim().toLowerCase() === normalized.toLowerCase()
+  );
+
+  return matched || null;
+};
+
+const extractFieldValue = async (message, fieldName) => {
+  if (!fieldName) return null;
+
+  const prompt = `Extract the value for "${fieldName}" from this WhatsApp message.
+Return ONLY the extracted value with no explanation.
+If not present, return "none".
+
+Message: ${message}`;
+
+  const value = await callOpenRouter(prompt, {
+    systemPrompt: 'You extract structured data from messages.',
+    maxTokens: 80
+  });
+
+  const cleaned = value.trim().replace(/^["']|["']$/g, '');
+  if (!cleaned || cleaned.toLowerCase() === 'none') {
+    return null;
   }
+
+  return cleaned;
+};
+
+const advanceWorkflowStep = (state, template) => {
+  const steps = template.workflowSteps || [];
+  if (steps.length === 0) {
+    state.isCompleted = true;
+    return;
+  }
+
+  const currentStepData = steps[state.currentStep];
+  if (currentStepData?.isLastStep || state.currentStep >= steps.length - 1) {
+    state.isCompleted = true;
+    return;
+  }
+
+  state.currentStep += 1;
+};
+
+const generateTemplateResponse = async (message, state, template) => {
+  const steps = template.workflowSteps || [];
+  const currentStepData = steps[state.currentStep] || steps[steps.length - 1] || null;
+  const documentsText = (template.attachedDocuments || [])
+    .map((doc) => `${doc.name}: ${doc.content}`)
+    .join('\n');
+
+  const prompt = `You are an AI assistant for a business.
+
+Business Instructions: ${template.aiInstructions || 'Be helpful and professional.'}
+
+Knowledge Base:
+${template.knowledgeBase || 'No additional knowledge provided.'}
+
+Attached Documents:
+${documentsText || 'None'}
+
+Escalation Rules:
+${template.escalationRules || 'None'}
+
+Current workflow step ${state.currentStep + 1}${currentStepData ? `: ${currentStepData.instruction}` : ''}
+
+Field to collect at this step: ${currentStepData?.collectField || 'none'}
+
+Collected information so far: ${JSON.stringify(state.collectedInfo || {})}
+
+Conversation history:
+${formatHistoryLines(state.conversationHistory, 10)}
+
+User just said: ${message}
+
+Generate a natural response following the workflow step.
+If the user provides information for the requested field, acknowledge it naturally.
+Keep the response concise and WhatsApp-friendly.
+Do not use markdown formatting.`;
+
+  const reply = await callOpenRouter(prompt, {
+    systemPrompt: 'You follow business workflow steps in WhatsApp conversations.',
+    maxTokens: 300
+  });
+
+  if (currentStepData?.collectField) {
+    const extracted = await extractFieldValue(message, currentStepData.collectField);
+    if (extracted) {
+      state.collectedInfo = {
+        ...(state.collectedInfo || {}),
+        [currentStepData.collectField]: extracted
+      };
+    }
+  }
+
+  advanceWorkflowStep(state, template);
+  return reply;
+};
+
+const generatePersonalityResponse = async (message, state, config) => {
+  const systemPrompt = resolveSystemPrompt(config);
+  const historyMessages = state.conversationHistory
+    .slice(-10)
+    .map((entry) => ({
+      role: entry.role === 'assistant' ? 'assistant' : 'user',
+      content: entry.content
+    }));
+
+  historyMessages.push({ role: 'user', content: message });
 
   const response = await axios.post(
     'https://openrouter.ai/api/v1/chat/completions',
     {
       model: process.env.MODEL_NAME,
-      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      messages: [{ role: 'system', content: systemPrompt }, ...historyMessages],
       max_tokens: 300
     },
     {
@@ -74,98 +257,40 @@ const requestAIReply = async ({ systemPrompt, messages }) => {
   return content.trim();
 };
 
-const buildConversationMessages = (recentLogs, incomingMessage) => {
-  const historyMessages = [];
-
-  for (const log of recentLogs) {
-    if (log.incomingMessage) {
-      historyMessages.push({ role: 'user', content: log.incomingMessage });
-    }
-    if (log.aiReply && log.status === 'sent') {
-      historyMessages.push({ role: 'assistant', content: log.aiReply });
-    }
-  }
-
-  historyMessages.push({ role: 'user', content: incomingMessage });
-  return historyMessages;
-};
-
-const buildStoredHistory = (recentLogs, incomingMessage, aiReply) => {
-  const latestLog = recentLogs[recentLogs.length - 1];
-  const previousHistory = latestLog?.conversationHistory || [];
-
-  return [
-    ...previousHistory,
-    { role: 'user', content: incomingMessage, timestamp: new Date() },
-    { role: 'assistant', content: aiReply, timestamp: new Date() }
-  ].slice(-40);
-};
-
-const saveAutoReplyLog = async ({
-  userId,
-  contactPhone,
-  contactName,
-  incomingMessage,
-  aiReply,
-  status,
-  failReason = '',
-  sourceMessageId = '',
-  conversationHistory = []
-}) => {
-  return AutoReplyLog.create({
-    userId,
-    contactPhone,
-    contactName,
-    incomingMessage,
-    aiReply,
-    status,
-    failReason,
-    sourceMessageId,
-    conversationHistory
-  });
-};
-
-const findRecentLogs = async (userId, contactPhone, chatId) => {
-  const keys = [...new Set([contactPhone, chatId].filter(Boolean))];
-
-  return AutoReplyLog.find({
-    userId,
-    contactPhone: { $in: keys }
-  })
-    .sort({ createdAt: -1 })
-    .limit(10)
-    .lean();
-};
+const trimHistory = (history = []) => history.slice(-MAX_HISTORY);
 
 const handleIncomingMessage = async (client, userId, msg) => {
+  let contactPhone = '';
+  let contactName = '';
+  let chatId = '';
+  let sourceMessageId = '';
+
   try {
     if (!isAutoReplyEligibleMessage(msg)) return;
 
     const incomingMessage = String(msg.body || '').trim();
     if (!incomingMessage) return;
 
-    const sourceMessageId = getMessageId(msg);
+    sourceMessageId = getMessageId(msg);
     if (await isMessageAlreadyHandled(userId, sourceMessageId)) {
       return;
     }
 
     const config = await AutoReplyConfig.findOne({ userId });
-    if (!config || !config.isEnabled) {
-      return;
-    }
+    if (!config?.isEnabled) return;
 
-    const { chatId, contactName, contactPhone } = await resolveMessageContact(msg);
+    const resolved = await resolveMessageContact(msg);
+    chatId = resolved.chatId;
+    contactName = resolved.contactName;
+    contactPhone = resolved.contactPhone || chatId;
     if (!chatId) return;
 
     if (config.mode === 'selected') {
       const allowed = isContactSelected(config.selectedContacts, chatId, contactPhone);
       if (!allowed) {
-        console.log(
-          `Auto-reply skipped (not selected): chatId=${chatId} phone=${contactPhone} selected=${JSON.stringify(config.selectedContacts || [])}`
-        );
-        await saveAutoReplyLog({
+        await AutoReplyLog.create({
           userId,
-          contactPhone: contactPhone || chatId,
+          contactPhone,
           contactName,
           incomingMessage,
           aiReply: '',
@@ -177,34 +302,92 @@ const handleIncomingMessage = async (client, userId, msg) => {
       }
     }
 
-    const recentLogs = await findRecentLogs(userId, contactPhone, chatId);
-    recentLogs.reverse();
+    let state = await ConversationState.findOne({ userId, contactPhone: chatId });
+    if (!state) {
+      state = new ConversationState({
+        userId,
+        contactPhone: chatId,
+        contactName,
+        conversationHistory: [],
+        collectedInfo: {}
+      });
+    }
 
-    const systemPrompt = resolveSystemPrompt(config);
-    const aiMessages = buildConversationMessages(recentLogs, incomingMessage);
-    let aiReply = '';
+    if (contactName && state.contactName !== contactName) {
+      state.contactName = contactName;
+    }
+
+    const now = new Date();
+    state.conversationHistory.push({ role: 'user', content: incomingMessage, timestamp: now });
+    state.conversationHistory = trimHistory(state.conversationHistory);
+
+    if (state.isCompleted) {
+      state.activeTemplateId = null;
+      state.currentStep = 0;
+      state.collectedInfo = {};
+      state.isCompleted = false;
+      state.intentDetectedAt = null;
+    }
+
+    let newlyActivatedTemplate = null;
+
+    if (!state.activeTemplateId) {
+      const templates = await AITemplate.find({ userId, isActive: true }).sort({ priority: 1 });
+      if (templates.length > 0) {
+        newlyActivatedTemplate = await detectIntent(
+          incomingMessage,
+          state.conversationHistory,
+          templates
+        );
+
+        if (newlyActivatedTemplate) {
+          state.activeTemplateId = newlyActivatedTemplate._id;
+          state.currentStep = 0;
+          state.isCompleted = false;
+          state.collectedInfo = {};
+          state.intentDetectedAt = now;
+        }
+      }
+    }
+
+    let reply = '';
 
     console.log(
-      `Auto-reply processing message from ${contactName || contactPhone || chatId}: "${incomingMessage.slice(0, 80)}"`
+      `Auto-reply processing message from ${contactName || contactPhone}: "${incomingMessage.slice(0, 80)}"`
     );
 
     try {
-      aiReply = await requestAIReply({
-        systemPrompt,
-        messages: aiMessages
-      });
+      if (state.activeTemplateId) {
+        const template = newlyActivatedTemplate || (await AITemplate.findById(state.activeTemplateId));
+
+        if (!template) {
+          state.activeTemplateId = null;
+          reply = await generatePersonalityResponse(incomingMessage, state, config);
+        } else if (newlyActivatedTemplate && template.initialMessage) {
+          reply = template.initialMessage;
+          if ((template.workflowSteps || []).length > 0) {
+            advanceWorkflowStep(state, template);
+          } else {
+            state.isCompleted = true;
+          }
+        } else {
+          reply = await generateTemplateResponse(incomingMessage, state, template);
+        }
+      } else {
+        reply = await generatePersonalityResponse(incomingMessage, state, config);
+      }
     } catch (err) {
       console.error(`Auto-reply AI failed for user ${userId}:`, err.message);
-      await saveAutoReplyLog({
+      await AutoReplyLog.create({
         userId,
-        contactPhone: contactPhone || chatId,
+        contactPhone,
         contactName,
         incomingMessage,
         aiReply: '',
         status: 'failed',
         sourceMessageId,
         failReason: err.message,
-        conversationHistory: buildStoredHistory(recentLogs, incomingMessage, '')
+        conversationHistory: state.conversationHistory
       });
       return;
     }
@@ -212,34 +395,39 @@ const handleIncomingMessage = async (client, userId, msg) => {
     await sleep(config.delay || 2000);
 
     try {
-      await sendWhatsAppReply(client, msg, chatId, aiReply);
-
-      console.log(`Auto-reply sent to ${contactPhone || chatId}`);
-
-      await saveAutoReplyLog({
-        userId,
-        contactPhone: contactPhone || chatId,
-        contactName,
-        incomingMessage,
-        aiReply,
-        status: 'sent',
-        sourceMessageId,
-        conversationHistory: buildStoredHistory(recentLogs, incomingMessage, aiReply)
-      });
+      await sendWhatsAppReply(client, msg, chatId, reply);
+      console.log(`Auto-reply sent to ${contactPhone}`);
     } catch (err) {
       console.error(`Auto-reply send failed for user ${userId}:`, err.message);
-      await saveAutoReplyLog({
+      await AutoReplyLog.create({
         userId,
-        contactPhone: contactPhone || chatId,
+        contactPhone,
         contactName,
         incomingMessage,
-        aiReply,
+        aiReply: reply,
         status: 'failed',
         sourceMessageId,
         failReason: err.message,
-        conversationHistory: buildStoredHistory(recentLogs, incomingMessage, aiReply)
+        conversationHistory: state.conversationHistory
       });
+      return;
     }
+
+    state.conversationHistory.push({ role: 'assistant', content: reply, timestamp: new Date() });
+    state.conversationHistory = trimHistory(state.conversationHistory);
+    state.lastMessageAt = new Date();
+    await state.save();
+
+    await AutoReplyLog.create({
+      userId,
+      contactPhone,
+      contactName,
+      incomingMessage,
+      aiReply: reply,
+      status: 'sent',
+      sourceMessageId,
+      conversationHistory: state.conversationHistory
+    });
   } catch (err) {
     console.error(`Auto-reply handler error for user ${userId}:`, err.message);
   }

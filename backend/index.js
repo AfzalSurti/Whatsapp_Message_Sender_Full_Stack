@@ -67,6 +67,7 @@ app.use('/api/keys', require('./routes/keys'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/scheduled', require('./routes/scheduled'));
 app.use('/api/templates', require('./routes/templates'));
+app.use('/api/ai-templates', require('./routes/aiTemplates'));
 app.use('/api/auto-reply', require('./routes/autoReply'));
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────
