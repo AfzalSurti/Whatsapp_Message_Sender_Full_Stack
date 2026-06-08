@@ -1,7 +1,7 @@
 'use client';
 
-import { Loader2, Plus, X } from 'lucide-react';
-import { getTagStyle } from '@/lib/segmentTags';
+import { Loader2, X } from 'lucide-react';
+import SegmentTagPicker from '@/components/dashboard/SegmentTagPicker';
 
 export default function EditContactModal({
   open,
@@ -11,8 +11,9 @@ export default function EditContactModal({
   setName,
   tagLibrary,
   selectedTags,
-  toggleTag,
+  onSelectedTagsChange,
   onCreateTag,
+  creatingTag,
   saving,
   onSave
 }) {
@@ -41,37 +42,14 @@ export default function EditContactModal({
             />
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs text-gray-500">Segment Tags</label>
-              <button
-                type="button"
-                onClick={onCreateTag}
-                className="text-xs text-[#25D366] inline-flex items-center gap-1"
-              >
-                <Plus size={14} /> New tag
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {tagLibrary.map((tag) => {
-                const active = selectedTags.includes(tag.name);
-                const style = getTagStyle(tag.name, tagLibrary);
-                return (
-                  <button
-                    key={tag._id}
-                    type="button"
-                    onClick={() => toggleTag(tag.name)}
-                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                      active ? 'ring-1 ring-white/30' : 'opacity-70 hover:opacity-100'
-                    }`}
-                    style={active ? style : { borderColor: 'rgba(255,255,255,0.12)', color: '#9ca3af' }}
-                  >
-                    {tag.name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <SegmentTagPicker
+            tagLibrary={tagLibrary}
+            selectedTags={selectedTags}
+            onSelectedChange={onSelectedTagsChange}
+            onCreateTag={onCreateTag}
+            creatingTag={creatingTag}
+            label="Segment Tags"
+          />
 
           <button
             type="button"

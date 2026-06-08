@@ -6,22 +6,21 @@ import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { groupsAPI } from '@/lib/api';
 import InternationalPhoneInput from '@/components/InternationalPhoneInput';
-import CreateTagModal from '@/components/dashboard/CreateTagModal';
+import SegmentTagPicker from '@/components/dashboard/SegmentTagPicker';
 import EditContactModal from '@/components/dashboard/EditContactModal';
+import ConfirmModal from '@/components/dashboard/ConfirmModal';
 import {
   DEFAULT_PHONE_COUNTRY,
   formatPhoneNumber,
   normalizePhoneNumber
 } from '@/lib/phone';
 import {
-  TAG_CATEGORIES,
   getInitials,
   getTagStyle,
   parseCsvContacts
 } from '@/lib/segmentTags';
 import {
   Loader2,
-  Plus,
   Search,
   Trash2,
   Upload,
@@ -57,11 +56,8 @@ export default function GroupsPage() {
   const [editTags, setEditTags] = useState([]);
   const [savingEdit, setSavingEdit] = useState(false);
 
-  const [showTagModal, setShowTagModal] = useState(false);
-  const [newTagName, setNewTagName] = useState('');
-  const [newTagCategory, setNewTagCategory] = useState('custom');
-  const [newTagColor, setNewTagColor] = useState('#25D366');
   const [creatingTag, setCreatingTag] = useState(false);
+  const [contactToDelete, setContactToDelete] = useState(null);
   const [deletingPhone, setDeletingPhone] = useState(null);
 
   const fetchOverview = useCallback(async () => {
@@ -85,14 +81,6 @@ export default function GroupsPage() {
   useEffect(() => {
     if (user) fetchOverview();
   }, [user, fetchOverview]);
-
-  const tagsByCategory = useMemo(() => {
-    const map = {};
-    TAG_CATEGORIES.forEach((cat) => {
-      map[cat.id] = tagLibrary.filter((tag) => tag.category === cat.id);
-    });
-    return map;
-  }, [tagLibrary]);
 
   const filteredContacts = useMemo(() => {
     let list = contacts;
@@ -120,52 +108,38 @@ export default function GroupsPage() {
     [groups]
   );
 
-  const toggleFilterTag = (tagName) => {
-    setActiveTagFilters((prev) =>
-      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
-    );
-  };
-
-  const toggleAddTag = (tagName) => {
-    setAddTags((prev) =>
-      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
-    );
-  };
-
-  const toggleEditTag = (tagName) => {
-    setEditTags((prev) =>
-      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
-    );
-  };
-
-  const handleCreateTag = async () => {
-    if (!newTagName.trim()) {
+  const handleCreateTag = async (name, target) => {
+    const trimmed = name.trim();
+    if (!trimmed) {
       toast.error('Enter a tag name');
-      return;
+      return false;
     }
 
     setCreatingTag(true);
     try {
       const res = await groupsAPI.createTag({
-        name: newTagName.trim(),
-        category: newTagCategory,
-        color: newTagColor
+        name: trimmed,
+        category: 'custom',
+        color: '#25D366'
       });
       setTagLibrary((prev) => [...prev, res.data.tag].sort((a, b) => a.name.localeCompare(b.name)));
       const createdName = res.data.tag.name;
-      if (showAddModal) {
+
+      if (target === 'add') {
         setAddTags((prev) => (prev.includes(createdName) ? prev : [...prev, createdName]));
       }
-      if (showEditModal) {
+      if (target === 'edit') {
         setEditTags((prev) => (prev.includes(createdName) ? prev : [...prev, createdName]));
       }
-      setShowTagModal(false);
-      setNewTagName('');
-      setNewTagCategory('custom');
-      setNewTagColor('#25D366');
+      if (target === 'filter') {
+        setActiveTagFilters((prev) => (prev.includes(createdName) ? prev : [...prev, createdName]));
+      }
+
       toast.success('Tag created');
+      return true;
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to create tag');
+      return false;
     } finally {
       setCreatingTag(false);
     }
@@ -233,17 +207,17 @@ export default function GroupsPage() {
     }
   };
 
-  const handleDeleteContact = async (contact) => {
-    const label = contact.name || formatPhoneNumber(contact.phone) || contact.phone;
-    if (!window.confirm(`Delete contact "${label}"? This cannot be undone.`)) return;
+  const handleDeleteContact = async () => {
+    if (!contactToDelete) return;
 
-    setDeletingPhone(contact.phone);
+    setDeletingPhone(contactToDelete.phone);
     try {
-      await groupsAPI.deleteContact(contact.phone);
+      await groupsAPI.deleteContact(contactToDelete.phone);
       toast.success('Contact deleted');
-      if (editPhone === contact.phone) {
+      if (editPhone === contactToDelete.phone) {
         setShowEditModal(false);
       }
+      setContactToDelete(null);
       await fetchOverview();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to delete contact');
@@ -251,6 +225,12 @@ export default function GroupsPage() {
       setDeletingPhone(null);
     }
   };
+
+  const deleteContactLabel =
+    contactToDelete?.name ||
+    formatPhoneNumber(contactToDelete?.phone) ||
+    contactToDelete?.phone ||
+    'this contact';
 
   const handleImportCsv = async (event) => {
     const file = event.target.files?.[0];
@@ -319,59 +299,16 @@ export default function GroupsPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Filter sidebar */}
-          <div className="lg:col-span-1 bg-[#111] border border-white/10 rounded-2xl p-5 space-y-5 h-fit">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold">Filter Segments</h2>
-              <button
-                type="button"
-                onClick={() => setShowTagModal(true)}
-                className="text-xs text-[#25D366] inline-flex items-center gap-1"
-              >
-                <Plus size={14} /> New tag
-              </button>
-            </div>
-
-            {TAG_CATEGORIES.map((category) => {
-              const tags = tagsByCategory[category.id] || [];
-              if (tags.length === 0) return null;
-
-              return (
-                <div key={category.id}>
-                  <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">
-                    {category.label}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {tags.map((tag) => {
-                      const active = activeTagFilters.includes(tag.name);
-                      const style = getTagStyle(tag.name, tagLibrary);
-                      return (
-                        <button
-                          key={tag._id}
-                          type="button"
-                          onClick={() => toggleFilterTag(tag.name)}
-                          className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                            active ? 'ring-1 ring-white/25' : 'opacity-80 hover:opacity-100'
-                          }`}
-                          style={active ? style : { borderColor: 'rgba(255,255,255,0.12)', color: '#d1d5db' }}
-                        >
-                          {tag.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-
-            {activeTagFilters.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setActiveTagFilters([])}
-                className="text-xs text-gray-400 hover:text-white"
-              >
-                Clear filters
-              </button>
-            )}
+          <div className="lg:col-span-1 bg-[#111] border border-white/10 rounded-2xl p-5 h-fit">
+            <h2 className="font-semibold mb-4">Filter Segments</h2>
+            <SegmentTagPicker
+              tagLibrary={tagLibrary}
+              selectedTags={activeTagFilters}
+              onSelectedChange={setActiveTagFilters}
+              onCreateTag={(name) => handleCreateTag(name, 'filter')}
+              creatingTag={creatingTag}
+              label="Active filters"
+            />
           </div>
 
           {/* Contact list */}
@@ -449,7 +386,7 @@ export default function GroupsPage() {
                         <button
                           type="button"
                           disabled={deletingPhone === contact.phone}
-                          onClick={() => handleDeleteContact(contact)}
+                          onClick={() => setContactToDelete(contact)}
                           className="p-2 rounded-lg border border-white/10 hover:border-red-500/40 text-red-400 disabled:opacity-50"
                           title="Delete contact"
                         >
@@ -498,37 +435,13 @@ export default function GroupsPage() {
                 placeholder="Phone number"
               />
 
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs text-gray-500">Segment tags</p>
-                  <button
-                    type="button"
-                    onClick={() => setShowTagModal(true)}
-                    className="text-xs text-[#25D366] inline-flex items-center gap-1"
-                  >
-                    <Plus size={14} /> New tag
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {tagLibrary.map((tag) => {
-                    const active = addTags.includes(tag.name);
-                    const style = getTagStyle(tag.name, tagLibrary);
-                    return (
-                      <button
-                        key={tag._id}
-                        type="button"
-                        onClick={() => toggleAddTag(tag.name)}
-                        className={`text-xs px-3 py-1.5 rounded-full border ${
-                          active ? 'ring-1 ring-white/25' : 'opacity-70'
-                        }`}
-                        style={active ? style : { borderColor: 'rgba(255,255,255,0.12)', color: '#9ca3af' }}
-                      >
-                        {tag.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <SegmentTagPicker
+                tagLibrary={tagLibrary}
+                selectedTags={addTags}
+                onSelectedChange={setAddTags}
+                onCreateTag={(name) => handleCreateTag(name, 'add')}
+                creatingTag={creatingTag}
+              />
 
               <button
                 type="button"
@@ -552,23 +465,21 @@ export default function GroupsPage() {
         setName={setEditName}
         tagLibrary={tagLibrary}
         selectedTags={editTags}
-        toggleTag={toggleEditTag}
-        onCreateTag={() => setShowTagModal(true)}
+        onSelectedTagsChange={setEditTags}
+        onCreateTag={(name) => handleCreateTag(name, 'edit')}
+        creatingTag={creatingTag}
         saving={savingEdit}
         onSave={handleSaveEdit}
       />
 
-      <CreateTagModal
-        open={showTagModal}
-        onClose={() => setShowTagModal(false)}
-        name={newTagName}
-        setName={setNewTagName}
-        category={newTagCategory}
-        setCategory={setNewTagCategory}
-        color={newTagColor}
-        setColor={setNewTagColor}
-        saving={creatingTag}
-        onSubmit={handleCreateTag}
+      <ConfirmModal
+        open={Boolean(contactToDelete)}
+        onClose={() => setContactToDelete(null)}
+        title="Are you sure you want to delete this contact?"
+        message={`"${deleteContactLabel}" will be permanently removed from your contacts. This action cannot be undone.`}
+        confirmLabel="Yes, Delete"
+        onConfirm={handleDeleteContact}
+        confirming={Boolean(deletingPhone)}
       />
     </div>
   );

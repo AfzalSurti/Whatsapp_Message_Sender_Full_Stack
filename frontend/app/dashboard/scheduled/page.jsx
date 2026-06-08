@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { DEFAULT_PHONE_COUNTRY, formatPhoneNumber, normalizePhoneNumber } from '@/lib/phone';
-import { getTagStyle } from '@/lib/segmentTags';
+import { getTagStyle, TAG_CATEGORIES } from '@/lib/segmentTags';
 import {
   extractVariables,
   getMissingScheduleVariables,
@@ -129,8 +129,8 @@ export default function ScheduledPage() {
   const [showScheduleForm, setShowScheduleForm] = useState(false);
   const [step, setStep] = useState(1); // 1, 2, 3
 
-  const [allGroups, setAllGroups] = useState([]);
-  const [loadingGroups, setLoadingGroups] = useState(false);
+  const [allContacts, setAllContacts] = useState([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
 
@@ -158,8 +158,8 @@ export default function ScheduledPage() {
   const [scheduleTime, setScheduleTime] = useState('');
 
   // Step 2 state
-  const [selectedGroupIds, setSelectedGroupIds] = useState([]);
-  const [selectedGroupContacts, setSelectedGroupContacts] = useState([]);
+  const [selectedContactPhones, setSelectedContactPhones] = useState([]);
+  const [contactPickerSearch, setContactPickerSearch] = useState('');
   const [individualPhone, setIndividualPhone] = useState('');
   const [individualPhoneCountry, setIndividualPhoneCountry] = useState(DEFAULT_PHONE_COUNTRY);
   const [selectedIndividuals, setSelectedIndividuals] = useState([]);
@@ -184,19 +184,16 @@ export default function ScheduledPage() {
     }
   }, []);
 
-  const fetchGroups = useCallback(async () => {
+  const fetchContactsOverview = useCallback(async () => {
     try {
-      setLoadingGroups(true);
-      const [groupsRes, tagsRes] = await Promise.all([
-        groupsAPI.getGroups(),
-        groupsAPI.getTags()
-      ]);
-      setAllGroups(groupsRes.data.groups || []);
-      setTagLibrary(tagsRes.data.tags || []);
+      setLoadingContacts(true);
+      const res = await groupsAPI.getOverview();
+      setAllContacts(res.data.contacts || []);
+      setTagLibrary(res.data.tags || []);
     } catch (err) {
-      toast.error('Failed to load groups');
+      toast.error('Failed to load contacts');
     } finally {
-      setLoadingGroups(false);
+      setLoadingContacts(false);
     }
   }, []);
 
@@ -221,10 +218,10 @@ export default function ScheduledPage() {
   useEffect(() => {
     if (user) {
       fetchCampaigns();
-      fetchGroups();
+      fetchContactsOverview();
       fetchTemplates();
     }
-  }, [user, fetchCampaigns, fetchGroups, fetchTemplates]);
+  }, [user, fetchCampaigns, fetchContactsOverview, fetchTemplates]);
 
   const applyTemplateSelection = useCallback((template) => {
     if (!template) return;
@@ -273,71 +270,76 @@ export default function ScheduledPage() {
     }
   };
 
+  const tagsByCategory = useMemo(() => {
+    const map = {};
+    TAG_CATEGORIES.forEach((cat) => {
+      map[cat.id] = tagLibrary.filter((tag) => tag.category === cat.id);
+    });
+    return map;
+  }, [tagLibrary]);
+
+  const filteredContactsForPicker = useMemo(() => {
+    let list = allContacts;
+
+    if (selectedSegmentTags.length > 0) {
+      list = list.filter((contact) =>
+        selectedSegmentTags.every((tag) => contact.tags?.includes(tag))
+      );
+    }
+
+    const query = contactPickerSearch.trim().toLowerCase();
+    if (query) {
+      list = list.filter(
+        (contact) =>
+          String(contact.name || '').toLowerCase().includes(query) ||
+          String(contact.phone || '').includes(query.replace(/\D/g, ''))
+      );
+    }
+
+    return list;
+  }, [allContacts, contactPickerSearch, selectedSegmentTags]);
+
+  const visibleContactPhones = useMemo(
+    () => filteredContactsForPicker.map((contact) => contact.phone.replace(/\D/g, '')),
+    [filteredContactsForPicker]
+  );
+
+  const allVisibleSelected =
+    visibleContactPhones.length > 0 &&
+    visibleContactPhones.every((phone) => selectedContactPhones.includes(phone));
+
   const buildRecipients = useCallback(() => {
     const recipients = [];
     const phoneSet = new Set();
 
-    if (selectedSegmentTags.length > 0) {
-      allGroups.forEach((group) => {
-        (group.numbers || []).forEach((num) => {
-          const entryTags = num.tags || [];
-          const matches = selectedSegmentTags.every((tag) => entryTags.includes(tag));
-          if (!matches) return;
-
-          const clean = num.phone.replace(/\D/g, '');
-          if (phoneSet.has(clean)) return;
-
-          phoneSet.add(clean);
-          recipients.push({
-            name: num.name || '',
-            phone: clean,
-            segment: entryTags.length > 0 ? entryTags.join(', ') : group.name
-          });
-        });
-      });
-    }
-
-    selectedGroupIds.forEach((groupId) => {
-      const group = allGroups.find((g) => g._id === groupId);
-      if (!group) return;
-
-      group.numbers.forEach((num) => {
-        const clean = num.phone.replace(/\D/g, '');
-        if (!phoneSet.has(clean)) {
-          phoneSet.add(clean);
-          recipients.push({
-            name: num.name || '',
-            phone: clean,
-            segment: group.name
-          });
-        }
-      });
-    });
-
-    selectedGroupContacts.forEach((phone) => {
+    selectedContactPhones.forEach((phone) => {
       const clean = phone.replace(/\D/g, '');
       if (phoneSet.has(clean)) return;
 
-      let name = '';
-      allGroups.forEach((group) => {
-        const match = (group.numbers || []).find((num) => num.phone.replace(/\D/g, '') === clean);
-        if (match?.name) name = match.name;
-      });
-
+      const contact = allContacts.find((item) => item.phone.replace(/\D/g, '') === clean);
       phoneSet.add(clean);
-      recipients.push({ name, phone: clean, segment: '' });
+      recipients.push({
+        name: contact?.name || '',
+        phone: clean,
+        segment: (contact?.tags || []).join(', ') || ''
+      });
     });
 
     selectedIndividuals.forEach((phone) => {
       const clean = phone.replace(/\D/g, '');
-      if (!phoneSet.has(clean)) {
-        phoneSet.add(clean);
-        recipients.push({ name: '', phone: clean, segment: '' });
-      }
+      if (phoneSet.has(clean)) return;
+
+      const contact = allContacts.find((item) => item.phone.replace(/\D/g, '') === clean);
+      phoneSet.add(clean);
+      recipients.push({
+        name: contact?.name || '',
+        phone: clean,
+        segment: (contact?.tags || []).join(', ') || ''
+      });
     });
 
     return recipients;
-  }, [allGroups, selectedGroupContacts, selectedGroupIds, selectedIndividuals, selectedSegmentTags]);
+  }, [allContacts, selectedContactPhones, selectedIndividuals]);
 
   const activeTemplateVariables = useMemo(
     () => extractVariables(message),
@@ -405,7 +407,7 @@ export default function ScheduledPage() {
 
   const stepTwoBlockers = useMemo(() => {
     if (totalContactsCount > 0) return [];
-    return ['Select at least one group or phone number'];
+    return ['Select at least one contact or phone number'];
   }, [totalContactsCount]);
 
   const canProceedStep2 = stepTwoBlockers.length === 0;
@@ -419,24 +421,48 @@ export default function ScheduledPage() {
       return;
     }
 
-    const results = [];
-    allGroups.forEach(group => {
-      group.numbers.forEach(num => {
-        if (
-          num.phone.includes(query) ||
-          num.name.toLowerCase().includes(query.toLowerCase())
-        ) {
-          results.push({ phone: num.phone, name: num.name });
-        }
-      });
-    });
+    const q = query.trim().toLowerCase();
+    const results = allContacts
+      .filter(
+        (contact) =>
+          String(contact.phone || '').includes(q.replace(/\D/g, '')) ||
+          String(contact.name || '').toLowerCase().includes(q)
+      )
+      .map((contact) => ({ phone: contact.phone, name: contact.name || '' }));
 
     setSearchResults(results.slice(0, 10));
   };
 
+  const toggleContactSelection = (phone) => {
+    const clean = phone.replace(/\D/g, '');
+    setSelectedContactPhones((prev) =>
+      prev.includes(clean) ? prev.filter((item) => item !== clean) : [...prev, clean]
+    );
+  };
+
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      setSelectedContactPhones((prev) =>
+        prev.filter((phone) => !visibleContactPhones.includes(phone))
+      );
+      return;
+    }
+
+    setSelectedContactPhones((prev) => [...new Set([...prev, ...visibleContactPhones])]);
+  };
+
+  const toggleSegmentTag = (tagName) => {
+    setSelectedSegmentTags((prev) =>
+      prev.includes(tagName) ? prev.filter((tag) => tag !== tagName) : [...prev, tagName]
+    );
+  };
+
   const handleAddIndividual = (phone, name) => {
     const clean = phone.replace(/\D/g, '');
-    if (selectedIndividuals.some(n => n.replace(/\D/g, '') === clean)) {
+    if (
+      selectedIndividuals.some((item) => item.replace(/\D/g, '') === clean) ||
+      selectedContactPhones.includes(clean)
+    ) {
       toast.error('Already added');
       return;
     }
@@ -454,7 +480,10 @@ export default function ScheduledPage() {
     }
 
     const clean = normalized.e164.replace(/\D/g, '');
-    if (selectedIndividuals.some(number => number.replace(/\D/g, '') === clean)) {
+    if (
+      selectedIndividuals.some((number) => number.replace(/\D/g, '') === clean) ||
+      selectedContactPhones.includes(clean)
+    ) {
       toast.error('Already added');
       return;
     }
@@ -464,15 +493,8 @@ export default function ScheduledPage() {
     setIndividualPhoneCountry(normalized.country || individualPhoneCountry);
   };
 
-  const toggleGroupContact = (phone) => {
-    const clean = phone.replace(/\D/g, '');
-    setSelectedGroupContacts(prev =>
-      prev.includes(clean) ? prev.filter(item => item !== clean) : [...prev, clean]
-    );
-  };
-
   const handleRemoveIndividual = (phone) => {
-    setSelectedIndividuals(selectedIndividuals.filter(n => n !== phone));
+    setSelectedIndividuals(selectedIndividuals.filter((item) => item !== phone));
   };
 
   const handleSelectTemplate = (template) => {
@@ -508,13 +530,8 @@ export default function ScheduledPage() {
       toast.error('Select date and time');
       return;
     }
-    if (
-      selectedGroupIds.length === 0 &&
-      selectedIndividuals.length === 0 &&
-      selectedGroupContacts.length === 0 &&
-      selectedSegmentTags.length === 0
-    ) {
-      toast.error('Select at least one segment, group, or number');
+    if (selectedContactPhones.length === 0 && selectedIndividuals.length === 0) {
+      toast.error('Select at least one contact or phone number');
       return;
     }
 
@@ -545,12 +562,10 @@ export default function ScheduledPage() {
         message,
         scheduledAt: dateTime.toISOString(),
         timezone: 'Asia/Kolkata',
-        groupIds: selectedGroupIds,
-        segmentTags: selectedSegmentTags,
-        individualNumbers: [
-          ...selectedGroupContacts.map((phone) => ({ phone })),
-          ...selectedIndividuals.map((phone) => ({ phone }))
-        ],
+        individualNumbers: recipients.map((recipient) => ({
+          phone: recipient.phone,
+          name: recipient.name
+        })),
         templateId: messageMode === 'template' ? selectedTemplateId : undefined,
         templateVariables
       });
@@ -579,8 +594,8 @@ export default function ScheduledPage() {
     setAiSectionOpen(false);
     setScheduleDate('');
     setScheduleTime('');
-    setSelectedGroupIds([]);
-    setSelectedGroupContacts([]);
+    setSelectedContactPhones([]);
+    setContactPickerSearch('');
     setIndividualPhone('');
     setIndividualPhoneCountry(DEFAULT_PHONE_COUNTRY);
     setSelectedIndividuals([]);
@@ -648,7 +663,7 @@ export default function ScheduledPage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">Scheduled Campaigns</h1>
-            <p className="text-sm text-gray-400 mt-1">Plan and automate WhatsApp campaigns with groups and individual recipients.</p>
+            <p className="text-sm text-gray-400 mt-1">Plan and automate WhatsApp campaigns with segment tags and contacts.</p>
           </div>
           <button
             onClick={() => setShowScheduleForm(true)}
@@ -687,7 +702,6 @@ export default function ScheduledPage() {
           <div className="space-y-3">
             {filteredCampaigns.map(campaign => {
               const badge = getStatusBadge(campaign.status);
-              const groupCount = campaign.groupIds?.length || 0;
               const recipientCount =
                 campaign.totalNumbers ||
                 campaign.totalRecipients ||
@@ -721,9 +735,6 @@ export default function ScheduledPage() {
                     )}
 
                     <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
-                      <span className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
-                        {groupCount} group{groupCount !== 1 ? 's' : ''}
-                      </span>
                       <span className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
                         {recipientCount} recipient{recipientCount !== 1 ? 's' : ''}
                       </span>
@@ -1162,7 +1173,12 @@ export default function ScheduledPage() {
               {step === 2 && (
                 <div className="space-y-4">
                   <div>
-                    <p className="text-sm font-medium text-gray-300 mb-3">Filter by Segment Tags</p>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-medium text-gray-300">Filter by Segment Tags</p>
+                      <Link href="/dashboard/groups" className="text-xs text-[#25D366] hover:underline">
+                        Manage contacts
+                      </Link>
+                    </div>
                     {tagLibrary.length === 0 ? (
                       <p className="text-xs text-gray-500">
                         No tags yet.{' '}
@@ -1171,96 +1187,145 @@ export default function ScheduledPage() {
                         </Link>
                       </p>
                     ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {tagLibrary.map((tag) => {
-                          const active = selectedSegmentTags.includes(tag.name);
-                          const style = getTagStyle(tag.name, tagLibrary);
+                      <div className="space-y-4">
+                        {TAG_CATEGORIES.map((category) => {
+                          const tags = tagsByCategory[category.id] || [];
+                          if (tags.length === 0) return null;
+
                           return (
-                            <button
-                              key={tag._id}
-                              type="button"
-                              onClick={() =>
-                                setSelectedSegmentTags((prev) =>
-                                  prev.includes(tag.name)
-                                    ? prev.filter((t) => t !== tag.name)
-                                    : [...prev, tag.name]
-                                )
-                              }
-                              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                                active ? 'ring-1 ring-white/25' : 'opacity-75 hover:opacity-100'
-                              }`}
-                              style={active ? style : { borderColor: 'rgba(255,255,255,0.12)', color: '#d1d5db' }}
-                            >
-                              {tag.name}
-                            </button>
+                            <div key={category.id}>
+                              <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">
+                                {category.label}
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {tags.map((tag) => {
+                                  const active = selectedSegmentTags.includes(tag.name);
+                                  const style = getTagStyle(tag.name, tagLibrary);
+                                  return (
+                                    <button
+                                      key={tag._id}
+                                      type="button"
+                                      onClick={() => toggleSegmentTag(tag.name)}
+                                      className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                                        active ? 'ring-1 ring-white/25' : 'opacity-75 hover:opacity-100'
+                                      }`}
+                                      style={
+                                        active
+                                          ? style
+                                          : { borderColor: 'rgba(255,255,255,0.12)', color: '#d1d5db' }
+                                      }
+                                    >
+                                      {tag.name}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           );
                         })}
                       </div>
                     )}
                     {selectedSegmentTags.length > 0 && (
-                      <p className="text-xs text-gray-500 mt-2">
-                        Contacts matching all selected tags will be included.
-                      </p>
+                      <div className="flex items-center justify-between mt-3">
+                        <p className="text-xs text-gray-500">
+                          Showing contacts matching all selected tags.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSegmentTags([])}
+                          className="text-xs text-gray-400 hover:text-white"
+                        >
+                          Clear tag filters
+                        </button>
+                      </div>
                     )}
                   </div>
 
                   <div>
-                    <p className="text-sm font-medium text-gray-300 mb-3">Select Groups</p>
-                    {loadingGroups ? (
-                      <div className="flex items-center justify-center py-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                      <p className="text-sm font-medium text-gray-300">Select Contacts</p>
+                      {filteredContactsForPicker.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={toggleSelectAllVisible}
+                          className="text-xs text-[#25D366] hover:underline"
+                        >
+                          {allVisibleSelected ? 'Deselect all visible' : 'Select all visible'}
+                        </button>
+                      )}
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="Search contacts by name or phone..."
+                      value={contactPickerSearch}
+                      onChange={(e) => setContactPickerSearch(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-[#25D366] transition-colors mb-3"
+                    />
+
+                    {loadingContacts ? (
+                      <div className="flex items-center justify-center py-8">
                         <Loader2 size={16} className="animate-spin text-[#25D366]" />
                       </div>
-                    ) : allGroups.length === 0 ? (
-                      <p className="text-xs text-gray-500">No groups yet. <Link href="/dashboard/groups" className="text-[#25D366] hover:underline">Create one</Link></p>
+                    ) : allContacts.length === 0 ? (
+                      <p className="text-xs text-gray-500">
+                        No contacts yet.{' '}
+                        <Link href="/dashboard/groups" className="text-[#25D366] hover:underline">
+                          Add contacts
+                        </Link>
+                      </p>
+                    ) : filteredContactsForPicker.length === 0 ? (
+                      <p className="text-xs text-gray-500 py-6 text-center">
+                        No contacts match your tag filters.
+                      </p>
                     ) : (
-                      <div className="space-y-2">
-                        {allGroups.map(group => (
-                          <div key={group._id} className="p-3 bg-[#0a0a0a] border border-white/10 rounded-lg space-y-3">
-                            <label className="flex items-center gap-3 cursor-pointer">
+                      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                        {filteredContactsForPicker.map((contact) => {
+                          const clean = contact.phone.replace(/\D/g, '');
+                          const checked = selectedContactPhones.includes(clean);
+
+                          return (
+                            <label
+                              key={contact.phone}
+                              className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                                checked
+                                  ? 'border-[#25D366]/40 bg-[#25D366]/5'
+                                  : 'border-white/10 bg-[#0a0a0a] hover:border-white/20'
+                              }`}
+                            >
                               <input
                                 type="checkbox"
-                                checked={selectedGroupIds.includes(group._id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedGroupIds([...selectedGroupIds, group._id]);
-                                    setSelectedGroupContacts(selectedGroupContacts.filter(phone =>
-                                      !(group.numbers || []).some(num => num.phone.replace(/\D/g, '') === phone)
-                                    ));
-                                  } else {
-                                    setSelectedGroupIds(selectedGroupIds.filter(id => id !== group._id));
-                                  }
-                                }}
-                                className="cursor-pointer"
+                                checked={checked}
+                                onChange={() => toggleContactSelection(contact.phone)}
+                                className="mt-1 cursor-pointer"
                               />
-                              <div className="flex-1">
-                                <p className="text-sm text-white">{group.name}</p>
-                                <p className="text-xs text-gray-500">{group.count} contacts</p>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-white truncate">
+                                  {contact.name || 'Unknown'}
+                                </p>
+                                <p className="text-xs text-gray-500 truncate">
+                                  {formatPhoneNumber(contact.phone) || contact.phone}
+                                </p>
+                                {(contact.tags || []).length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {contact.tags.map((tag) => {
+                                      const style = getTagStyle(tag, tagLibrary);
+                                      return (
+                                        <span
+                                          key={`${contact.phone}-${tag}`}
+                                          className="text-[10px] px-2 py-0.5 rounded-full border"
+                                          style={style}
+                                        >
+                                          {tag}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
                             </label>
-
-                            {!selectedGroupIds.includes(group._id) && (group.numbers || []).length > 0 && (
-                              <div className="pl-6 space-y-2 max-h-40 overflow-y-auto">
-                                {group.numbers.map((num, idx) => {
-                                  const clean = num.phone.replace(/\D/g, '');
-                                  return (
-                                    <label key={`${clean}-${idx}`} className="flex items-start gap-2 text-xs cursor-pointer">
-                                      <input
-                                        type="checkbox"
-                                        checked={selectedGroupContacts.includes(clean)}
-                                        onChange={() => toggleGroupContact(clean)}
-                                        className="mt-0.5 cursor-pointer"
-                                      />
-                                      <span className="min-w-0">
-                                        <span className="block text-white truncate">{num.name || 'Unnamed'}</span>
-                                        <span className="block text-gray-500 truncate">{num.phone}</span>
-                                      </span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1371,6 +1436,22 @@ export default function ScheduledPage() {
                     <div className="border-t border-white/5 pt-3">
                       <p className="text-xs text-gray-500 uppercase tracking-wide">Recipients</p>
                       <p className="text-white font-medium mt-1">{totalContacts} contacts</p>
+                      {selectedSegmentTags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {selectedSegmentTags.map((tag) => {
+                            const style = getTagStyle(tag, tagLibrary);
+                            return (
+                              <span
+                                key={tag}
+                                className="text-[10px] px-2 py-0.5 rounded-full border"
+                                style={style}
+                              >
+                                {tag}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
