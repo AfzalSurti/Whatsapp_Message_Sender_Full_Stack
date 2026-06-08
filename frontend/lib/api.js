@@ -111,6 +111,22 @@ export const templatesAPI = {
   deleteTemplate: (id) => api.delete(`/api/templates/${id}`),
 };
 
+// ─── AI TEMPLATES (INTENT + WORKFLOW) ──────────────────────────
+export const aiTemplateAPI = {
+  getTemplates: () => api.get('/api/ai-templates'),
+  createTemplate: (data) => api.post('/api/ai-templates', data),
+  updateTemplate: (id, data) => api.put(`/api/ai-templates/${id}`, data),
+  deleteTemplate: (id) => api.delete(`/api/ai-templates/${id}`),
+  toggleTemplate: (id) => api.patch(`/api/ai-templates/${id}/toggle`),
+  getConversations: (params) => api.get('/api/ai-templates/conversations', { params }),
+  getConversation: (id) => api.get(`/api/ai-templates/conversations/${id}`),
+  deleteConversation: (id) => api.delete(`/api/ai-templates/conversations/${id}`),
+  getLeads: (params) => api.get('/api/ai-templates/leads', { params }),
+};
+
+// Backward-compatible alias
+export const templateAPI = aiTemplateAPI;
+
 // ─── AUTO REPLY ────────────────────────────────────────────────
 export const autoReplyAPI = {
   getConfig: () => api.get('/api/auto-reply/config'),
