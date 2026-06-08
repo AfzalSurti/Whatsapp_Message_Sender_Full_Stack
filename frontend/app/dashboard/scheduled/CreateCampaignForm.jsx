@@ -13,8 +13,9 @@ import Step3Message from '@/components/dashboard/campaign/Step3Message';
 import Step4Schedule from '@/components/dashboard/campaign/Step4Schedule';
 import Step5Review from '@/components/dashboard/campaign/Step5Review';
 import {
-  CAMPAIGN_TYPES,
-  WIZARD_STEPS
+  WIZARD_STEPS,
+  getMinScheduleDate,
+  getMinScheduleTime
 } from '@/lib/scheduledCampaign';
 import {
   getMissingScheduleVariables,
@@ -46,7 +47,6 @@ export default function CreateCampaignForm() {
   const [templates, setTemplates] = useState([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
 
-  const [campaignType, setCampaignType] = useState('');
   const [messageSource, setMessageSource] = useState('template');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -163,12 +163,11 @@ export default function CreateCampaignForm() {
       const blockers = [];
 
       if (currentStep === 1) {
-        if (!campaignType) blockers.push('Select a campaign type');
         if (messageSource === 'template' && !selectedTemplateId) {
           blockers.push('Select a template');
         }
         if (messageSource === 'manual' && !manualDetails.name.trim()) {
-          blockers.push('Enter a campaign / template name');
+          blockers.push('Enter a campaign name');
         }
       }
 
@@ -186,14 +185,21 @@ export default function CreateCampaignForm() {
 
       if (currentStep === 4) {
         if (scheduleMode === 'later') {
+          const minDate = getMinScheduleDate();
           if (!scheduleDate) blockers.push('Select a schedule date');
           if (!scheduleTime) blockers.push('Select a schedule time');
+          if (scheduleDate && scheduleDate < minDate) {
+            blockers.push('Cannot schedule for a past date');
+          }
           if (scheduleDate && scheduleTime) {
             const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
             if (Number.isNaN(scheduledAt.getTime())) {
               blockers.push('Enter a valid date and time');
             } else if (scheduledAt <= new Date(Date.now() + 60000)) {
               blockers.push('Schedule time must be at least 1 minute in the future');
+            }
+            if (scheduleDate === minDate && scheduleTime < getMinScheduleTime(scheduleDate)) {
+              blockers.push('Select a future time for today');
             }
           }
         }
@@ -202,7 +208,6 @@ export default function CreateCampaignForm() {
       return blockers;
     },
     [
-      campaignType,
       manualDetails.name,
       message,
       messageSource,
@@ -303,8 +308,7 @@ export default function CreateCampaignForm() {
       scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
     }
 
-    const typeLabel = CAMPAIGN_TYPES.find((t) => t.id === campaignType)?.label || 'Campaign';
-    const finalName = campaignName || typeLabel;
+    const finalName = campaignName || 'Untitled Campaign';
 
     setSubmitting(true);
     try {
@@ -384,8 +388,6 @@ export default function CreateCampaignForm() {
       <div className="p-6 min-h-[420px]">
         {step === 1 && (
           <Step1CampaignType
-            campaignType={campaignType}
-            setCampaignType={setCampaignType}
             messageSource={messageSource}
             setMessageSource={handleMessageSourceChange}
             templates={templates}
@@ -435,7 +437,8 @@ export default function CreateCampaignForm() {
         )}
         {step === 5 && (
           <Step5Review
-            campaignType={campaignType}
+            campaignName={campaignName}
+            messageSource={messageSource}
             selectedAudienceTags={selectedAudienceTags}
             recipientCount={recipientCount}
             scheduleMode={scheduleMode}

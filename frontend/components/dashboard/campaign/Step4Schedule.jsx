@@ -1,12 +1,17 @@
 'use client';
 
-import { Calendar, RefreshCw, Send } from 'lucide-react';
-import { SCHEDULE_MODES, SENDING_SPEEDS } from '@/lib/scheduledCampaign';
+import { useMemo } from 'react';
+import { Calendar, Send } from 'lucide-react';
+import {
+  getMinScheduleDate,
+  getMinScheduleTime,
+  SCHEDULE_MODES,
+  SENDING_SPEEDS
+} from '@/lib/scheduledCampaign';
 
 const MODE_ICONS = {
   send: Send,
-  calendar: Calendar,
-  repeat: RefreshCw
+  calendar: Calendar
 };
 
 export default function Step4Schedule({
@@ -19,6 +24,19 @@ export default function Step4Schedule({
   sendingSpeed,
   setSendingSpeed
 }) {
+  const minDate = useMemo(() => getMinScheduleDate(), []);
+  const minTime = useMemo(
+    () => getMinScheduleTime(scheduleDate),
+    [scheduleDate]
+  );
+
+  const handleDateChange = (value) => {
+    setScheduleDate(value);
+    if (value === minDate && scheduleTime && scheduleTime < minTime) {
+      setScheduleTime(minTime);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -32,20 +50,16 @@ export default function Step4Schedule({
           {SCHEDULE_MODES.map((mode) => {
             const Icon = MODE_ICONS[mode.icon];
             const active = scheduleMode === mode.id;
-            const disabled = mode.id === 'recurring';
 
             return (
               <button
                 key={mode.id}
                 type="button"
-                disabled={disabled}
-                onClick={() => !disabled && setScheduleMode(mode.id)}
+                onClick={() => setScheduleMode(mode.id)}
                 className={`w-full flex items-start gap-4 p-4 rounded-2xl border text-left transition-colors ${
-                  disabled
-                    ? 'border-white/5 bg-[#0a0f0d]/50 opacity-50 cursor-not-allowed'
-                    : active
-                      ? 'border-[#25D366]/50 bg-[#25D366]/10'
-                      : 'border-white/10 bg-[#0a0f0d] hover:border-white/20'
+                  active
+                    ? 'border-[#25D366]/50 bg-[#25D366]/10'
+                    : 'border-white/10 bg-[#0a0f0d] hover:border-white/20'
                 }`}
               >
                 <div
@@ -59,9 +73,6 @@ export default function Step4Schedule({
                   <div className="flex items-center gap-2">
                     <Icon size={16} className={active ? 'text-[#25D366]' : 'text-gray-400'} />
                     <span className="font-medium text-white">{mode.label}</span>
-                    {disabled && (
-                      <span className="text-[10px] uppercase tracking-wide text-gray-500">Soon</span>
-                    )}
                   </div>
                   <p className="text-xs text-gray-500 mt-1">{mode.subtitle}</p>
                 </div>
@@ -78,17 +89,24 @@ export default function Step4Schedule({
             <input
               type="date"
               value={scheduleDate}
-              onChange={(e) => setScheduleDate(e.target.value)}
-              className="w-full px-4 py-2.5 bg-[#0a0f0d] border border-white/10 rounded-xl text-sm cursor-pointer"
+              min={minDate}
+              onChange={(e) => handleDateChange(e.target.value)}
+              onClick={(e) => e.currentTarget.showPicker?.()}
+              onFocus={(e) => e.currentTarget.showPicker?.()}
+              className="w-full px-4 py-2.5 bg-[#0a0f0d] border border-white/10 rounded-xl text-sm cursor-pointer [color-scheme:dark]"
             />
+            <p className="text-[11px] text-gray-500 mt-1.5">Only today or future dates can be selected.</p>
           </div>
           <div>
             <label className="text-xs text-gray-400 block mb-2">Time</label>
             <input
               type="time"
               value={scheduleTime}
+              min={scheduleDate === minDate ? minTime : undefined}
               onChange={(e) => setScheduleTime(e.target.value)}
-              className="w-full px-4 py-2.5 bg-[#0a0f0d] border border-white/10 rounded-xl text-sm"
+              onClick={(e) => e.currentTarget.showPicker?.()}
+              onFocus={(e) => e.currentTarget.showPicker?.()}
+              className="w-full px-4 py-2.5 bg-[#0a0f0d] border border-white/10 rounded-xl text-sm cursor-pointer [color-scheme:dark]"
             />
           </div>
         </div>

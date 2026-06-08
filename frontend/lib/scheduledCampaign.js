@@ -1,5 +1,5 @@
 export const WIZARD_STEPS = [
-  { id: 1, label: 'Campaign Type' },
+  { id: 1, label: 'Message Source' },
   { id: 2, label: 'Audience' },
   { id: 3, label: 'Message' },
   { id: 4, label: 'Schedule' },
@@ -27,9 +27,25 @@ export const TEMPLATE_CATEGORIES = [
 
 export const SCHEDULE_MODES = [
   { id: 'now', label: 'Send Now', subtitle: 'Start immediately after launch', icon: 'send' },
-  { id: 'later', label: 'Schedule for Later', subtitle: 'Pick a specific date and time', icon: 'calendar' },
-  { id: 'recurring', label: 'Recurring Campaign', subtitle: 'Daily, weekly, or monthly automation', icon: 'repeat' }
+  { id: 'later', label: 'Schedule for Later', subtitle: 'Pick a specific date and time', icon: 'calendar' }
 ];
+
+export const getMinScheduleDate = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const getMinScheduleTime = (scheduleDate) => {
+  if (scheduleDate !== getMinScheduleDate()) return '';
+
+  const minTime = new Date(Date.now() + 2 * 60 * 1000);
+  const hours = String(minTime.getHours()).padStart(2, '0');
+  const minutes = String(minTime.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
 
 export const SENDING_SPEEDS = [
   { id: 'safe', label: 'Safe (30–60s delay)', description: 'Safe mode uses randomized 30–60s delays to protect your WhatsApp account.' },

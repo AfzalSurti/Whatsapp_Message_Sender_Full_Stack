@@ -1,14 +1,11 @@
 'use client';
 
 import { Send, Shield } from 'lucide-react';
-import {
-  CAMPAIGN_TYPES,
-  formatCampaignDate,
-  SENDING_SPEEDS
-} from '@/lib/scheduledCampaign';
+import { formatCampaignDate, SENDING_SPEEDS } from '@/lib/scheduledCampaign';
 
 export default function Step5Review({
-  campaignType,
+  campaignName,
+  messageSource,
   selectedAudienceTags,
   recipientCount,
   scheduleMode,
@@ -17,7 +14,6 @@ export default function Step5Review({
   sendingSpeed,
   message
 }) {
-  const typeLabel = CAMPAIGN_TYPES.find((t) => t.id === campaignType)?.label || 'Not selected';
   const audienceLabel =
     selectedAudienceTags.length === 0
       ? 'None selected'
@@ -35,7 +31,8 @@ export default function Step5Review({
   const speedLabel = SENDING_SPEEDS.find((s) => s.id === sendingSpeed)?.label || 'Safe';
 
   const rows = [
-    { label: 'Campaign Type', value: typeLabel },
+    { label: 'Campaign Name', value: campaignName || 'Untitled Campaign' },
+    { label: 'Message Source', value: messageSource === 'template' ? 'Template' : 'Manual' },
     { label: 'Target Segments', value: audienceLabel },
     { label: 'Est. Recipients', value: `${recipientCount.toLocaleString()} contacts` },
     { label: 'Schedule', value: scheduleLabel },
