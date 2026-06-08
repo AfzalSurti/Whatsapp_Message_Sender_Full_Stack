@@ -1,5 +1,6 @@
 const { validationResult } = require('express-validator');
 const ContactGroup = require('../models/ContactGroup');
+const { normalizeGroupNumbers } = require('../models/ContactGroup');
 const { normalizePhoneNumber } = require('../utils/phone');
 
 const stripNumber = (num) => num.replace(/\D/g, '');
@@ -141,7 +142,9 @@ const addNumber = async (req, res) => {
       return res.status(404).json({ error: 'Group not found' });
     }
 
-    const exists = group.numbers.some(n => stripNumber(n.phone) === stripNumber(cleanPhone));
+    group.numbers = normalizeGroupNumbers(group.numbers, { skipInvalid: true });
+
+    const exists = group.numbers.some((n) => n.phone === cleanPhone);
     if (exists) {
       return res.status(400).json({ error: 'Number already exists in this group' });
     }
@@ -151,8 +154,10 @@ const addNumber = async (req, res) => {
 
     res.json({ group });
   } catch (err) {
+    console.error('Add group number failed:', err.message);
     const message = err.message || 'Failed to add number';
-    const status = /E\.164/i.test(message) ? 400 : 500;
+    const status =
+      /E\.164|already exists|valid international/i.test(message) ? 400 : 500;
     res.status(status).json({ error: message });
   }
 };
@@ -203,7 +208,9 @@ const bulkAddNumbers = async (req, res) => {
       return res.status(404).json({ error: 'Group not found' });
     }
 
-    const existingPhones = new Set(group.numbers.map(n => stripNumber(n.phone)));
+    group.numbers = normalizeGroupNumbers(group.numbers, { skipInvalid: true });
+
+    const existingPhones = new Set(group.numbers.map((n) => n.phone));
     let added = 0;
     let skipped = 0;
 

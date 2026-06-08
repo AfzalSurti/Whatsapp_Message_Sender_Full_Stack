@@ -229,17 +229,14 @@ const getWhatsAppContacts = async (req, res) => {
       });
     }
 
-    const contacts = await Promise.race([
-      fetchWhatsAppContacts(client, { limit: 100, enrich: false }),
-      new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Loading WhatsApp contacts timed out')), 45000);
-      })
-    ]);
+    const contacts = await fetchWhatsAppContacts(client, { limit: 100 });
+    console.log(`Loaded ${contacts.length} WhatsApp chats for auto-reply picker`);
 
     res.json({ contacts });
   } catch (err) {
     console.error('Get WhatsApp contacts failed:', err.message);
-    res.status(500).json({ error: err.message || 'Failed to load WhatsApp contacts' });
+    const status = /not connected|timed out/i.test(err.message) ? 400 : 500;
+    res.status(status).json({ error: err.message || 'Failed to load WhatsApp contacts' });
   }
 };
 

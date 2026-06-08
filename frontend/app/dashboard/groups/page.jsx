@@ -243,7 +243,12 @@ export default function GroupsPage() {
 
       if (successful === 0) {
         const firstError = addResults.find((item) => item.status === 'rejected');
-        toast.error(firstError?.reason?.response?.data?.error || 'Failed to add contact');
+        const apiError = firstError?.reason?.response?.data;
+        toast.error(
+          apiError?.error ||
+            apiError?.errors?.[0]?.msg ||
+            'Failed to add contact'
+        );
         return;
       }
 

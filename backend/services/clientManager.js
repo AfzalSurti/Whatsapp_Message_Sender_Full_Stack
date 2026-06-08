@@ -82,19 +82,21 @@ const persistRemoteSession = async (client, userIdStr) => {
     }
 
     const strategy = client?.authStrategy;
-    if (!strategy || typeof strategy.storeRemoteSession !== 'function') return;
+    if (!strategy || typeof strategy.storeRemoteSession !== 'function') {
+        console.warn(`WhatsApp session backup skipped for ${userIdStr}: RemoteAuth strategy not available`);
+        return;
+    }
 
     const savePromise = (async () => {
         try {
-            const tempDir = strategy.tempDir;
-            if (tempDir && fs.existsSync(tempDir)) {
-                await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-            }
-
+            console.log(`💾 Saving WhatsApp session to MongoDB for user: ${userIdStr}...`);
             await strategy.storeRemoteSession({ emit: true });
             console.log(`✅ WhatsApp session saved to MongoDB for user: ${userIdStr}`);
+            const entry = clients.get(userIdStr);
+            if (entry) entry.sessionBackupDone = true;
         } catch (err) {
             console.error(`Failed to save WhatsApp session for user ${userIdStr}:`, err.message);
+            throw err;
         } finally {
             sessionSaveInFlight.delete(userIdStr);
         }
@@ -104,17 +106,29 @@ const persistRemoteSession = async (client, userIdStr) => {
     return savePromise;
 };
 
-const scheduleSessionBackup = (client, userIdStr, delayMs = 20000) => {
+const scheduleSessionBackup = (client, userIdStr) => {
     const entry = clients.get(userIdStr);
     if (!entry) return;
 
-    if (entry.sessionBackupTimer) {
-        clearTimeout(entry.sessionBackupTimer);
-    }
+    entry.sessionBackupDone = false;
+    entry.sessionBackupTimers?.forEach((timer) => clearTimeout(timer));
+    entry.sessionBackupTimers = [];
 
-    entry.sessionBackupTimer = setTimeout(() => {
-        persistRemoteSession(client, userIdStr).catch(() => {});
-    }, delayMs);
+    const delays = [5000, 20000, 60000];
+    console.log(
+        `📅 WhatsApp session backup scheduled for user ${userIdStr} (at ${delays.map((ms) => `${ms / 1000}s`).join(', ')})`
+    );
+
+    delays.forEach((delayMs) => {
+        const timer = setTimeout(() => {
+            const current = clients.get(userIdStr);
+            if (!current || current.status !== 'connected' || current.sessionBackupDone) return;
+
+            persistRemoteSession(client, userIdStr).catch(() => {});
+        }, delayMs);
+
+        entry.sessionBackupTimers.push(timer);
+    });
 };
 
 const isClientReady = (userId) => {
@@ -350,7 +364,20 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
     });
 
     //store client and status
-    clients.set(userIdStr,{client,status:'pending',pendingStartTime:Date.now()});
+    const qrTimeoutHandle = setTimeout(() => {
+        const entry = clients.get(userIdStr);
+        if (entry && entry.status === 'pending') {
+            console.warn(`⚠️  QR Code timeout for user: ${userIdStr} - no QR received in ${getQrTimeoutMs() / 1000} seconds`);
+            console.warn(`This usually means the browser failed to load WhatsApp.com (check Render memory/plan)`);
+        }
+    }, getQrTimeoutMs());
+
+    clients.set(userIdStr, {
+        client,
+        status: 'pending',
+        pendingStartTime: Date.now(),
+        qrTimeoutHandle
+    });
 
     // Add health check interval — periodically verify client is still alive
     const healthCheckInterval = setInterval(async () => {
@@ -423,11 +450,18 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
     // RemoteAuth persists the encrypted session in MongoDB
     client.on('authenticated', () => {
         console.log(`Client authenticated for user: ${userIdStr}`);
+        const authEntry = clients.get(userIdStr);
+        if (authEntry?.qrTimeoutHandle) {
+            clearTimeout(authEntry.qrTimeoutHandle);
+            authEntry.qrTimeoutHandle = null;
+        }
     });
 
     //remote session saved event
     client.on('remote_session_saved', async () => {
-        console.log(`Remote session saved to MongoDB for user: ${userIdStr}`);
+        console.log(`✅ Remote session saved to MongoDB for user: ${userIdStr}`);
+        const entry = clients.get(userIdStr);
+        if (entry) entry.sessionBackupDone = true;
         await markSessionLinked(
             userId,
             client.info?.wid?.user ? `+${client.info.wid.user}` : null
@@ -465,7 +499,7 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
         );
 
         onReady(); // notify frontend immediately — do not block on MongoDB backup
-        scheduleSessionBackup(client, userIdStr, 20000);
+        scheduleSessionBackup(client, userIdStr);
     });
 
     client.on('message', async (msg) => {
@@ -557,20 +591,6 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
             onDisconnected(`WhatsApp browser failed to start: ${err.message}`);
         }); // start the client
 
-    // Timeout if QR not received within the launch window
-    const qrTimeoutHandle = setTimeout(() => {
-        const entry = clients.get(userIdStr);
-        if(entry && entry.status === 'pending'){
-            console.warn(`⚠️  QR Code timeout for user: ${userIdStr} - no QR received in ${getQrTimeoutMs() / 1000} seconds`);
-            console.warn(`This usually means the browser failed to load WhatsApp.com (check Render memory/plan)`);
-        }
-    }, getQrTimeoutMs());
-
-    // Store timeout so we can clear it later
-    if(clients.get(userIdStr)){
-        clients.get(userIdStr).qrTimeoutHandle = qrTimeoutHandle;
-    }
-
     // Handle initialization errors gracefully without blocking
     client.on('error', (err) => {
         console.error(`Client error for user: ${userIdStr}:`, err.message);
@@ -606,7 +626,7 @@ const abortPendingClient = async (userId, reason = 'Pending client aborted') => 
 
     if (entry.qrTimeoutHandle) clearTimeout(entry.qrTimeoutHandle);
     if (entry.recoveryQrGraceTimer) clearTimeout(entry.recoveryQrGraceTimer);
-    if (entry.sessionBackupTimer) clearTimeout(entry.sessionBackupTimer);
+    entry.sessionBackupTimers?.forEach((timer) => clearTimeout(timer));
     if (entry.client?._healthCheckCleanup) {
         entry.client._healthCheckCleanup();
     }
