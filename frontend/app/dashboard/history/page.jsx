@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { logsAPI } from '@/lib/api';
+import toast from 'react-hot-toast';
 import { 
   MessageSquare, CheckCircle, XCircle, 
   SkipForward, Loader2, Filter, Download
@@ -34,7 +35,8 @@ export default function HistoryPage() {
       const res = await logsAPI.getLogs(params);
       setLogs(res.data.logs);
       setTotalPages(res.data.pages);
-    } catch {
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to load message history');
     } finally {
       setFetching(false);
     }
@@ -44,7 +46,9 @@ export default function HistoryPage() {
     try {
       const res = await logsAPI.getCampaigns();
       setCampaigns(res.data.campaigns);
-    } catch {}
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to load campaigns');
+    }
   }, []);
 
   useEffect(() => {

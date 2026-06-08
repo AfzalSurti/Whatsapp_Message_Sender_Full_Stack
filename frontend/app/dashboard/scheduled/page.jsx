@@ -654,10 +654,12 @@ export default function ScheduledPage() {
             {filteredCampaigns.map(campaign => {
               const badge = getStatusBadge(campaign.status);
               const groupCount = campaign.groupIds?.length || 0;
-              const recipientCount = campaign.totalRecipients
-                ?? campaign.recipientCount
-                ?? ((campaign.sent || 0) + (campaign.failed || 0))
-                ?? (campaign.individualNumbers?.length || 0);
+              const recipientCount =
+                campaign.totalNumbers ||
+                campaign.totalRecipients ||
+                campaign.recipientCount ||
+                campaign.individualNumbers?.length ||
+                (campaign.sent || 0) + (campaign.failed || 0);
 
               return (
                 <div key={campaign._id} className="bg-[#111] border border-white/5 rounded-2xl p-5 flex items-start justify-between hover:border-white/20 transition-colors">

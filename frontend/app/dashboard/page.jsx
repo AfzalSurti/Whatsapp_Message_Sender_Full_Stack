@@ -320,7 +320,8 @@ export default function Dashboard() {
     try {
       await whatsappAPI.send({ numbers, message });
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Send failed');
+      const data = err.response?.data;
+      toast.error(data?.error || data?.errors?.[0]?.msg || 'Send failed');
       setSending(false);
     }
   };
@@ -339,11 +340,15 @@ export default function Dashboard() {
 
   // Calculate stats from campaigns and logs
   const totalMessagesSent = campaigns.reduce((sum, c) => sum + (c.sent || 0), 0);
-  const totalDelivered = campaigns.reduce((sum, c) => sum + (c.delivered || 0), 0);
-  const deliveryRate = totalMessagesSent > 0 
-    ? Math.round((totalDelivered / totalMessagesSent) * 100) 
-    : 0;
-  const activeCampaignsCount = campaigns.filter(c => c.status === 'live' || c.status === 'active').length;
+  const totalAttempted = campaigns.reduce(
+    (sum, c) => sum + (c.sent || 0) + (c.failed || 0) + (c.skipped || 0),
+    0
+  );
+  const successRate =
+    totalAttempted > 0 ? Math.round((totalMessagesSent / totalAttempted) * 100) : 0;
+  const activeCampaignsCount = campaigns.filter(
+    (c) => c.status === 'running' || c.status === 'pending'
+  ).length;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] py-8 px-4 sm:px-6 lg:px-8">
@@ -367,7 +372,7 @@ export default function Dashboard() {
               {totalMessagesSent > 0 ? `${(totalMessagesSent / 1000).toFixed(1)}k` : '0'}
             </div>
             <p className="text-xs text-gray-500 mb-2">Messages Sent</p>
-            <p className="text-xs text-[#25D366]">↑ 12.4% vs last week</p>
+            <p className="text-xs text-gray-500">From completed campaigns</p>
           </div>
 
           {/* Delivery Rate */}
@@ -377,9 +382,9 @@ export default function Dashboard() {
                 <CheckCircle className="text-[#25D366]" size={20} />
               </div>
             </div>
-            <div className="text-3xl font-bold text-white mb-1">{deliveryRate}%</div>
-            <p className="text-xs text-gray-500 mb-2">Delivery Rate</p>
-            <p className="text-xs text-[#25D366]">↑ 0.8% improvement</p>
+            <div className="text-3xl font-bold text-white mb-1">{successRate}%</div>
+            <p className="text-xs text-gray-500 mb-2">Success Rate</p>
+            <p className="text-xs text-gray-500">Sent vs failed/skipped</p>
           </div>
 
           {/* Active Campaigns */}
@@ -391,7 +396,7 @@ export default function Dashboard() {
             </div>
             <div className="text-3xl font-bold text-white mb-1">{activeCampaignsCount}</div>
             <p className="text-xs text-gray-500 mb-2">Active Campaigns</p>
-            <p className="text-xs text-[#8b5cf6]">3 launching today</p>
+            <p className="text-xs text-gray-500">Pending or running now</p>
           </div>
 
           {/* WhatsApp Status */}
@@ -900,7 +905,7 @@ export default function Dashboard() {
           <div className="bg-[#0f1a14] border border-white/8 rounded-2xl p-6 hover:border-white/12 transition-colors">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-semibold text-white">Recent Campaigns</h3>
-              <a href="/dashboard/campaigns" className="text-xs text-[#25D366] hover:underline cursor-pointer">View All</a>
+              <a href="/dashboard/history" className="text-xs text-[#25D366] hover:underline cursor-pointer">View All</a>
             </div>
 
             {campaigns.length > 0 ? (
@@ -911,31 +916,35 @@ export default function Dashboard() {
                       <th className="text-left text-xs font-semibold text-gray-400 pb-3">Campaign</th>
                       <th className="text-left text-xs font-semibold text-gray-400 pb-3">Status</th>
                       <th className="text-left text-xs font-semibold text-gray-400 pb-3">Progress</th>
-                      <th className="text-right text-xs font-semibold text-gray-400 pb-3">Delivered</th>
+                      <th className="text-right text-xs font-semibold text-gray-400 pb-3">Sent</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/8">
                     {campaigns.slice(0, 4).map((camp, idx) => {
                       let statusColor = 'bg-green-500/20 text-green-400';
-                      let statusLabel = 'Active';
+                      let statusLabel = 'Running';
                       if (camp.status === 'completed') {
                         statusColor = 'bg-green-500/20 text-green-400';
                         statusLabel = 'Completed';
                       } else if (camp.status === 'failed') {
                         statusColor = 'bg-red-500/20 text-red-400';
                         statusLabel = 'Failed';
-                      } else if (camp.status === 'paused') {
-                        statusColor = 'bg-orange-500/20 text-orange-400';
-                        statusLabel = 'Paused';
-                      } else if (camp.status === 'scheduled') {
+                      } else if (camp.status === 'pending') {
                         statusColor = 'bg-blue-500/20 text-blue-400';
-                        statusLabel = 'Scheduled';
+                        statusLabel = 'Pending';
+                      } else if (camp.status === 'running') {
+                        statusColor = 'bg-[#25D366]/20 text-[#25D366]';
+                        statusLabel = 'Running';
                       }
 
-                      const progress = camp.sent > 0 ? Math.round((camp.delivered / camp.sent) * 100) : 0;
+                      const processed = (camp.sent || 0) + (camp.failed || 0) + (camp.skipped || 0);
+                      const progress =
+                        camp.totalNumbers > 0
+                          ? Math.round((processed / camp.totalNumbers) * 100)
+                          : 0;
 
                       return (
-                        <tr key={idx} className="hover:bg-white/5 transition-colors">
+                        <tr key={camp._id || idx} className="hover:bg-white/5 transition-colors">
                           <td className="py-3 text-white font-medium truncate">{camp.name || `Campaign ${idx + 1}`}</td>
                           <td className="py-3">
                             <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor}`}>
@@ -951,7 +960,7 @@ export default function Dashboard() {
                             </div>
                           </td>
                           <td className="py-3 text-right text-[#25D366] font-medium">
-                            {(camp.delivered || 0).toLocaleString()}
+                            {(camp.sent || 0).toLocaleString()}
                           </td>
                         </tr>
                       );
@@ -962,8 +971,8 @@ export default function Dashboard() {
             ) : (
               <div className="text-center py-12">
                 <p className="text-gray-500 text-sm">No campaigns yet</p>
-                <a href="/dashboard/campaigns" className="text-xs text-[#25D366] hover:underline cursor-pointer mt-2 inline-block">
-                  Create your first campaign
+                <a href="/dashboard" className="text-xs text-[#25D366] hover:underline cursor-pointer mt-2 inline-block">
+                  Send your first campaign
                 </a>
               </div>
             )}
@@ -984,16 +993,12 @@ export default function Dashboard() {
               <div className="space-y-4">
                 {activityLogs.slice(0, 5).map((log, idx) => {
                   let dotColor = 'bg-[#25D366]';
-                  const type = log.type || 'message';
+                  const status = String(log.status || '').toLowerCase();
 
-                  if (type.includes('error') || type.includes('failed')) {
+                  if (status === 'failed') {
                     dotColor = 'bg-red-500';
-                  } else if (type.includes('warning')) {
+                  } else if (status === 'skipped') {
                     dotColor = 'bg-orange-500';
-                  } else if (type.includes('ai')) {
-                    dotColor = 'bg-[#8b5cf6]';
-                  } else if (type.includes('segment') || type.includes('group')) {
-                    dotColor = 'bg-blue-500';
                   }
 
                   const timestamp = log.createdAt ? new Date(log.createdAt) : new Date();
@@ -1008,11 +1013,15 @@ export default function Dashboard() {
                   else timeStr = `${Math.floor(diffHours / 24)}d ago`;
 
                   return (
-                    <div key={idx} className="flex gap-3 pb-4 border-b border-white/8 last:pb-0 last:border-b-0">
+                    <div key={log._id || idx} className="flex gap-3 pb-4 border-b border-white/8 last:pb-0 last:border-b-0">
                       <div className={`w-3 h-3 ${dotColor} rounded-full mt-1 flex-shrink-0`}></div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-white font-medium truncate">{log.message || log.details?.message || `Activity ${idx + 1}`}</p>
-                        <p className="text-xs text-gray-500 mt-0.5 truncate">{log.details?.description || log.recipient || 'No details'}</p>
+                        <p className="text-sm text-white font-medium truncate">
+                          {log.message || `Message to ${log.number || 'contact'}`}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5 truncate">
+                          {log.number || log.failReason || status || 'No details'}
+                        </p>
                       </div>
                       <div className="text-xs text-gray-500 flex-shrink-0">{timeStr}</div>
                     </div>
