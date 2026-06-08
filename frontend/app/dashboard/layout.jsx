@@ -11,12 +11,22 @@ import { whatsappAPI } from '@/lib/api';
 import useWebSocket from '@/hooks/useWebSocket';
 import { DashboardShellProvider } from './DashboardShellContext';
 
+// Flip to true when you want Auto Reply + AI Templates visible in the sidebar again.
+const FEATURE_FLAGS = {
+  showAutoReply: false,
+  showAiTemplates: false
+};
+
 const mainNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { href: '/dashboard/live-feed', label: 'Live Feed', icon: Activity },
   { href: '/dashboard/groups', label: 'Contacts', icon: Users },
-  { href: '/dashboard/auto-reply', label: 'Auto Reply', icon: Bot },
-  { href: '/dashboard/ai-templates', label: 'AI Templates', icon: Layers },
+  ...(FEATURE_FLAGS.showAutoReply
+    ? [{ href: '/dashboard/auto-reply', label: 'Auto Reply', icon: Bot }]
+    : []),
+  ...(FEATURE_FLAGS.showAiTemplates
+    ? [{ href: '/dashboard/ai-templates', label: 'AI Templates', icon: Layers }]
+    : []),
   { href: '/dashboard/scheduled', label: 'Scheduler', icon: Send },
   { href: '/dashboard/templates', label: 'Templates', icon: ClipboardList },
   { href: '/dashboard/history', label: 'History', icon: History },
