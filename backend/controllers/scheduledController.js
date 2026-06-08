@@ -4,6 +4,7 @@ const ContactGroup = require('../models/ContactGroup');
 const MessageTemplate = require('../models/MessageTemplate');
 const { validateScheduleVariables } = require('../utils/template');
 const { normalizePhoneNumber, getPhoneValidationError } = require('../utils/phone');
+const { collectContactsByTags } = require('../utils/contactSegments');
 const { getSafeErrorMessage } = require('../utils/safeError');
 
 const stripNumber = (num) => num.replace(/\D/g, '');
@@ -22,6 +23,7 @@ const createCampaign = async (req, res) => {
       timezone,
       groupIds,
       individualNumbers,
+      segmentTags,
       templateId,
       templateVariables = {}
     } = req.body;
@@ -67,12 +69,21 @@ const createCampaign = async (req, res) => {
     let allNumbers = [];
     const phoneSet = new Set();
     const groupNameById = new Map();
+    const userGroups = await ContactGroup.find({ userId: req.user._id });
+
+    if (segmentTags && segmentTags.length > 0) {
+      collectContactsByTags(userGroups, segmentTags).forEach((entry) => {
+        if (!phoneSet.has(entry.phone)) {
+          phoneSet.add(entry.phone);
+          allNumbers.push(entry);
+        }
+      });
+    }
 
     if (groupIds && groupIds.length > 0) {
-      const groups = await ContactGroup.find({
-        _id: { $in: groupIds },
-        userId: req.user._id
-      });
+      const groups = userGroups.filter((g) =>
+        groupIds.some((id) => String(id) === String(g._id))
+      );
 
       groups.forEach((group) => {
         groupNameById.set(String(group._id), group.name);
@@ -80,11 +91,12 @@ const createCampaign = async (req, res) => {
           const cleanPhone = stripNumber(num.phone);
           if (!phoneSet.has(cleanPhone)) {
             phoneSet.add(cleanPhone);
+            const entryTags = (num.tags || []).filter(Boolean);
             allNumbers.push({
               name: num.name || '',
               phone: cleanPhone,
               groupId: group._id,
-              segment: group.name
+              segment: entryTags.length > 0 ? entryTags.join(', ') : group.name
             });
           }
         });

@@ -16,6 +16,7 @@ const createValidation = [
   body('scheduledAt').isISO8601().withMessage('Invalid scheduled time format'),
   body('timezone').trim().optional(),
   body('groupIds').isArray().optional(),
+  body('segmentTags').optional().isArray(),
   body('individualNumbers').isArray().optional(),
   body('templateId').optional().isMongoId().withMessage('Invalid template ID'),
   body('templateVariables').optional().isObject()

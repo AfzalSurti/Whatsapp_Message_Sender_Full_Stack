@@ -1,64 +1,76 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { groupsAPI } from '@/lib/api';
 import InternationalPhoneInput from '@/components/InternationalPhoneInput';
+import CreateTagModal from '@/components/dashboard/CreateTagModal';
+import EditContactModal from '@/components/dashboard/EditContactModal';
 import {
   DEFAULT_PHONE_COUNTRY,
   formatPhoneNumber,
   normalizePhoneNumber
 } from '@/lib/phone';
 import {
+  TAG_CATEGORIES,
+  getInitials,
+  getTagStyle,
+  parseCsvContacts
+} from '@/lib/segmentTags';
+import {
   Loader2,
   Plus,
-  X,
-  Filter,
+  Search,
+  Upload,
   UserPlus,
-  Tags,
-  Users
+  X
 } from 'lucide-react';
-import AddContactModal from '@/components/dashboard/AddContactModal';
-import GroupCard from '@/components/dashboard/GroupCard';
-import GroupModal from '@/components/dashboard/GroupModal';
 
-const DEFAULT_COUNTRY = DEFAULT_PHONE_COUNTRY;
-const GROUP_COLORS = ['#25D366', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+const AVATAR_COLORS = ['#25D366', '#3B82F6', '#8B5CF6', '#F97316', '#EC4899', '#14B8A6'];
 
 export default function GroupsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const fileInputRef = useRef(null);
 
+  const [contacts, setContacts] = useState([]);
+  const [tagLibrary, setTagLibrary] = useState([]);
   const [groups, setGroups] = useState([]);
   const [fetching, setFetching] = useState(true);
 
-  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
-  const [newGroupName, setNewGroupName] = useState('');
-  const [newGroupColor, setNewGroupColor] = useState('#25D366');
-  const [creatingGroup, setCreatingGroup] = useState(false);
-  const [editGroupId, setEditGroupId] = useState(null);
+  const [search, setSearch] = useState('');
+  const [activeTagFilters, setActiveTagFilters] = useState([]);
 
-  const [showAddContactModal, setShowAddContactModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [contactName, setContactName] = useState('');
-  const [contactCountry, setContactCountry] = useState(DEFAULT_COUNTRY);
   const [contactPhone, setContactPhone] = useState('');
-  const [selectedGroupIds, setSelectedGroupIds] = useState([]);
-  const [inlineGroupName, setInlineGroupName] = useState('');
-  const [inlineGroupColor, setInlineGroupColor] = useState('#25D366');
+  const [contactCountry, setContactCountry] = useState(DEFAULT_PHONE_COUNTRY);
+  const [addTags, setAddTags] = useState([]);
   const [addingContact, setAddingContact] = useState(false);
 
-  const [groupFilter, setGroupFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('name-asc');
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editPhone, setEditPhone] = useState('');
+  const [editName, setEditName] = useState('');
+  const [editTags, setEditTags] = useState([]);
+  const [savingEdit, setSavingEdit] = useState(false);
 
-  const fetchGroups = useCallback(async () => {
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagCategory, setNewTagCategory] = useState('custom');
+  const [newTagColor, setNewTagColor] = useState('#25D366');
+  const [creatingTag, setCreatingTag] = useState(false);
+
+  const fetchOverview = useCallback(async () => {
     try {
       setFetching(true);
-      const res = await groupsAPI.getGroups();
+      const res = await groupsAPI.getOverview();
+      setContacts(res.data.contacts || []);
+      setTagLibrary(res.data.tags || []);
       setGroups(res.data.groups || []);
-    } catch {
-      toast.error('Failed to load contacts');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to load contacts');
     } finally {
       setFetching(false);
     }
@@ -66,204 +78,178 @@ export default function GroupsPage() {
 
   useEffect(() => {
     if (!loading && !user) router.push('/login');
-  }, [user, loading, router]);
+  }, [loading, router, user]);
 
   useEffect(() => {
-    if (user) fetchGroups();
-  }, [user, fetchGroups]);
+    if (user) fetchOverview();
+  }, [user, fetchOverview]);
 
-  const createGroup = async ({ name, color }) => {
-    const res = await groupsAPI.createGroup({ name: name.trim(), color });
-    return res.data.group;
-  };
-
-  const handleCreateGroup = async () => {
-    if (!newGroupName.trim()) {
-      toast.error('Enter a group name');
-      return;
-    }
-
-    setCreatingGroup(true);
-    try {
-      if (editGroupId) {
-        await groupsAPI.updateGroup(editGroupId, { name: newGroupName, color: newGroupColor });
-        toast.success('Group updated');
-      } else {
-        await createGroup({ name: newGroupName, color: newGroupColor });
-        toast.success('Group created');
-      }
-      setShowCreateGroupModal(false);
-      setNewGroupName('');
-      setNewGroupColor('#25D366');
-      setEditGroupId(null);
-      await fetchGroups();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to create group');
-    } finally {
-      setCreatingGroup(false);
-    }
-  };
-
-  const handleOpenEditGroup = (group) => {
-    setEditGroupId(group._id);
-    setNewGroupName(group.name || '');
-    setNewGroupColor(group.color || '#25D366');
-    setShowCreateGroupModal(true);
-  };
-
-  const handleDeleteGroup = async (groupId) => {
-    if (!window.confirm('Delete this group? This will remove its contacts from the group.')) return;
-    try {
-      await groupsAPI.deleteGroup(groupId);
-      toast.success('Group deleted');
-      await fetchGroups();
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to delete group');
-    }
-  };
-
-  const groupedContacts = useMemo(() => {
-    const byPhone = new Map();
-
-    groups.forEach((group) => {
-      (group.numbers || []).forEach((entry) => {
-        const phoneKey = String(entry.phone || '').replace(/\D/g, '');
-        if (!phoneKey) return;
-
-        if (!byPhone.has(phoneKey)) {
-          byPhone.set(phoneKey, {
-            id: phoneKey,
-            name: entry.name || '',
-            phone: phoneKey,
-            groups: []
-          });
-        }
-
-        const contact = byPhone.get(phoneKey);
-        if (!contact.name && entry.name) {
-          contact.name = entry.name;
-        }
-
-        const alreadyInGroup = contact.groups.some((item) => item.id === group._id);
-        if (!alreadyInGroup) {
-          contact.groups.push({
-            id: group._id,
-            name: group.name,
-            color: group.color || '#25D366'
-          });
-        }
-      });
+  const tagsByCategory = useMemo(() => {
+    const map = {};
+    TAG_CATEGORIES.forEach((cat) => {
+      map[cat.id] = tagLibrary.filter((tag) => tag.category === cat.id);
     });
+    return map;
+  }, [tagLibrary]);
 
-    return Array.from(byPhone.values());
-  }, [groups]);
+  const filteredContacts = useMemo(() => {
+    let list = contacts;
 
-  const filteredAndSortedContacts = useMemo(() => {
-    const filtered = groupFilter === 'all'
-      ? groupedContacts
-      : groupedContacts.filter((contact) => contact.groups.some((g) => g.id === groupFilter));
+    if (activeTagFilters.length > 0) {
+      list = list.filter((contact) =>
+        activeTagFilters.every((tag) => contact.tags?.includes(tag))
+      );
+    }
 
-    const sorted = [...filtered].sort((a, b) => {
-      const firstGroupA = [...a.groups].sort((x, y) => x.name.localeCompare(y.name))[0]?.name || '';
-      const firstGroupB = [...b.groups].sort((x, y) => x.name.localeCompare(y.name))[0]?.name || '';
+    const query = search.trim().toLowerCase();
+    if (query) {
+      list = list.filter(
+        (contact) =>
+          String(contact.name || '').toLowerCase().includes(query) ||
+          String(contact.phone || '').includes(query.replace(/\D/g, ''))
+      );
+    }
 
-      if (sortBy === 'name-asc') return a.name.localeCompare(b.name);
-      if (sortBy === 'name-desc') return b.name.localeCompare(a.name);
-      if (sortBy === 'group-asc') return firstGroupA.localeCompare(firstGroupB);
-      if (sortBy === 'group-desc') return firstGroupB.localeCompare(firstGroupA);
-      return 0;
-    });
+    return list;
+  }, [contacts, activeTagFilters, search]);
 
-    return sorted;
-  }, [groupFilter, groupedContacts, sortBy]);
-
-  const sortedGroups = useMemo(
-    () => [...groups].sort((a, b) => a.name.localeCompare(b.name)),
+  const generalGroupId = useMemo(
+    () => groups.find((g) => g.name === 'General')?._id || groups[0]?._id,
     [groups]
   );
 
-  const toggleGroupSelection = (groupId) => {
-    setSelectedGroupIds((prev) => (
-      prev.includes(groupId)
-        ? prev.filter((id) => id !== groupId)
-        : [...prev, groupId]
-    ));
+  const toggleFilterTag = (tagName) => {
+    setActiveTagFilters((prev) =>
+      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
+    );
   };
 
-  const resetAddContactForm = () => {
-    setContactName('');
-    setContactCountry(DEFAULT_COUNTRY);
-    setContactPhone('');
-    setSelectedGroupIds([]);
-    setInlineGroupName('');
-    setInlineGroupColor('#25D366');
-    setShowAddContactModal(false);
+  const toggleAddTag = (tagName) => {
+    setAddTags((prev) =>
+      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
+    );
+  };
+
+  const toggleEditTag = (tagName) => {
+    setEditTags((prev) =>
+      prev.includes(tagName) ? prev.filter((t) => t !== tagName) : [...prev, tagName]
+    );
+  };
+
+  const handleCreateTag = async () => {
+    if (!newTagName.trim()) {
+      toast.error('Enter a tag name');
+      return;
+    }
+
+    setCreatingTag(true);
+    try {
+      const res = await groupsAPI.createTag({
+        name: newTagName.trim(),
+        category: newTagCategory,
+        color: newTagColor
+      });
+      setTagLibrary((prev) => [...prev, res.data.tag].sort((a, b) => a.name.localeCompare(b.name)));
+      const createdName = res.data.tag.name;
+      if (showAddModal) {
+        setAddTags((prev) => (prev.includes(createdName) ? prev : [...prev, createdName]));
+      }
+      if (showEditModal) {
+        setEditTags((prev) => (prev.includes(createdName) ? prev : [...prev, createdName]));
+      }
+      setShowTagModal(false);
+      setNewTagName('');
+      setNewTagCategory('custom');
+      setNewTagColor('#25D366');
+      toast.success('Tag created');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to create tag');
+    } finally {
+      setCreatingTag(false);
+    }
   };
 
   const handleAddContact = async () => {
     if (!contactName.trim() || !contactPhone.trim()) {
-      toast.error('Enter contact name and phone number');
+      toast.error('Enter name and phone');
       return;
     }
 
     const normalized = normalizePhoneNumber(contactPhone, contactCountry);
     if (!normalized) {
-      toast.error('Enter a valid international phone number');
+      toast.error('Enter a valid phone number');
+      return;
+    }
+
+    if (!generalGroupId) {
+      toast.error('No contact group available');
       return;
     }
 
     setAddingContact(true);
     try {
-      const targetGroupIds = [...selectedGroupIds];
-
-      if (inlineGroupName.trim()) {
-        const createdGroup = await createGroup({
-          name: inlineGroupName,
-          color: inlineGroupColor
-        });
-        targetGroupIds.push(createdGroup._id);
-      }
-
-      const uniqueTargetGroupIds = [...new Set(targetGroupIds)];
-      if (uniqueTargetGroupIds.length === 0) {
-        toast.error('Select at least one group or create a new one');
-        return;
-      }
-
-      const addResults = await Promise.allSettled(
-        uniqueTargetGroupIds.map((groupId) => groupsAPI.addNumber(groupId, {
-          name: contactName,
-          phone: normalized.e164,
-          tags: []
-        }))
-      );
-
-      const successful = addResults.filter((item) => item.status === 'fulfilled').length;
-      const failed = addResults.length - successful;
-
-      if (successful === 0) {
-        const firstError = addResults.find((item) => item.status === 'rejected');
-        const apiError = firstError?.reason?.response?.data;
-        toast.error(
-          apiError?.error ||
-            apiError?.errors?.[0]?.msg ||
-            'Failed to add contact'
-        );
-        return;
-      }
-
-      if (failed > 0) {
-        toast.success(`Added to ${successful} group(s), skipped ${failed}`);
-      } else {
-        toast.success(`Contact added to ${successful} group(s)`);
-      }
-
-      resetAddContactForm();
-      await fetchGroups();
+      await groupsAPI.addNumber(generalGroupId, {
+        name: contactName.trim(),
+        phone: normalized.e164,
+        tags: addTags
+      });
+      toast.success('Contact added');
+      setShowAddModal(false);
+      setContactName('');
+      setContactPhone('');
+      setAddTags([]);
+      await fetchOverview();
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to add contact');
+      toast.error(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Failed to add contact');
     } finally {
       setAddingContact(false);
+    }
+  };
+
+  const openEdit = (contact) => {
+    setEditPhone(contact.phone);
+    setEditName(contact.name || '');
+    setEditTags(contact.tags || []);
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    setSavingEdit(true);
+    try {
+      await groupsAPI.updateContact({
+        phone: editPhone,
+        name: editName.trim(),
+        tags: editTags
+      });
+      toast.success('Contact updated');
+      setShowEditModal(false);
+      await fetchOverview();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update contact');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleImportCsv = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const rows = parseCsvContacts(text);
+      if (rows.length === 0) {
+        toast.error('No valid rows found in CSV');
+        return;
+      }
+
+      const res = await groupsAPI.importContacts(rows);
+      toast.success(`Imported ${res.data.stats.added} contact(s)`);
+      await fetchOverview();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Import failed');
+    } finally {
+      event.target.value = '';
     }
   };
 
@@ -277,162 +263,276 @@ export default function GroupsPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
-
-      <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Contacts</h1>
-            <p className="text-sm text-gray-400 mt-1">Manage your contact groups and numbers — organize, add, and edit contacts quickly.</p>
+            <h1 className="text-2xl font-bold">Contacts & Segments</h1>
+            <p className="text-sm text-gray-400 mt-1">
+              {contacts.length.toLocaleString()} contacts · Smart tag-based segmentation
+            </p>
           </div>
-
           <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={handleImportCsv}
+            />
             <button
-              onClick={() => setShowCreateGroupModal(true)}
-              className="border border-white/10 hover:border-white/20 text-white rounded-xl text-sm font-semibold px-4 py-2 transition-colors flex items-center gap-2 cursor-pointer"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="border border-white/10 hover:border-white/20 text-white rounded-xl text-sm font-semibold px-4 py-2 flex items-center gap-2"
             >
-              <Tags size={16} /> Create Group
+              <Upload size={16} /> Import CSV
             </button>
             <button
-              onClick={() => setShowAddContactModal(true)}
-              className="bg-[#25D366] hover:bg-[#1ebe5d] text-black text-sm font-semibold px-4 py-2 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+              type="button"
+              onClick={() => setShowAddModal(true)}
+              className="bg-[#25D366] hover:bg-[#1ebe5d] text-black text-sm font-semibold px-4 py-2 rounded-xl flex items-center gap-2"
             >
               <UserPlus size={16} /> Add Contact
             </button>
           </div>
         </div>
 
-        {/* Groups cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-4">
-          {sortedGroups.map((group) => (
-            <GroupCard key={group._id} group={group} onEdit={handleOpenEditGroup} onDelete={handleDeleteGroup} />
-          ))}
-        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Filter sidebar */}
+          <div className="lg:col-span-1 bg-[#111] border border-white/10 rounded-2xl p-5 space-y-5 h-fit">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold">Filter Segments</h2>
+              <button
+                type="button"
+                onClick={() => setShowTagModal(true)}
+                className="text-xs text-[#25D366] inline-flex items-center gap-1"
+              >
+                <Plus size={14} /> New tag
+              </button>
+            </div>
 
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-xs text-gray-400">
-            <Filter size={14} />
-            <span>Filter</span>
-          </div>
-          <div className="flex gap-2">
-            <select
-              value={groupFilter}
-              onChange={(e) => setGroupFilter(e.target.value)}
-              className="px-3 py-2 bg-[#111] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366]"
-            >
-              <option value="all">All groups</option>
-              {sortedGroups.map((group) => (
-                <option key={group._id} value={group._id}>{group.name}</option>
-              ))}
-            </select>
+            {TAG_CATEGORIES.map((category) => {
+              const tags = tagsByCategory[category.id] || [];
+              if (tags.length === 0) return null;
 
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="px-3 py-2 bg-[#111] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-[#25D366]"
-            >
-              <option value="name-asc">Name A-Z</option>
-              <option value="name-desc">Name Z-A</option>
-              <option value="group-asc">Group A-Z</option>
-              <option value="group-desc">Group Z-A</option>
-            </select>
-          </div>
-        </div>
+              return (
+                <div key={category.id}>
+                  <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">
+                    {category.label}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {tags.map((tag) => {
+                      const active = activeTagFilters.includes(tag.name);
+                      const style = getTagStyle(tag.name, tagLibrary);
+                      return (
+                        <button
+                          key={tag._id}
+                          type="button"
+                          onClick={() => toggleFilterTag(tag.name)}
+                          className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                            active ? 'ring-1 ring-white/25' : 'opacity-80 hover:opacity-100'
+                          }`}
+                          style={active ? style : { borderColor: 'rgba(255,255,255,0.12)', color: '#d1d5db' }}
+                        >
+                          {tag.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
 
-        {fetching ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="animate-spin text-[#25D366]" size={30} />
+            {activeTagFilters.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTagFilters([])}
+                className="text-xs text-gray-400 hover:text-white"
+              >
+                Clear filters
+              </button>
+            )}
           </div>
-        ) : filteredAndSortedContacts.length === 0 ? (
-          <div className="flex items-center justify-center py-24">
-              <div className="text-center">
-              <Users size={48} className="mx-auto text-gray-500" />
-              <h3 className="text-lg font-semibold mt-4 text-white">No contacts yet</h3>
-              <p className="text-sm text-gray-400 mt-2">Add your first contact to get started — assign them to one or more groups.</p>
-              <div className="mt-4 flex items-center justify-center gap-3">
-                <button onClick={() => setShowAddContactModal(true)} className="bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold rounded-xl px-4 py-2">Add Contact</button>
-                <button onClick={() => setShowCreateGroupModal(true)} className="border border-white/10 hover:border-white/20 text-white rounded-xl px-4 py-2">Create Group</button>
+
+          {/* Contact list */}
+          <div className="lg:col-span-3 bg-[#111] border border-white/10 rounded-2xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <p className="text-sm text-gray-400">
+                {filteredContacts.length} contact{filteredContacts.length !== 1 ? 's' : ''} shown
+              </p>
+              <div className="relative max-w-sm w-full">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by name or phone..."
+                  className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm"
+                />
               </div>
             </div>
+
+            {fetching ? (
+              <div className="py-20 flex justify-center">
+                <Loader2 className="animate-spin text-[#25D366]" size={28} />
+              </div>
+            ) : filteredContacts.length === 0 ? (
+              <div className="py-20 text-center text-gray-500 text-sm">
+                No contacts match your filters.
+              </div>
+            ) : (
+              <div className="divide-y divide-white/5">
+                {filteredContacts.map((contact, index) => {
+                  const initials = getInitials(contact.name, contact.phone);
+                  const avatarColor = AVATAR_COLORS[index % AVATAR_COLORS.length];
+
+                  return (
+                    <div
+                      key={contact.phone}
+                      className="flex items-center gap-4 px-5 py-4 hover:bg-white/[0.02]"
+                    >
+                      <div
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0"
+                        style={{ backgroundColor: `${avatarColor}22`, color: avatarColor }}
+                      >
+                        {initials}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{contact.name || 'Unknown'}</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {formatPhoneNumber(contact.phone) || contact.phone}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {(contact.tags || []).map((tag) => {
+                            const style = getTagStyle(tag, tagLibrary);
+                            return (
+                              <span
+                                key={`${contact.phone}-${tag}`}
+                                className="text-[11px] px-2 py-0.5 rounded-full border"
+                                style={style}
+                              >
+                                {tag}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => openEdit(contact)}
+                        className="text-sm px-4 py-2 rounded-lg border border-white/10 hover:border-[#25D366]/40 shrink-0"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#111]">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] text-sm">
-                <thead className="bg-white/5 text-gray-300">
-                  <tr>
-                    <th className="text-left font-semibold px-4 py-3">Name</th>
-                    <th className="text-left font-semibold px-4 py-3">Phone</th>
-                    <th className="text-left font-semibold px-4 py-3">Groups</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAndSortedContacts.map((contact) => (
-                      <tr key={contact.id} className="border-t border-white/5 odd:bg-white/5">
-                        <td className="px-4 py-3 text-white">{contact.name || '-'}</td>
-                        <td className="px-4 py-3 text-gray-300">{formatPhoneNumber(contact.phone)}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            {[...contact.groups]
-                              .sort((a, b) => a.name.localeCompare(b.name))
-                              .map((group) => (
-                                <span
-                                  key={`${contact.id}-${group.id}`}
-                                  className="text-xs px-2.5 py-1 rounded-full border"
-                                  style={{ borderColor: `${group.color}66`, color: group.color }}
-                                >
-                                  {group.name}
-                                </span>
-                              ))}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
 
-      <GroupModal
-        open={showCreateGroupModal}
-        onClose={() => {
-          setShowCreateGroupModal(false);
-          setNewGroupName('');
-          setNewGroupColor('#25D366');
-          setEditGroupId(null);
-        }}
-        name={newGroupName}
-        setName={setNewGroupName}
-        color={newGroupColor}
-        setColor={setNewGroupColor}
-        creating={creatingGroup}
-        onSubmit={handleCreateGroup}
-        editMode={!!editGroupId}
+      {/* Add contact modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#111] border border-white/10 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-bold text-lg">Add Contact</h3>
+              <button type="button" onClick={() => setShowAddModal(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <input
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                placeholder="Full name"
+                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm"
+              />
+              <InternationalPhoneInput
+                value={contactPhone}
+                defaultCountry={contactCountry}
+                onChange={(phone, meta) => {
+                  setContactPhone(phone);
+                  setContactCountry(meta?.country?.iso2?.toUpperCase() || contactCountry);
+                }}
+                onCountryChange={setContactCountry}
+                placeholder="Phone number"
+              />
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-gray-500">Segment tags</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowTagModal(true)}
+                    className="text-xs text-[#25D366] inline-flex items-center gap-1"
+                  >
+                    <Plus size={14} /> New tag
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {tagLibrary.map((tag) => {
+                    const active = addTags.includes(tag.name);
+                    const style = getTagStyle(tag.name, tagLibrary);
+                    return (
+                      <button
+                        key={tag._id}
+                        type="button"
+                        onClick={() => toggleAddTag(tag.name)}
+                        className={`text-xs px-3 py-1.5 rounded-full border ${
+                          active ? 'ring-1 ring-white/25' : 'opacity-70'
+                        }`}
+                        style={active ? style : { borderColor: 'rgba(255,255,255,0.12)', color: '#9ca3af' }}
+                      >
+                        {tag.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={addingContact}
+                onClick={handleAddContact}
+                className="w-full bg-[#25D366] text-black font-semibold py-2.5 rounded-xl disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {addingContact ? <Loader2 size={16} className="animate-spin" /> : null}
+                Save Contact
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <EditContactModal
+        open={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        phone={editPhone}
+        name={editName}
+        setName={setEditName}
+        tagLibrary={tagLibrary}
+        selectedTags={editTags}
+        toggleTag={toggleEditTag}
+        onCreateTag={() => setShowTagModal(true)}
+        saving={savingEdit}
+        onSave={handleSaveEdit}
       />
 
-      <AddContactModal
-        open={showAddContactModal}
-        onClose={() => {
-          resetAddContactForm();
-        }}
-        contactName={contactName}
-        setContactName={setContactName}
-        contactCountry={contactCountry}
-        setContactCountry={setContactCountry}
-        contactPhone={contactPhone}
-        setContactPhone={setContactPhone}
-        selectedGroupIds={selectedGroupIds}
-        toggleGroupSelection={toggleGroupSelection}
-        sortedGroups={sortedGroups}
-        inlineGroupName={inlineGroupName}
-        setInlineGroupName={setInlineGroupName}
-        inlineGroupColor={inlineGroupColor}
-        setInlineGroupColor={setInlineGroupColor}
-        addingContact={addingContact}
-        handleAddContact={handleAddContact}
-        resetAddContactForm={resetAddContactForm}
-        GROUP_COLORS={GROUP_COLORS}
+      <CreateTagModal
+        open={showTagModal}
+        onClose={() => setShowTagModal(false)}
+        name={newTagName}
+        setName={setNewTagName}
+        category={newTagCategory}
+        setCategory={setNewTagCategory}
+        color={newTagColor}
+        setColor={setNewTagColor}
+        saving={creatingTag}
+        onSubmit={handleCreateTag}
       />
     </div>
   );

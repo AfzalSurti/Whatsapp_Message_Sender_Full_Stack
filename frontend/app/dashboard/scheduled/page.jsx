@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { DEFAULT_PHONE_COUNTRY, formatPhoneNumber, normalizePhoneNumber } from '@/lib/phone';
+import { getTagStyle } from '@/lib/segmentTags';
 import {
   extractVariables,
   getMissingScheduleVariables,
@@ -164,6 +165,8 @@ export default function ScheduledPage() {
   const [selectedIndividuals, setSelectedIndividuals] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  const [tagLibrary, setTagLibrary] = useState([]);
+  const [selectedSegmentTags, setSelectedSegmentTags] = useState([]);
 
   // Step 3 & submission
   const [submitting, setSubmitting] = useState(false);
@@ -184,8 +187,12 @@ export default function ScheduledPage() {
   const fetchGroups = useCallback(async () => {
     try {
       setLoadingGroups(true);
-      const res = await groupsAPI.getGroups();
-      setAllGroups(res.data.groups || []);
+      const [groupsRes, tagsRes] = await Promise.all([
+        groupsAPI.getGroups(),
+        groupsAPI.getTags()
+      ]);
+      setAllGroups(groupsRes.data.groups || []);
+      setTagLibrary(tagsRes.data.tags || []);
     } catch (err) {
       toast.error('Failed to load groups');
     } finally {
@@ -270,6 +277,26 @@ export default function ScheduledPage() {
     const recipients = [];
     const phoneSet = new Set();
 
+    if (selectedSegmentTags.length > 0) {
+      allGroups.forEach((group) => {
+        (group.numbers || []).forEach((num) => {
+          const entryTags = num.tags || [];
+          const matches = selectedSegmentTags.every((tag) => entryTags.includes(tag));
+          if (!matches) return;
+
+          const clean = num.phone.replace(/\D/g, '');
+          if (phoneSet.has(clean)) return;
+
+          phoneSet.add(clean);
+          recipients.push({
+            name: num.name || '',
+            phone: clean,
+            segment: entryTags.length > 0 ? entryTags.join(', ') : group.name
+          });
+        });
+      });
+    }
+
     selectedGroupIds.forEach((groupId) => {
       const group = allGroups.find((g) => g._id === groupId);
       if (!group) return;
@@ -310,7 +337,7 @@ export default function ScheduledPage() {
     });
 
     return recipients;
-  }, [allGroups, selectedGroupContacts, selectedGroupIds, selectedIndividuals]);
+  }, [allGroups, selectedGroupContacts, selectedGroupIds, selectedIndividuals, selectedSegmentTags]);
 
   const activeTemplateVariables = useMemo(
     () => extractVariables(message),
@@ -481,8 +508,13 @@ export default function ScheduledPage() {
       toast.error('Select date and time');
       return;
     }
-    if (selectedGroupIds.length === 0 && selectedIndividuals.length === 0 && selectedGroupContacts.length === 0) {
-      toast.error('Select at least one group or number');
+    if (
+      selectedGroupIds.length === 0 &&
+      selectedIndividuals.length === 0 &&
+      selectedGroupContacts.length === 0 &&
+      selectedSegmentTags.length === 0
+    ) {
+      toast.error('Select at least one segment, group, or number');
       return;
     }
 
@@ -514,6 +546,7 @@ export default function ScheduledPage() {
         scheduledAt: dateTime.toISOString(),
         timezone: 'Asia/Kolkata',
         groupIds: selectedGroupIds,
+        segmentTags: selectedSegmentTags,
         individualNumbers: [
           ...selectedGroupContacts.map((phone) => ({ phone })),
           ...selectedIndividuals.map((phone) => ({ phone }))
@@ -553,6 +586,7 @@ export default function ScheduledPage() {
     setSelectedIndividuals([]);
     setSearchQuery('');
     setSearchResults([]);
+    setSelectedSegmentTags([]);
   };
 
   const closeScheduleForm = () => {
@@ -1127,6 +1161,49 @@ export default function ScheduledPage() {
               {/* STEP 2 */}
               {step === 2 && (
                 <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-300 mb-3">Filter by Segment Tags</p>
+                    {tagLibrary.length === 0 ? (
+                      <p className="text-xs text-gray-500">
+                        No tags yet.{' '}
+                        <Link href="/dashboard/groups" className="text-[#25D366] hover:underline">
+                          Add tags on Contacts
+                        </Link>
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {tagLibrary.map((tag) => {
+                          const active = selectedSegmentTags.includes(tag.name);
+                          const style = getTagStyle(tag.name, tagLibrary);
+                          return (
+                            <button
+                              key={tag._id}
+                              type="button"
+                              onClick={() =>
+                                setSelectedSegmentTags((prev) =>
+                                  prev.includes(tag.name)
+                                    ? prev.filter((t) => t !== tag.name)
+                                    : [...prev, tag.name]
+                                )
+                              }
+                              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                                active ? 'ring-1 ring-white/25' : 'opacity-75 hover:opacity-100'
+                              }`}
+                              style={active ? style : { borderColor: 'rgba(255,255,255,0.12)', color: '#d1d5db' }}
+                            >
+                              {tag.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {selectedSegmentTags.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Contacts matching all selected tags will be included.
+                      </p>
+                    )}
+                  </div>
+
                   <div>
                     <p className="text-sm font-medium text-gray-300 mb-3">Select Groups</p>
                     {loadingGroups ? (

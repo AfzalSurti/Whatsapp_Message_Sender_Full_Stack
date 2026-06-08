@@ -83,6 +83,12 @@ export const keysAPI = {
 
 // ─── CONTACT GROUPS ────────────────────────────────────────────
 export const groupsAPI = {
+  getOverview: () => api.get('/api/groups/overview'),
+  getTags: () => api.get('/api/groups/tags'),
+  createTag: (data) => api.post('/api/groups/tags', data),
+  deleteTag: (id) => api.delete(`/api/groups/tags/${id}`),
+  updateContact: (data) => api.put('/api/groups/contacts', data),
+  importContacts: (rows) => api.post('/api/groups/import', { rows }),
   getGroups: () => api.get('/api/groups'),
   getGroup: (id) => api.get(`/api/groups/${id}`),
   createGroup: (data) => api.post('/api/groups', data),

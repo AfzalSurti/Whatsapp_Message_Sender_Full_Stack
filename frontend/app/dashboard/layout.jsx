@@ -20,7 +20,7 @@ const FEATURE_FLAGS = {
 const mainNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { href: '/dashboard/live-feed', label: 'Live Feed', icon: Activity },
-  { href: '/dashboard/groups', label: 'Contacts', icon: Users },
+  { href: '/dashboard/groups', label: 'Contacts & Segments', icon: Users },
   ...(FEATURE_FLAGS.showAutoReply
     ? [{ href: '/dashboard/auto-reply', label: 'Auto Reply', icon: Bot }]
     : []),
