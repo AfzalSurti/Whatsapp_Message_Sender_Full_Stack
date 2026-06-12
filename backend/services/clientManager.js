@@ -62,7 +62,10 @@ const getPuppeteerArgs = () => {
 const getPuppeteerLaunchOptions = (executablePath) => ({
   headless: true,
   executablePath: executablePath || undefined,
-  args: getPuppeteerArgs(),
+  args: [
+    ...getPuppeteerArgs(),
+    '--disable-blink-features=AutomationControlled'
+  ],
   timeout: isProductionLinux() ? 120000 : 90000,
   protocolTimeout: isProductionLinux() ? 120000 : 90000
 });
@@ -78,7 +81,7 @@ const isRecoverableInitError = (err) => {
   );
 };
 
-const getQrTimeoutMs = () => (isProductionLinux() ? 90000 : 30000);
+const getQrTimeoutMs = () => (isProductionLinux() ? 90000 : 90000);
 
 const RECOVERY_QR_GRACE_MS = 90000;
 const REMOTE_SESSION_BACKUP_MS = 60000;
@@ -416,19 +419,47 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
     });
 
     //store client and status
-    const qrTimeoutHandle = setTimeout(() => {
+    const qrTimeoutHandle = setTimeout(async () => {
         const entry = clients.get(userIdStr);
-        if (entry && entry.status === 'pending') {
-            console.warn(`⚠️  QR Code timeout for user: ${userIdStr} - no QR received in ${getQrTimeoutMs() / 1000} seconds`);
-            console.warn(`This usually means the browser failed to load WhatsApp.com (check Render memory/plan)`);
+        if (!entry || entry.status !== 'pending' || entry.qrReceived) return;
+
+        console.warn(
+            `⚠️  QR Code timeout for user: ${userIdStr} - no QR received in ${getQrTimeoutMs() / 1000} seconds`
+        );
+
+        if (suppressQrNotification) {
+            console.warn(
+                `Stored session could not be restored for user ${userIdStr}. Use Connect to scan a new QR.`
+            );
+            await abortPendingClient(userId, 'Recovery timed out waiting for session restore');
+            return;
         }
+
+        if (entry.freshAuthRetried || initRetry) {
+            onDisconnected('WhatsApp took too long to show QR. Click Re-generate QR to try again.');
+            return;
+        }
+
+        console.warn(`Clearing stored session and retrying with fresh QR for user: ${userIdStr}`);
+        entry.freshAuthRetried = true;
+        await abortPendingClient(userId, 'QR timeout — retrying with fresh session');
+        await sleep(2000);
+
+        await createClient(userId, onQR, onReady, onDisconnected, {
+            ...options,
+            freshAuth: true,
+            suppressQrNotification: false,
+            initRetry: true
+        });
     }, getQrTimeoutMs());
 
     clients.set(userIdStr, {
         client,
         status: 'pending',
         pendingStartTime: Date.now(),
-        qrTimeoutHandle
+        qrTimeoutHandle,
+        qrReceived: false,
+        freshAuthRetried: initRetry
     });
 
     // Add health check interval — periodically verify client is still alive
@@ -462,9 +493,12 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
         console.log(`🔄 QR Code received for user: ${userIdStr}`);
 
         const qrEntry = clients.get(userIdStr);
-        if (qrEntry?.qrTimeoutHandle) {
-            clearTimeout(qrEntry.qrTimeoutHandle);
-            qrEntry.qrTimeoutHandle = null;
+        if (qrEntry) {
+            qrEntry.qrReceived = true;
+            if (qrEntry.qrTimeoutHandle) {
+                clearTimeout(qrEntry.qrTimeoutHandle);
+                qrEntry.qrTimeoutHandle = null;
+            }
         }
 
         if (suppressQrNotification) {
@@ -713,6 +747,7 @@ const abortPendingClient = async (userId, reason = 'Pending client aborted') => 
 
     clients.delete(userIdStr);
     clientsBeingCreated.delete(userIdStr);
+    await sleep(1500);
     return true;
 };
 

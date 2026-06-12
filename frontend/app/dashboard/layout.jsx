@@ -95,10 +95,10 @@ export default function DashboardLayout({ children }) {
       toast.success('WhatsApp connected!');
     }
     if (data.type === 'disconnected') {
-      setWaStatus('disconnected');
       setConnectError(data.reason || 'WhatsApp disconnected');
-      setQrStatusText('Connection failed. Try again or regenerate QR.');
+      setQrStatusText('Connection failed. Try again or use Re-generate QR.');
       setSending(false);
+      setWaStatus((status) => (status === 'pending' ? 'pending' : 'disconnected'));
       toast.error(data.reason || 'WhatsApp disconnected');
     }
     if (data.type === 'progress') setProgress(data);
@@ -121,7 +121,7 @@ export default function DashboardLayout({ children }) {
       setConnectError('');
       setQrStatusText('Starting WhatsApp connection...');
       setWaStatus('pending');
-      await whatsappAPI.connect();
+      await whatsappAPI.connect({ fresh: true });
       if (!options.silent) toast('Scan the QR code to connect', { icon: 'QR' });
     } catch (err) {
       setConnectError(err.response?.data?.error || 'Connection failed');

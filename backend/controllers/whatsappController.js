@@ -8,14 +8,16 @@ const connectWhatsApp = async (req, res) => {
     const userId = req.user._id;
     const sendToUser = req.app.get('sendToUser');
     const status = clientManager.getStatus(userId);
-    const freshAuth = req.body?.fresh === true;
+    const wasPending = status === 'pending';
+    const freshAuth = req.body?.fresh === true || wasPending;
 
     if (status === 'connected') {
       return res.json({ message: 'Already connected', status: 'connected' });
     }
 
-    if (status === 'pending') {
+    if (wasPending) {
       await clientManager.abortPendingClient(userId, 'User clicked Connect — restarting with visible QR');
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     clientManager.cleanupLocalAuthArtifacts(userId);
