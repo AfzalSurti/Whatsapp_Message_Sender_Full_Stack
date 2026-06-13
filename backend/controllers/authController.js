@@ -93,11 +93,15 @@ const updateProfile = async (req, res) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { messageFooter } = req.body;
+    const { messageFooter, messageFooterEnabled } = req.body;
     const updates = {};
 
     if (messageFooter !== undefined) {
       updates.messageFooter = String(messageFooter).trim().slice(0, 80);
+    }
+
+    if (messageFooterEnabled !== undefined) {
+      updates.messageFooterEnabled = Boolean(messageFooterEnabled);
     }
 
     if (Object.keys(updates).length === 0) {

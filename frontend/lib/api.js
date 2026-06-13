@@ -151,4 +151,10 @@ export const autoReplyAPI = {
   clearLogs: () => api.delete('/api/auto-reply/logs'),
 };
 
+// ─── BUSINESS PROFILE ──────────────────────────────────────────
+export const businessProfileAPI = {
+  getProfile: () => api.get('/api/business-profile'),
+  updateProfile: (data) => api.put('/api/business-profile', data),
+};
+
 export default api;

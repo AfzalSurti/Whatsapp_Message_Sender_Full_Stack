@@ -69,6 +69,7 @@ app.use('/api/scheduled', require('./routes/scheduled'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/ai-templates', require('./routes/aiTemplates'));
 app.use('/api/auto-reply', require('./routes/autoReply'));
+app.use('/api/business-profile', require('./routes/businessProfile'));
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────
 app.get('/health', (req, res) => {
@@ -94,8 +95,8 @@ app.use((err, req, res, next) => {
 
 // ─── HANDLE UNCAUGHT EXCEPTIONS ────────────────────────────────
 process.on('uncaughtException', (err) => {
-  if (err?.code === 'ENOENT' && String(err?.path || '').includes('RemoteAuth')) {
-    console.warn('RemoteAuth file access warning:', err.message);
+  if (err?.code === 'ENOENT' && String(err?.path || '').includes('.wwebjs_auth')) {
+    console.warn('WhatsApp local session file warning:', err.message);
     return;
   }
   console.error('💥 Uncaught Exception:', err);
@@ -107,27 +108,14 @@ process.on('unhandledRejection', (reason) => {
 
   if (
     reason?.code === 'ENOENT' &&
-    (reasonPath.includes('RemoteAuth') || reasonPath.includes('.wwebjs_auth'))
+    reasonPath.includes('.wwebjs_auth')
   ) {
-    console.warn('RemoteAuth backup warning (session still active):', message);
+    console.warn('WhatsApp local session warning:', message);
     return;
   }
 
-  if (/file not found/i.test(message) && String(reason?.name || '').includes('Mongo')) {
-    console.warn('WhatsApp session backup warning (MongoDB file already removed):', message);
-    return;
-  }
-
-  if (
-    reason?.code === 'EEXIST' &&
-    reasonPath.includes('wwebjs_temp_session')
-  ) {
-    console.warn('RemoteAuth temp dir warning (session still active):', message);
-    return;
-  }
-
-  if (/Session zip not found/i.test(message)) {
-    console.warn('WhatsApp session backup warning:', message);
+  if (reason?.code === 'EBUSY' && reasonPath.includes('.wwebjs_auth')) {
+    console.warn('WhatsApp session folder locked during cleanup:', message);
     return;
   }
 
@@ -136,15 +124,7 @@ process.on('unhandledRejection', (reason) => {
 
 // ─── SETUP WEBSOCKET ──────────────────────────────────────────
 // Must be after server created — attaches to same HTTP server
-setupWebSocket(server, verifyToken, async (userIdStr) => {
-  const recoverable = await clientManager.canRecoverSession(userIdStr);
-  if (!recoverable) return;
-
-  const status = clientManager.getStatus(userIdStr);
-  if (status === 'connected' || status === 'pending') return;
-
-  await clientManager.ensureClientConnected(userIdStr, sendToUser);
-});
+setupWebSocket(server, verifyToken);
 
 // ─── START SERVER ─────────────────────────────────────────────
 // Use server.listen not app.listen

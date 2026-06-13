@@ -1,5 +1,6 @@
-const User = require('../models/User');
-const { appendMessageFooter } = require('../utils/messageFooter');
+const { getOrCreateBusinessProfile } = require('../utils/businessProfile');
+const { formatMessageForLog, resolveMessageFooter } = require('../utils/messageFooter');
+const { sendMessageWithFooter, replyWithFooter } = require('../utils/sendMessageWithFooter');
 const { MessageMedia } = require('whatsapp-web.js');
 const AutoReplyConfig = require('../models/AutoReplyConfig');
 const AutoReplyLog = require('../models/AutoReplyLog');
@@ -91,15 +92,15 @@ const callOpenRouter = async (userPrompt, { systemPrompt = 'You are a helpful as
   return content.trim();
 };
 
-const sendWhatsAppReply = async (client, msg, chatId, aiReply) => {
+const sendWhatsAppReply = async (client, msg, chatId, aiReply, messageFooter = '') => {
   try {
-    const sentMsg = await msg.reply(aiReply);
+    const sentMsg = await replyWithFooter(msg, aiReply, messageFooter, chatId);
     if (sentMsg?.id?._serialized) return sentMsg;
   } catch (err) {
     console.warn(`msg.reply failed, trying sendMessage: ${err.message}`);
   }
 
-  const sentMsg = await client.sendMessage(chatId, aiReply);
+  const sentMsg = await sendMessageWithFooter(client, chatId, aiReply, messageFooter);
   if (!sentMsg?.id?._serialized) {
     throw new Error('WhatsApp did not confirm the message was sent');
   }
@@ -353,8 +354,8 @@ const handleIncomingMessage = async (client, userId, msg) => {
     const config = await AutoReplyConfig.findOne({ userId });
     if (!config?.isEnabled) return;
 
-    const userProfile = await User.findById(userId).select('messageFooter name').lean();
-    const messageFooter = userProfile?.messageFooter?.trim() || userProfile?.name?.trim() || '';
+    const businessProfile = await getOrCreateBusinessProfile(userId);
+    const messageFooter = resolveMessageFooter(businessProfile);
 
     const resolved = await resolveMessageContact(msg);
     chatId = resolved.chatId;
@@ -474,10 +475,10 @@ const handleIncomingMessage = async (client, userId, msg) => {
 
     await sleep(config.delay || 2000);
 
-    const replyWithFooter = appendMessageFooter(reply, messageFooter);
+    const replyForLog = formatMessageForLog(reply, messageFooter);
 
     try {
-      await sendWhatsAppReply(client, msg, chatId, replyWithFooter);
+      await sendWhatsAppReply(client, msg, chatId, reply, messageFooter);
 
       if (state.activeTemplateId && mediaFiles.length > 0) {
         const template = await AITemplate.findById(state.activeTemplateId);
@@ -496,7 +497,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
         contactPhone,
         contactName,
         incomingMessage,
-        aiReply: replyWithFooter,
+        aiReply: replyForLog,
         status: 'failed',
         sourceMessageId,
         failReason: err.message,
@@ -505,7 +506,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
       return;
     }
 
-    state.conversationHistory.push({ role: 'assistant', content: replyWithFooter, timestamp: new Date() });
+    state.conversationHistory.push({ role: 'assistant', content: replyForLog, timestamp: new Date() });
     state.conversationHistory = trimHistory(state.conversationHistory);
     state.lastMessageAt = new Date();
     await state.save();
@@ -515,7 +516,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
       contactPhone,
       contactName,
       incomingMessage,
-      aiReply: replyWithFooter,
+      aiReply: replyForLog,
       status: 'sent',
       sourceMessageId,
       conversationHistory: state.conversationHistory

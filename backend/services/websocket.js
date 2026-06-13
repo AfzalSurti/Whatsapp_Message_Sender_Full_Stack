@@ -2,8 +2,12 @@ const WebSocket = require('ws');
 
 const wsClients = new Map();
 const pendingByUser = new Map();
+const latestQrByUser = new Map();
+const flushRetryTimers = new Map();
 
 const BUFFERABLE_TYPES = new Set(['qr', 'ready', 'disconnected']);
+const FLUSH_RETRY_MS = 1000;
+const FLUSH_RETRY_MAX = 30;
 
 const bufferForUser = (userId, data) => {
   if (!BUFFERABLE_TYPES.has(data.type)) return;
@@ -13,19 +17,52 @@ const bufferForUser = (userId, data) => {
 const flushPendingForUser = (userId) => {
   const key = userId.toString();
   const pending = pendingByUser.get(key);
-  if (!pending) return;
+  if (!pending) return false;
 
   const ws = wsClients.get(key);
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(pending));
     console.log(`📤 Flushed buffered ${pending.type} message to user ${key}`);
-    if (pending.type === 'ready') {
+    if (pending.type === 'ready' || pending.type === 'disconnected') {
       pendingByUser.delete(key);
     }
+    return true;
+  }
+
+  return false;
+};
+
+const stopFlushRetry = (userId) => {
+  const key = userId.toString();
+  const timer = flushRetryTimers.get(key);
+  if (timer) {
+    clearInterval(timer);
+    flushRetryTimers.delete(key);
   }
 };
 
-const setupWebSocket = (server, verifyToken, onUserConnected) => {
+const scheduleFlushRetry = (userId) => {
+  const key = userId.toString();
+  if (flushRetryTimers.has(key)) return;
+
+  let attempts = 0;
+  const timer = setInterval(() => {
+    attempts += 1;
+
+    if (flushPendingForUser(key)) {
+      stopFlushRetry(key);
+      return;
+    }
+
+    if (attempts >= FLUSH_RETRY_MAX) {
+      stopFlushRetry(key);
+    }
+  }, FLUSH_RETRY_MS);
+
+  flushRetryTimers.set(key, timer);
+};
+
+const setupWebSocket = (server, verifyToken) => {
   const wss = new WebSocket.Server({ server });
 
   wss.on('connection', async (ws, req) => {
@@ -56,10 +93,10 @@ const setupWebSocket = (server, verifyToken, onUserConnected) => {
     ws.send(JSON.stringify({ type: 'connected', message: 'WebSocket ready' }));
     flushPendingForUser(userIdStr);
 
-    if (typeof onUserConnected === 'function') {
-      onUserConnected(userIdStr).catch((err) => {
-        console.warn(`Post-connect WhatsApp recovery failed for ${userIdStr}: ${err.message}`);
-      });
+    const latestQr = latestQrByUser.get(userIdStr);
+    if (latestQr) {
+      ws.send(JSON.stringify({ type: 'qr', qr: latestQr }));
+      console.log(`📤 Re-sent latest QR to reconnected user ${userIdStr}`);
     }
 
     ws.on('message', (data) => {
@@ -88,20 +125,33 @@ const setupWebSocket = (server, verifyToken, onUserConnected) => {
 
 const sendToUser = (userId, data) => {
   const key = userId.toString();
+
+  if (data.type === 'qr' && data.qr) {
+    latestQrByUser.set(key, data.qr);
+  }
+
+  if (data.type === 'ready') {
+    latestQrByUser.delete(key);
+    pendingByUser.delete(key);
+    stopFlushRetry(key);
+  }
+
+  if (data.type === 'disconnected') {
+    pendingByUser.delete(key);
+  }
+
   const ws = wsClients.get(key);
 
   if (ws && ws.readyState === WebSocket.OPEN) {
     console.log(`📤 WebSocket SEND to ${key}: ${data.type} (message size: ${JSON.stringify(data).length} bytes)`);
     ws.send(JSON.stringify(data));
-    if (data.type === 'ready') {
-      pendingByUser.delete(key);
-    }
     return true;
   }
 
   if (BUFFERABLE_TYPES.has(data.type)) {
     bufferForUser(key, data);
     console.log(`📥 Buffered ${data.type} for user ${key} (WebSocket not ready)`);
+    scheduleFlushRetry(key);
   } else if (!ws) {
     console.warn(`⚠️  No WebSocket connection found for user ${key}`);
   } else {
@@ -111,6 +161,22 @@ const sendToUser = (userId, data) => {
   return false;
 };
 
+const getLatestQr = (userId) => latestQrByUser.get(userId.toString()) || null;
+
+const clearLatestQr = (userId) => {
+  const key = userId.toString();
+  latestQrByUser.delete(key);
+  pendingByUser.delete(key);
+  stopFlushRetry(key);
+};
+
 const getWsClients = () => wsClients;
 
-module.exports = { setupWebSocket, sendToUser, getWsClients, flushPendingForUser };
+module.exports = {
+  setupWebSocket,
+  sendToUser,
+  getWsClients,
+  flushPendingForUser,
+  getLatestQr,
+  clearLatestQr
+};

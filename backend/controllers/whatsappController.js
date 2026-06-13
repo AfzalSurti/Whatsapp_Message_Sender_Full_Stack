@@ -2,6 +2,7 @@ const clientManager = require('../services/clientManager');
 const { sendMessages } = require('../services/sender');
 const Session = require('../models/Session');
 const { trackUsage } = require('./keysController');
+const { getLatestQr, clearLatestQr } = require('../services/websocket');
 
 const connectWhatsApp = async (req, res) => {
   try {
@@ -16,24 +17,15 @@ const connectWhatsApp = async (req, res) => {
     }
 
     if (status === 'pending') {
-      if (explicitFresh) {
-        await clientManager.abortPendingClient(userId, 'User requested fresh QR');
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      } else {
-        return res.json({
-          message: 'WhatsApp is already connecting. Please wait for QR or session restore.',
-          status: 'pending'
-        });
-      }
+      await clientManager.abortPendingClient(userId, explicitFresh ? 'User requested fresh QR' : 'User clicked Connect');
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     const hasStoredSession = await clientManager.canRecoverSession(userId);
 
     if (explicitFresh) {
-      clientManager.cleanupLocalAuthArtifacts(userId);
+      await clientManager.cleanupLocalAuthArtifacts(userId);
     }
-
-    const suppressQrNotification = !explicitFresh && hasStoredSession;
 
     await clientManager.createClient(
       userId,
@@ -50,50 +42,32 @@ const connectWhatsApp = async (req, res) => {
         console.log(`📨 Sending disconnected status to user ${userIdStr}: ${reason}`);
         sendToUser(userIdStr, { type: 'disconnected', reason });
       },
-      { freshAuth: explicitFresh, suppressQrNotification }
+      { freshAuth: explicitFresh, suppressQrNotification: false }
     );
 
     const responseStatus = clientManager.getStatus(userId);
-    const message = suppressQrNotification
+    const qr = getLatestQr(userIdStr);
+    const message = hasStoredSession && !explicitFresh
       ? 'Restoring WhatsApp session...'
       : 'WhatsApp initializing. Scan QR.';
 
-    res.json({ message, status: responseStatus || 'pending', hasStoredSession });
+    res.json({
+      message,
+      status: responseStatus || 'pending',
+      hasStoredSession: hasStoredSession && !explicitFresh,
+      qr: qr || null
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-const reconnectCooldownMs = process.env.NODE_ENV === 'production' ? 60_000 : 15_000;
-const lastReconnectAttempt = new Map();
-
 const getWhatsAppStatus = async (req, res) => {
   try {
     const userId = req.user._id;
-    const userIdStr = userId.toString();
-    const sendToUser = req.app.get('sendToUser');
-    let status = clientManager.getStatus(userId);
+    const status = clientManager.getStatus(userId);
     const session = await Session.findOne({ userId });
     const recoverable = await clientManager.canRecoverSession(userId);
-
-    if (
-      session?.isActive &&
-      recoverable &&
-      status === 'disconnected' &&
-      !clientManager.isClientPending(userId)
-    ) {
-      const now = Date.now();
-      const lastAttempt = lastReconnectAttempt.get(userIdStr) || 0;
-
-      if (now - lastAttempt >= reconnectCooldownMs) {
-        lastReconnectAttempt.set(userIdStr, now);
-        clientManager.ensureClientConnected(userId, sendToUser).catch((err) => {
-          console.warn(`Background WhatsApp reconnect failed for ${userIdStr}: ${err.message}`);
-        });
-      }
-
-      status = clientManager.getStatus(userId);
-    }
 
     const client = clientManager.getClient(userId);
     let clientReady = false;
@@ -102,12 +76,15 @@ const getWhatsAppStatus = async (req, res) => {
       clientReady = typeof client.sendMessage === 'function';
     }
 
+    const qr = status === 'pending' ? getLatestQr(userId) : null;
+
     res.json({
       status: clientReady ? 'connected' : status,
       isActive: session?.isActive || false,
       hasStoredSession: recoverable,
       lastSeen: session?.lastSeen || null,
-      clientReady
+      clientReady,
+      qr: qr || null
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -116,6 +93,7 @@ const getWhatsAppStatus = async (req, res) => {
 
 const disconnectWhatsApp = async (req, res) => {
   try {
+    clearLatestQr(req.user._id);
     await clientManager.disconnectClient(req.user._id);
     res.json({ message: 'WhatsApp disconnected successfully' });
   } catch (err) {

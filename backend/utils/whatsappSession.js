@@ -1,75 +1,117 @@
 const fs = require('fs');
 const path = require('path');
-const FixedMongoStore = require('../config/fixedMongoStore');
-const mongoose = require('mongoose');
 
-const AUTH_DATA_PATH = FixedMongoStore.AUTH_DATA_PATH;
+const AUTH_DATA_PATH = process.env.WHATSAPP_AUTH_PATH
+  || path.join(__dirname, '..', '.wwebjs_auth');
 
-const getRemoteSessionName = (userId) => `RemoteAuth-${userId.toString()}`;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const getMongoStore = () => new FixedMongoStore({ mongoose, authDataPath: AUTH_DATA_PATH });
-
-const getLocalAuthPaths = (userId) => {
-  const sessionName = getRemoteSessionName(userId);
-  return {
-    sessionDir: path.join(AUTH_DATA_PATH, sessionName),
-    zipPath: path.join(AUTH_DATA_PATH, `${sessionName}.zip`)
-  };
+const ensureAuthDir = () => {
+  if (!fs.existsSync(AUTH_DATA_PATH)) {
+    fs.mkdirSync(AUTH_DATA_PATH, { recursive: true });
+  }
 };
 
-const hasStoredRemoteSession = async (userId) => {
+ensureAuthDir();
+
+const getLocalSessionDir = (userId) =>
+  path.join(AUTH_DATA_PATH, `session-${userId.toString()}`);
+
+const hasStoredLocalSession = (userId) => {
   try {
-    const store = getMongoStore();
-    return store.sessionExists({ session: getRemoteSessionName(userId) });
-  } catch (err) {
-    console.error(`Failed to check stored WhatsApp session: ${err.message}`);
+    const sessionDir = getLocalSessionDir(userId);
+    if (!fs.existsSync(sessionDir)) return false;
+
+    const defaultDir = path.join(sessionDir, 'Default');
+    if (fs.existsSync(defaultDir)) {
+      return fs.readdirSync(defaultDir).length > 0;
+    }
+
+    return fs.readdirSync(sessionDir).length > 0;
+  } catch {
     return false;
   }
 };
 
-// Recovery uses MongoDB only — not leftover temp files.
-const canRecoverSession = async (userId) => hasStoredRemoteSession(userId);
+const canRecoverSession = async (userId) => hasStoredLocalSession(userId);
 
-const getWwebjsTempSessionPath = (userId) =>
-  path.join(AUTH_DATA_PATH, `wwebjs_temp_session_${userId.toString()}`);
-
-const cleanupLocalAuthArtifacts = (userId) => {
-  const { sessionDir, zipPath } = getLocalAuthPaths(userId);
-  const wwebjsTempDir = getWwebjsTempSessionPath(userId);
-
+const listLocalSessionUserIds = () => {
   try {
-    if (fs.existsSync(sessionDir)) {
-      fs.rmSync(sessionDir, { recursive: true, force: true });
-    }
-    if (fs.existsSync(zipPath)) {
-      fs.unlinkSync(zipPath);
-    }
-    if (fs.existsSync(wwebjsTempDir)) {
-      fs.rmSync(wwebjsTempDir, { recursive: true, force: true });
-    }
-  } catch (err) {
-    console.warn(`Failed to remove temp WhatsApp auth files: ${err.message}`);
+    if (!fs.existsSync(AUTH_DATA_PATH)) return [];
+
+    return fs
+      .readdirSync(AUTH_DATA_PATH, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('session-'))
+      .map((entry) => entry.name.replace(/^session-/, ''))
+      .filter((userId) => hasStoredLocalSession(userId));
+  } catch {
+    return [];
   }
 };
 
-const deleteStoredRemoteSession = async (userId) => {
-  try {
-    const store = getMongoStore();
-    await store.delete({ session: getRemoteSessionName(userId) });
-  } catch (err) {
-    console.error(`Failed to delete stored WhatsApp session: ${err.message}`);
+const cleanupLocalAuthArtifacts = async (userId, { maxAttempts = 6 } = {}) => {
+  const sessionDir = getLocalSessionDir(userId);
+  if (!fs.existsSync(sessionDir)) return true;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      fs.rmSync(sessionDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 500
+      });
+      console.log(`🗑️  Deleted local WhatsApp session folder: ${sessionDir}`);
+      return true;
+    } catch (err) {
+      const retriable = ['EBUSY', 'EPERM', 'EACCES'].includes(err.code);
+      if (!retriable || attempt === maxAttempts) {
+        console.warn(`Failed to remove local WhatsApp session: ${err.message}`);
+        return false;
+      }
+      await sleep(750 * attempt);
+    }
   }
 
-  cleanupLocalAuthArtifacts(userId);
+  return false;
+};
+
+const deleteStoredRemoteSession = async (userId) => {
+  await cleanupLocalAuthArtifacts(userId);
+};
+
+const purgeAllLocalSessions = async () => {
+  ensureAuthDir();
+
+  const entries = fs.readdirSync(AUTH_DATA_PATH, { withFileTypes: true });
+  let removed = 0;
+
+  for (const entry of entries) {
+    const targetPath = path.join(AUTH_DATA_PATH, entry.name);
+    try {
+      if (entry.isDirectory()) {
+        fs.rmSync(targetPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+      } else {
+        fs.unlinkSync(targetPath);
+      }
+      removed += 1;
+      console.log(`🗑️  Removed WhatsApp auth artifact: ${entry.name}`);
+    } catch (err) {
+      console.warn(`Could not remove ${entry.name}: ${err.message}`);
+    }
+  }
+
+  console.log(`🧹 Purged ${removed} item(s) from ${AUTH_DATA_PATH}`);
+  return removed;
 };
 
 module.exports = {
   AUTH_DATA_PATH,
-  getRemoteSessionName,
-  getWwebjsTempSessionPath,
-  hasStoredRemoteSession,
+  getLocalSessionDir,
+  hasStoredLocalSession,
+  listLocalSessionUserIds,
   canRecoverSession,
   cleanupLocalAuthArtifacts,
   deleteStoredRemoteSession,
-  getMongoStore
+  purgeAllLocalSessions
 };

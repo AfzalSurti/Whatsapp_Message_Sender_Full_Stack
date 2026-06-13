@@ -57,10 +57,6 @@ export default function AutoReplyPage() {
   const [isEnabled, setIsEnabled] = useState(false);
   const [mode, setMode] = useState('smart');
   const [selectedContacts, setSelectedContacts] = useState([]);
-  const [systemPrompt, setSystemPrompt] = useState(
-    'You are a helpful WhatsApp assistant. Reply naturally and concisely.'
-  );
-  const [delay, setDelay] = useState(2000);
   const [aiTemplates, setAiTemplates] = useState([]);
   const [enabledTemplateIds, setEnabledTemplateIds] = useState([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
@@ -105,11 +101,6 @@ export default function AutoReplyPage() {
       setIsEnabled(Boolean(config.isEnabled));
       setMode(config.mode === 'all' || config.mode === 'selected' ? 'smart' : config.mode || 'smart');
       setSelectedContacts(config.selectedContacts || []);
-      setSystemPrompt(
-        config.systemPrompt ||
-          'You are a helpful WhatsApp assistant. Reply naturally and concisely.'
-      );
-      setDelay(config.delay || 2000);
       setEnabledTemplateIds((config.enabledTemplateIds || []).map((id) => String(id)));
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to load auto-reply settings');
@@ -379,16 +370,12 @@ export default function AutoReplyPage() {
         isEnabled,
         mode: 'smart',
         selectedContacts,
-        systemPrompt,
-        delay,
         enabledTemplateIds
       });
       const config = res.data.config;
       setIsEnabled(Boolean(config.isEnabled));
       setMode(config.mode === 'all' || config.mode === 'selected' ? 'smart' : config.mode || 'smart');
       setSelectedContacts(config.selectedContacts || []);
-      setSystemPrompt(config.systemPrompt || systemPrompt);
-      setDelay(config.delay || delay);
       setEnabledTemplateIds((config.enabledTemplateIds || []).map((id) => String(id)));
       toast.success('Auto-reply settings saved');
     } catch (err) {
@@ -791,42 +778,14 @@ export default function AutoReplyPage() {
                 Turned-off templates are hidden. Enable them on the AI Templates page.
               </p>
             )}
-          </div>
 
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm font-semibold text-gray-200">AI Personality (fallback)</label>
-              <p className="text-sm text-gray-500 mt-1">
-                Used when no template matches, or no templates are selected above.
-              </p>
-            </div>
-            <textarea
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              rows={6}
-              placeholder="You are a helpful assistant..."
-              className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-sm leading-relaxed outline-none focus:border-[#25D366]/40 resize-none"
-            />
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-semibold text-gray-200">Response Delay</span>
-              <span className="text-[#25D366] font-semibold">{(delay / 1000).toFixed(1)}s</span>
-            </div>
-            <input
-              type="range"
-              min={1000}
-              max={10000}
-              step={500}
-              value={delay}
-              onChange={(e) => setDelay(Number(e.target.value))}
-              className="w-full accent-[#25D366]"
-            />
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>1s</span>
-              <span>10s</span>
-            </div>
+            <p className="text-xs text-gray-500">
+              AI personality and response delay are configured in{' '}
+              <Link href="/dashboard/settings" className="text-[#25D366] hover:underline">
+                Settings
+              </Link>
+              .
+            </p>
           </div>
 
           <button
