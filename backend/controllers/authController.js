@@ -30,7 +30,7 @@ const signup = async (req, res) => {
     }
 
     // Create user — password gets hashed automatically via pre-save hook
-    const user = await User.create({ name, email, password });
+    const user = await User.create({ name, email, password, messageFooter: name.trim().slice(0, 80) });
 
     // Generate token
     const token = generateToken(user._id);
@@ -86,6 +86,36 @@ const getMe = async (req, res) => {
   res.json({ user: req.user });
 };
 
+const updateProfile = async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { messageFooter } = req.body;
+    const updates = {};
+
+    if (messageFooter !== undefined) {
+      updates.messageFooter = String(messageFooter).trim().slice(0, 80);
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: updates },
+      { returnDocument: 'after' }
+    );
+
+    res.json({ user });
+  } catch (error) {
+    res.status(500).json({ error: getSafeErrorMessage(error) });
+  }
+};
+
 // ─── GOOGLE OAUTH CALLBACK ────────────────────────────────────
 // Called after Google login succeeds
 // Sends token to frontend via URL redirect
@@ -113,4 +143,4 @@ const logout = async (req, res) => {
   }
 };
 
-module.exports = { signup, login, getMe, googleCallback, logout };
+module.exports = { signup, login, getMe, updateProfile, googleCallback, logout };

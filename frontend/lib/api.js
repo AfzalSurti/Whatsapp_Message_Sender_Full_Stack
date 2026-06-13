@@ -41,6 +41,7 @@ export const authAPI = {
   signup: (data) => api.post('/api/auth/signup', data),
   login: (data) => api.post('/api/auth/login', data),
   getMe: () => api.get('/api/auth/me'),
+  updateProfile: (data) => api.patch('/api/auth/profile', data),
   logout: () => api.post('/api/auth/logout'),
 };
 
@@ -121,7 +122,9 @@ export const templatesAPI = {
 // ─── AI TEMPLATES (INTENT + WORKFLOW) ──────────────────────────
 export const aiTemplateAPI = {
   getTemplates: () => api.get('/api/ai-templates'),
-  getExampleTemplate: () => api.get('/api/ai-templates/example'),
+  getStarterTemplates: () => api.get('/api/ai-templates/starters'),
+  getExampleTemplate: (slug = 'welcome') => api.get(`/api/ai-templates/example/${slug}`),
+  addStarterTemplate: (slug) => api.post(`/api/ai-templates/starters/${slug}`),
   createTemplate: (data) => api.post('/api/ai-templates', data),
   updateTemplate: (id, data) => api.put(`/api/ai-templates/${id}`, data),
   deleteTemplate: (id) => api.delete(`/api/ai-templates/${id}`),

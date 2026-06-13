@@ -38,7 +38,8 @@ if (hasGoogleOAuthConfig) {
             googleId: profile.id,
             avatar: profile.photos[0].value,
             authProvider: 'google',
-            isVerified: true
+            isVerified: true,
+            messageFooter: String(profile.displayName || '').trim().slice(0, 80)
           });
 
           return done(null, user);

@@ -1,4 +1,5 @@
-const axios = require('axios');
+const User = require('../models/User');
+const { appendMessageFooter } = require('../utils/messageFooter');
 const { MessageMedia } = require('whatsapp-web.js');
 const AutoReplyConfig = require('../models/AutoReplyConfig');
 const AutoReplyLog = require('../models/AutoReplyLog');
@@ -6,16 +7,21 @@ const AITemplate = require('../models/AITemplate');
 const ConversationState = require('../models/ConversationState');
 const {
   isAutoReplyEligibleMessage,
-  resolveMessageContact,
-  isContactSelected
+  resolveMessageContact
 } = require('../utils/whatsappChat');
+const {
+  buildSavedPhoneSet,
+  resolveAutoReplyAccess
+} = require('../utils/autoReplyEligibility');
 const {
   buildPlaceholderMap,
   applyPlaceholders,
   formatExampleConversations,
   formatCustomFields,
   matchSharedDocuments,
-  parseDataUrl
+  parseDataUrl,
+  findExampleMatch,
+  matchTemplateLocally
 } = require('../utils/aiTemplateHelpers');
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -28,11 +34,11 @@ const resolveSystemPrompt = (config) => {
   return prompt || DEFAULT_SYSTEM_PROMPT;
 };
 
-const getTemplatesForAutoReply = async (userId) => {
+const getTemplatesForAutoReply = async (userId, { useAllTemplates = false } = {}) => {
   const config = await AutoReplyConfig.findOne({ userId }).lean();
   const query = { userId, isActive: true };
 
-  if (config?.enabledTemplateIds?.length > 0) {
+  if (!useAllTemplates && config?.enabledTemplateIds?.length > 0) {
     query._id = { $in: config.enabledTemplateIds };
   }
 
@@ -147,24 +153,59 @@ Return ONLY the exact template name or 'none'.`;
     (template) => template.name.trim().toLowerCase() === normalized.toLowerCase()
   );
 
-  return matched || null;
+  return matched || matchTemplateLocally(message, templates);
 };
 
-const findExampleMatch = (message, examples = []) => {
-  const normalized = String(message || '').trim().toLowerCase();
-  if (!normalized) return null;
+const resolveActiveTemplate = async ({
+  incomingMessage,
+  state,
+  templates,
+  now
+}) => {
+  if (!templates.length) {
+    return { template: null, switched: false };
+  }
 
-  const exact = examples.find(
-    (item) => String(item.userMessage || '').trim().toLowerCase() === normalized
-  );
-  if (exact) return exact;
+  const currentTemplate = state.activeTemplateId
+    ? templates.find((item) => String(item._id) === String(state.activeTemplateId)) ||
+      (await AITemplate.findById(state.activeTemplateId))
+    : null;
 
-  return (
-    examples.find((item) => {
-      const sample = String(item.userMessage || '').trim().toLowerCase();
-      return sample && (normalized.includes(sample) || sample.includes(normalized));
-    }) || null
-  );
+  const currentExampleMatch = currentTemplate
+    ? findExampleMatch(incomingMessage, currentTemplate.exampleConversations || [])
+    : null;
+
+  const localMatch = matchTemplateLocally(incomingMessage, templates);
+  const shouldRedetect =
+    !state.activeTemplateId ||
+    (!currentExampleMatch &&
+      localMatch &&
+      String(localMatch._id) !== String(state.activeTemplateId));
+
+  let matchedTemplate = null;
+
+  if (shouldRedetect) {
+    matchedTemplate = localMatch || (await detectIntent(incomingMessage, state.conversationHistory, templates));
+  } else if (currentTemplate) {
+    matchedTemplate = currentTemplate;
+  }
+
+  if (!matchedTemplate) {
+    return { template: currentTemplate, switched: false };
+  }
+
+  const switched =
+    !state.activeTemplateId || String(state.activeTemplateId) !== String(matchedTemplate._id);
+
+  if (switched) {
+    state.activeTemplateId = matchedTemplate._id;
+    state.currentStep = 0;
+    state.isCompleted = false;
+    state.collectedInfo = {};
+    state.intentDetectedAt = now;
+  }
+
+  return { template: matchedTemplate, switched };
 };
 
 const sendMediaFiles = async (client, chatId, files = [], placeholderMap = {}) => {
@@ -312,27 +353,36 @@ const handleIncomingMessage = async (client, userId, msg) => {
     const config = await AutoReplyConfig.findOne({ userId });
     if (!config?.isEnabled) return;
 
+    const userProfile = await User.findById(userId).select('messageFooter name').lean();
+    const messageFooter = userProfile?.messageFooter?.trim() || userProfile?.name?.trim() || '';
+
     const resolved = await resolveMessageContact(msg);
     chatId = resolved.chatId;
     contactName = resolved.contactName;
     contactPhone = resolved.contactPhone || chatId;
     if (!chatId) return;
 
-    if (config.mode === 'selected') {
-      const allowed = isContactSelected(config.selectedContacts, chatId, contactPhone);
-      if (!allowed) {
-        await AutoReplyLog.create({
-          userId,
-          contactPhone,
-          contactName,
-          incomingMessage,
-          aiReply: '',
-          status: 'skipped',
-          sourceMessageId,
-          failReason: 'Contact not in your selected list. Add this number or switch to All Messages.'
-        });
-        return;
-      }
+    const savedPhones = await buildSavedPhoneSet(userId);
+    const access = resolveAutoReplyAccess({
+      config,
+      chatId,
+      contactPhone,
+      savedPhones
+    });
+
+    if (!access.allowed) {
+      await AutoReplyLog.create({
+        userId,
+        contactPhone,
+        contactName,
+        incomingMessage,
+        aiReply: '',
+        status: 'skipped',
+        sourceMessageId,
+        failReason:
+          'This number is in your Contacts list and was not selected for auto-reply. Add them from WhatsApp Chats below.'
+      });
+      return;
     }
 
     let state = await ConversationState.findOne({ userId, contactPhone: chatId });
@@ -364,23 +414,22 @@ const handleIncomingMessage = async (client, userId, msg) => {
 
     let newlyActivatedTemplate = null;
 
-    if (!state.activeTemplateId) {
-      const templates = await getTemplatesForAutoReply(userId);
-      if (templates.length > 0) {
-        newlyActivatedTemplate = await detectIntent(
-          incomingMessage,
-          state.conversationHistory,
-          templates
-        );
+    const templates = await getTemplatesForAutoReply(userId, {
+      useAllTemplates: access.useAllTemplates
+    });
 
-        if (newlyActivatedTemplate) {
-          state.activeTemplateId = newlyActivatedTemplate._id;
-          state.currentStep = 0;
-          state.isCompleted = false;
-          state.collectedInfo = {};
-          state.intentDetectedAt = now;
-        }
-      }
+    const { template: activeTemplate, switched } = await resolveActiveTemplate({
+      incomingMessage,
+      state,
+      templates,
+      now
+    });
+
+    if (switched && activeTemplate) {
+      newlyActivatedTemplate = activeTemplate;
+      console.log(
+        `Auto-reply template: ${activeTemplate.name} for "${incomingMessage.slice(0, 60)}"`
+      );
     }
 
     let reply = '';
@@ -392,7 +441,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
 
     try {
       if (state.activeTemplateId) {
-        const template = newlyActivatedTemplate || (await AITemplate.findById(state.activeTemplateId));
+        const template = activeTemplate || (await AITemplate.findById(state.activeTemplateId));
 
         if (!template) {
           state.activeTemplateId = null;
@@ -425,8 +474,10 @@ const handleIncomingMessage = async (client, userId, msg) => {
 
     await sleep(config.delay || 2000);
 
+    const replyWithFooter = appendMessageFooter(reply, messageFooter);
+
     try {
-      await sendWhatsAppReply(client, msg, chatId, reply);
+      await sendWhatsAppReply(client, msg, chatId, replyWithFooter);
 
       if (state.activeTemplateId && mediaFiles.length > 0) {
         const template = await AITemplate.findById(state.activeTemplateId);
@@ -445,7 +496,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
         contactPhone,
         contactName,
         incomingMessage,
-        aiReply: reply,
+        aiReply: replyWithFooter,
         status: 'failed',
         sourceMessageId,
         failReason: err.message,
@@ -454,7 +505,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
       return;
     }
 
-    state.conversationHistory.push({ role: 'assistant', content: reply, timestamp: new Date() });
+    state.conversationHistory.push({ role: 'assistant', content: replyWithFooter, timestamp: new Date() });
     state.conversationHistory = trimHistory(state.conversationHistory);
     state.lastMessageAt = new Date();
     await state.save();
@@ -464,7 +515,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
       contactPhone,
       contactName,
       incomingMessage,
-      aiReply: reply,
+      aiReply: replyWithFooter,
       status: 'sent',
       sourceMessageId,
       conversationHistory: state.conversationHistory

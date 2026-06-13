@@ -30,8 +30,12 @@ const hasStoredRemoteSession = async (userId) => {
 // Recovery uses MongoDB only — not leftover temp files.
 const canRecoverSession = async (userId) => hasStoredRemoteSession(userId);
 
+const getWwebjsTempSessionPath = (userId) =>
+  path.join(AUTH_DATA_PATH, `wwebjs_temp_session_${userId.toString()}`);
+
 const cleanupLocalAuthArtifacts = (userId) => {
   const { sessionDir, zipPath } = getLocalAuthPaths(userId);
+  const wwebjsTempDir = getWwebjsTempSessionPath(userId);
 
   try {
     if (fs.existsSync(sessionDir)) {
@@ -39,6 +43,9 @@ const cleanupLocalAuthArtifacts = (userId) => {
     }
     if (fs.existsSync(zipPath)) {
       fs.unlinkSync(zipPath);
+    }
+    if (fs.existsSync(wwebjsTempDir)) {
+      fs.rmSync(wwebjsTempDir, { recursive: true, force: true });
     }
   } catch (err) {
     console.warn(`Failed to remove temp WhatsApp auth files: ${err.message}`);
@@ -59,6 +66,7 @@ const deleteStoredRemoteSession = async (userId) => {
 module.exports = {
   AUTH_DATA_PATH,
   getRemoteSessionName,
+  getWwebjsTempSessionPath,
   hasStoredRemoteSession,
   canRecoverSession,
   cleanupLocalAuthArtifacts,

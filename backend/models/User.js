@@ -44,6 +44,13 @@ const UserSchema = new mongoose.Schema(
     isVerified: {
       type: Boolean,
       default: false
+    },
+
+    messageFooter: {
+      type: String,
+      default: '',
+      trim: true,
+      maxlength: 80
     }
   },
   {

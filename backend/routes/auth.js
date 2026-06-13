@@ -6,6 +6,7 @@ const {
   signup,
   login,
   getMe,
+  updateProfile,
   googleCallback,
   logout
 } = require('../controllers/authController');
@@ -39,8 +40,14 @@ const loginValidation = [
 // ─── LOCAL AUTH ───────────────────────────────────────────────
 router.post('/signup', signupValidation, signup);
 router.post('/login', loginValidation, login);
-router.get('/me', protect, getMe);          // get logged in user
-router.post('/logout', protect, logout);    // logout and disconnect WhatsApp
+router.get('/me', protect, getMe);
+router.patch(
+  '/profile',
+  protect,
+  body('messageFooter').optional().trim().isLength({ max: 80 }).withMessage('Footer must be 80 characters or less'),
+  updateProfile
+);
+router.post('/logout', protect, logout);
 
 // ─── GOOGLE OAUTH ─────────────────────────────────────────────
 // Step 1 — redirect user to Google login page

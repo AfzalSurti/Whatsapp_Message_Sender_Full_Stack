@@ -70,8 +70,14 @@ export const AuthProvider = ({ children }) => {
     window.location.href = '/login';
   };
 
+  const updateProfile = async (data) => {
+    const res = await authAPI.updateProfile(data);
+    setUser(res.data.user);
+    return res.data.user;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, login, signup, logout, refreshUser, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

@@ -117,7 +117,7 @@ const updateConfig = async (req, res) => {
     const config = await AutoReplyConfig.findOneAndUpdate(
       { userId: req.user._id },
       { $set: updates },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     res.json({ config });

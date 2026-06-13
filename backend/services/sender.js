@@ -1,5 +1,7 @@
 const MessageLog = require('../models/MessageLog');
 const Campaign = require('../models/Campaign');
+const User = require('../models/User');
+const { appendMessageFooter } = require('../utils/messageFooter');
 
 // ─── SEND MESSAGES ────────────────────────────────────────────
 // client — WhatsApp client for this user
@@ -30,6 +32,9 @@ const sendMessages = async (client, userId, numbersOrRecipients, message, onProg
   const recipients = normalizeRecipients(numbersOrRecipients, message);
   const baseMessage = recipients[0]?.message || message || '';
 
+  const user = await User.findById(userId).select('messageFooter name').lean();
+  const messageFooter = user?.messageFooter?.trim() || user?.name?.trim() || '';
+
   // Create campaign record in MongoDB
   const campaign = await Campaign.create({
     userId,
@@ -45,6 +50,7 @@ const sendMessages = async (client, userId, numbersOrRecipients, message, onProg
 
   for (let i = 0; i < recipients.length; i++) {
     const { phone: rawNumber, message: recipientMessage } = recipients[i];
+    const messageWithFooter = appendMessageFooter(recipientMessage, messageFooter);
 
     try {
       // Clean number — remove all non-digits
@@ -60,7 +66,7 @@ const sendMessages = async (client, userId, numbersOrRecipients, message, onProg
       const whatsappId = `${cleanNumber}@c.us`;
 
       // Make message unique per number (to avoid WhatsApp duplicate detection)
-      const uniqueMessage = recipientMessage + '\u200B'.repeat(i + 1);
+      const uniqueMessage = messageWithFooter + '\u200B'.repeat(i + 1);
 
       // Send message with retry logic
       let retries = 0;
@@ -72,7 +78,7 @@ const sendMessages = async (client, userId, numbersOrRecipients, message, onProg
           await client.sendMessage(whatsappId, uniqueMessage);
           sent = true;
           results.sent++;
-          await logMessage(userId, campaign._id, rawNumber, recipientMessage, 'sent', null);
+          await logMessage(userId, campaign._id, rawNumber, messageWithFooter, 'sent', null);
           console.log(`✅ Message sent to ${rawNumber}`);
         } catch (err) {
           retries++;
@@ -87,7 +93,7 @@ const sendMessages = async (client, userId, numbersOrRecipients, message, onProg
 
     } catch (err) {
       results.failed++;
-      await logMessage(userId, campaign._id, rawNumber, recipientMessage, 'failed', err.message);
+      await logMessage(userId, campaign._id, rawNumber, messageWithFooter, 'failed', err.message);
     }
 
     // Send live progress to frontend via WebSocket

@@ -4,6 +4,8 @@ const { protect } = require('../middleware/auth');
 const {
   getTemplates,
   getExampleTemplate,
+  getStarterTemplates,
+  createStarterTemplate,
   createTemplate,
   updateTemplate,
   deleteTemplate,
@@ -30,7 +32,10 @@ const templateValidation = [
   body('sharedDocuments').optional().isArray()
 ];
 
+router.get('/starters', protect, getStarterTemplates);
 router.get('/example', protect, getExampleTemplate);
+router.get('/example/:slug', protect, getExampleTemplate);
+router.post('/starters/:slug', protect, createStarterTemplate);
 router.get('/conversations', protect, getConversations);
 router.get('/conversations/:id', protect, param('id').isMongoId(), getConversation);
 router.delete('/conversations/:id', protect, param('id').isMongoId(), deleteConversation);

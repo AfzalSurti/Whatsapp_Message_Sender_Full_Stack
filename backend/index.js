@@ -118,12 +118,33 @@ process.on('unhandledRejection', (reason) => {
     return;
   }
 
+  if (
+    reason?.code === 'EEXIST' &&
+    reasonPath.includes('wwebjs_temp_session')
+  ) {
+    console.warn('RemoteAuth temp dir warning (session still active):', message);
+    return;
+  }
+
+  if (/Session zip not found/i.test(message)) {
+    console.warn('WhatsApp session backup warning:', message);
+    return;
+  }
+
   console.error('💥 Unhandled Rejection:', reason);
 });
 
 // ─── SETUP WEBSOCKET ──────────────────────────────────────────
 // Must be after server created — attaches to same HTTP server
-setupWebSocket(server, verifyToken);
+setupWebSocket(server, verifyToken, async (userIdStr) => {
+  const recoverable = await clientManager.canRecoverSession(userIdStr);
+  if (!recoverable) return;
+
+  const status = clientManager.getStatus(userIdStr);
+  if (status === 'connected' || status === 'pending') return;
+
+  await clientManager.ensureClientConnected(userIdStr, sendToUser);
+});
 
 // ─── START SERVER ─────────────────────────────────────────────
 // Use server.listen not app.listen
@@ -139,9 +160,13 @@ server.listen(PORT, () => {
     console.log(`Chrome executable: ${chromePath || 'NOT FOUND — run node scripts/ensure-chrome.js during build'}`);
   }
 
-  // Recover active sessions after startup (delay longer on Render while Chrome warms up)
+  // Recover active sessions after startup (delay longer while Chrome warms up / nodemon settles)
   const recoveryDelayMs =
-    process.env.NODE_ENV === 'production' || process.env.RENDER === 'true' ? 10000 : 2000;
+    process.env.NODE_ENV === 'production' || process.env.RENDER === 'true'
+      ? 10000
+      : process.platform === 'win32'
+        ? 5000
+        : 3000;
 
   setTimeout(() => {
     recoverSessions(sendToUser);

@@ -110,6 +110,99 @@ const parseDataUrl = (dataUrl = '') => {
   return { mimeType: match[1], base64: match[2] };
 };
 
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const normalizeMessageForMatching = (message = '') =>
+  String(message)
+    .trim()
+    .toLowerCase()
+    .replace(/\bintership\b/g, 'internship');
+
+const findExampleMatch = (message, examples = []) => {
+  const normalized = normalizeMessageForMatching(message);
+  if (!normalized) return null;
+
+  const exact = examples.find(
+    (item) => String(item.userMessage || '').trim().toLowerCase() === normalized
+  );
+  if (exact) return exact;
+
+  return (
+    examples.find((item) => {
+      const sample = String(item.userMessage || '').trim().toLowerCase();
+      if (!sample) return false;
+
+      if (sample.length <= 5) {
+        return new RegExp(`\\b${escapeRegex(sample)}\\b`, 'i').test(normalized);
+      }
+
+      if (normalized.includes(sample)) return true;
+      if (sample.length >= 12 && sample.includes(normalized)) return true;
+
+      return false;
+    }) || null
+  );
+};
+
+const extractTemplateTerms = (template) => {
+  const terms = new Set();
+
+  String(template.name || '')
+    .toLowerCase()
+    .match(/\b[a-z]{4,}\b/g)
+    ?.forEach((word) => terms.add(word));
+
+  String(template.description || '')
+    .toLowerCase()
+    .match(/\b[a-z]{4,}\b/g)
+    ?.forEach((word) => terms.add(word));
+
+  for (const example of template.exampleConversations || []) {
+    const userMessage = String(example.userMessage || '').trim().toLowerCase();
+    if (userMessage.length >= 4) terms.add(userMessage);
+    userMessage
+      .match(/\b[a-z]{4,}\b/g)
+      ?.forEach((word) => terms.add(word));
+  }
+
+  return Array.from(terms);
+};
+
+const matchTemplateLocally = (message, templates = []) => {
+  const text = normalizeMessageForMatching(message);
+  if (!text || !templates.length) return null;
+
+  let best = null;
+  let bestScore = 0;
+
+  for (const template of templates) {
+    let score = 0;
+
+    for (const example of template.exampleConversations || []) {
+      const sample = String(example.userMessage || '').trim().toLowerCase();
+      if (!sample) continue;
+      if (text === sample) return template;
+      if (sample.length >= 6 && text.includes(sample)) score += sample.length * 2;
+      if (sample.length >= 6 && sample.includes(text)) score += text.length * 2;
+    }
+
+    for (const term of extractTemplateTerms(template)) {
+      if (term.length < 4) continue;
+      if (text.includes(term)) score += term.length;
+      if (term.length >= 6 && new RegExp(`\\b${escapeRegex(term)}\\b`, 'i').test(text)) {
+        score += term.length;
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = template;
+    }
+  }
+
+  return bestScore >= 8 ? best : null;
+};
+
 module.exports = {
   normalizeCustomFields,
   normalizeExampleConversations,
@@ -120,5 +213,7 @@ module.exports = {
   formatCustomFields,
   matchSharedDocuments,
   parseDataUrl,
+  findExampleMatch,
+  matchTemplateLocally,
   slugifyKey
 };

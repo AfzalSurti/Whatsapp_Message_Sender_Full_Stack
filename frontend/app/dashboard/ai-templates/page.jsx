@@ -75,6 +75,8 @@ export default function AITemplatesPage() {
 
   const [activeTab, setActiveTab] = useState('templates');
   const [templates, setTemplates] = useState([]);
+  const [starterTemplates, setStarterTemplates] = useState([]);
+  const [addingStarter, setAddingStarter] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [leads, setLeads] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
@@ -90,6 +92,11 @@ export default function AITemplatesPage() {
   const fetchTemplates = useCallback(async () => {
     const res = await aiTemplateAPI.getTemplates();
     setTemplates(res.data.templates || []);
+  }, []);
+
+  const fetchStarterTemplates = useCallback(async () => {
+    const res = await aiTemplateAPI.getStarterTemplates();
+    setStarterTemplates(res.data.starters || []);
   }, []);
 
   const fetchConversations = useCallback(async () => {
@@ -108,13 +115,13 @@ export default function AITemplatesPage() {
   const loadAll = useCallback(async () => {
     setLoadingData(true);
     try {
-      await Promise.all([fetchTemplates(), fetchConversations(), fetchLeads()]);
+      await Promise.all([fetchTemplates(), fetchStarterTemplates(), fetchConversations(), fetchLeads()]);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to load AI templates');
     } finally {
       setLoadingData(false);
     }
-  }, [fetchTemplates, fetchConversations, fetchLeads]);
+  }, [fetchTemplates, fetchStarterTemplates, fetchConversations, fetchLeads]);
 
   useEffect(() => {
     if (!loading && !user) router.push('/login');
@@ -156,9 +163,9 @@ export default function AITemplatesPage() {
     setShowModal(true);
   };
 
-  const loadExampleTemplate = async () => {
+  const loadExampleTemplate = async (slug = 'welcome') => {
     try {
-      const res = await aiTemplateAPI.getExampleTemplate();
+      const res = await aiTemplateAPI.getExampleTemplate(slug);
       const example = res.data.template;
       setEditingId(null);
       setForm({
@@ -168,9 +175,26 @@ export default function AITemplatesPage() {
         sharedDocuments: []
       });
       setShowModal(true);
-      toast.success('Example template loaded — edit and save');
+      toast.success('Example loaded — edit and save');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to load example');
+    }
+  };
+
+  const handleAddStarter = async (slug) => {
+    setAddingStarter(slug);
+    try {
+      await aiTemplateAPI.addStarterTemplate(slug);
+      toast.success('Template added to your list');
+      await fetchTemplates();
+    } catch (err) {
+      const message = err.response?.data?.error || 'Failed to add template';
+      toast.error(message);
+      if (err.response?.status === 409) {
+        await fetchTemplates();
+      }
+    } finally {
+      setAddingStarter(null);
     }
   };
 
@@ -309,7 +333,7 @@ export default function AITemplatesPage() {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={loadExampleTemplate}
+                onClick={() => loadExampleTemplate('welcome')}
                 className="inline-flex items-center gap-2 border border-white/10 px-4 py-3 rounded-xl hover:bg-white/5"
               >
                 <BookOpen size={18} />
@@ -343,10 +367,77 @@ export default function AITemplatesPage() {
         </div>
 
         {activeTab === 'templates' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="space-y-6">
+            {starterTemplates.length > 0 && (
+              <div className="space-y-3">
+                <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wider">
+                  Starter templates
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {starterTemplates.map((starter) => {
+                    const alreadyAdded = templates.some((t) => t.name === starter.name);
+                    const isInternship = starter.slug === 'internship';
+
+                    return (
+                      <div
+                        key={starter.slug}
+                        className={`border rounded-2xl p-5 bg-[#111] space-y-3 ${
+                          isInternship
+                            ? 'border-[#25D366]/30 bg-gradient-to-br from-[#111] to-[#0d1a14]'
+                            : 'border-white/10'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-lg font-semibold">{starter.name}</h3>
+                            <p className="text-sm text-gray-400 mt-1 line-clamp-2">
+                              {starter.description}
+                            </p>
+                          </div>
+                          {isInternship && (
+                            <span className="text-[10px] uppercase tracking-wide px-2 py-1 rounded-full bg-[#25D366]/10 text-[#25D366] border border-[#25D366]/20 shrink-0">
+                              New
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleAddStarter(starter.slug)}
+                            disabled={alreadyAdded || addingStarter === starter.slug}
+                            className="flex-1 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black text-sm font-semibold inline-flex items-center justify-center gap-2"
+                          >
+                            {addingStarter === starter.slug ? (
+                              <Loader2 size={16} className="animate-spin" />
+                            ) : (
+                              <Plus size={16} />
+                            )}
+                            {alreadyAdded ? 'Added' : 'Add template'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => loadExampleTemplate(starter.slug)}
+                            className="px-4 py-2.5 rounded-xl border border-white/10 hover:bg-white/5 text-sm"
+                          >
+                            Preview
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wider">
+                Your templates
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {templates.length === 0 ? (
               <div className="col-span-full border border-dashed border-white/10 rounded-2xl p-12 text-center text-gray-400">
-                No templates yet. Click <strong>Load Example</strong> to see a ready-made template.
+                No templates yet. Add the <strong>Internship Inquiry</strong> starter above or click{' '}
+                <strong>Load Example</strong>.
               </div>
             ) : (
               templates.map((template) => (
@@ -400,6 +491,8 @@ export default function AITemplatesPage() {
                 </div>
               ))
             )}
+              </div>
+            </div>
           </div>
         )}
 

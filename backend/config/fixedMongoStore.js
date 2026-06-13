@@ -10,6 +10,8 @@ const AUTH_DATA_PATH = process.env.WHATSAPP_AUTH_TEMP_PATH
 
 const saveChains = new Map();
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const ensureAuthTempDir = () => {
   if (!fs.existsSync(AUTH_DATA_PATH)) {
     fs.mkdirSync(AUTH_DATA_PATH, { recursive: true });
@@ -53,8 +55,13 @@ class FixedMongoStore extends MongoStore {
   async _saveInternal(options) {
     const zipPath = this.getZipPath(options.session);
 
+    for (let attempt = 0; attempt < 12 && !fs.existsSync(zipPath); attempt += 1) {
+      await sleep(500);
+    }
+
     if (!fs.existsSync(zipPath)) {
-      throw new Error(`Session zip not found at ${zipPath}`);
+      console.warn(`Session zip not found at ${zipPath} — skipping MongoDB backup`);
+      return;
     }
 
     const bucket = new this.mongoose.mongo.GridFSBucket(this.mongoose.connection.db, {

@@ -11,7 +11,8 @@ const {
   AUTH_DATA_PATH,
   canRecoverSession,
   cleanupLocalAuthArtifacts,
-  deleteStoredRemoteSession
+  deleteStoredRemoteSession,
+  getWwebjsTempSessionPath
 } = require('../utils/whatsappSession');
 
 //client store
@@ -81,43 +82,86 @@ const isRecoverableInitError = (err) => {
   );
 };
 
-const getQrTimeoutMs = () => (isProductionLinux() ? 90000 : 90000);
+const getQrTimeoutMs = (isRecovery = false) => {
+  if (isRecovery) {
+    return isProductionLinux() ? 120000 : 180000;
+  }
+  return isProductionLinux() ? 90000 : 120000;
+};
 
 const RECOVERY_QR_GRACE_MS = 90000;
-const REMOTE_SESSION_BACKUP_MS = 60000;
+const REMOTE_SESSION_BACKUP_MS = 300000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const sessionSaveInFlight = new Map();
 
-const persistRemoteSession = async (client, userIdStr) => {
-    if (sessionSaveInFlight.has(userIdStr)) {
-        return sessionSaveInFlight.get(userIdStr);
+const cleanupWwebjsTempBeforeBackup = (userIdStr) => {
+    const tempDir = getWwebjsTempSessionPath(userIdStr);
+    try {
+        if (fs.existsSync(tempDir)) {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+    } catch (err) {
+        console.warn(`Could not clean wwebjs temp dir for ${userIdStr}: ${err.message}`);
+    }
+};
+
+const patchRemoteAuthBackup = (client, userIdStr) => {
+    const strategy = client?.authStrategy;
+    if (!strategy || strategy._backupPatched || typeof strategy.storeRemoteSession !== 'function') {
+        return;
     }
 
+    const originalStoreRemoteSession = strategy.storeRemoteSession.bind(strategy);
+    strategy.storeRemoteSession = async (options = {}) => {
+        if (sessionSaveInFlight.has(userIdStr)) {
+            return sessionSaveInFlight.get(userIdStr);
+        }
+
+        const savePromise = (async () => {
+            cleanupWwebjsTempBeforeBackup(userIdStr);
+            try {
+                await originalStoreRemoteSession(options);
+            } catch (err) {
+                const message = String(err?.message || '');
+                if (/EEXIST|ENOENT|Session zip not found/i.test(message)) {
+                    console.warn(`RemoteAuth backup warning for ${userIdStr}: ${message}`);
+                    return;
+                }
+                throw err;
+            }
+        })();
+
+        sessionSaveInFlight.set(userIdStr, savePromise);
+        try {
+            await savePromise;
+        } finally {
+            if (sessionSaveInFlight.get(userIdStr) === savePromise) {
+                sessionSaveInFlight.delete(userIdStr);
+            }
+        }
+    };
+
+    strategy._backupPatched = true;
+};
+
+const persistRemoteSession = async (client, userIdStr) => {
     const strategy = client?.authStrategy;
     if (!strategy || typeof strategy.storeRemoteSession !== 'function') {
         console.warn(`WhatsApp session backup skipped for ${userIdStr}: RemoteAuth strategy not available`);
         return;
     }
 
-    const savePromise = (async () => {
-        try {
-            console.log(`💾 Saving WhatsApp session to MongoDB for user: ${userIdStr}...`);
-            await strategy.storeRemoteSession({ emit: true });
-            console.log(`✅ WhatsApp session saved to MongoDB for user: ${userIdStr}`);
-            const entry = clients.get(userIdStr);
-            if (entry) entry.sessionBackupDone = true;
-        } catch (err) {
-            console.error(`Failed to save WhatsApp session for user ${userIdStr}:`, err.message);
-            throw err;
-        } finally {
-            sessionSaveInFlight.delete(userIdStr);
-        }
-    })();
-
-    sessionSaveInFlight.set(userIdStr, savePromise);
-    return savePromise;
+    try {
+        console.log(`💾 Saving WhatsApp session to MongoDB for user: ${userIdStr}...`);
+        await strategy.storeRemoteSession({ emit: true });
+        console.log(`✅ WhatsApp session saved to MongoDB for user: ${userIdStr}`);
+        const entry = clients.get(userIdStr);
+        if (entry) entry.sessionBackupDone = true;
+    } catch (err) {
+        console.warn(`Failed to save WhatsApp session for user ${userIdStr}: ${err.message}`);
+    }
 };
 
 const scheduleSessionBackup = (client, userIdStr) => {
@@ -128,21 +172,16 @@ const scheduleSessionBackup = (client, userIdStr) => {
     entry.sessionBackupTimers?.forEach((timer) => clearTimeout(timer));
     entry.sessionBackupTimers = [];
 
-    const delays = [5000, 20000, 60000];
-    console.log(
-        `📅 WhatsApp session backup scheduled for user ${userIdStr} (at ${delays.map((ms) => `${ms / 1000}s`).join(', ')})`
-    );
+    const delayMs = 30000;
+    console.log(`📅 WhatsApp session backup scheduled for user ${userIdStr} (at ${delayMs / 1000}s)`);
 
-    delays.forEach((delayMs) => {
-        const timer = setTimeout(() => {
-            const current = clients.get(userIdStr);
-            if (!current || current.status !== 'connected' || current.sessionBackupDone) return;
+    const timer = setTimeout(() => {
+        const current = clients.get(userIdStr);
+        if (!current || current.status !== 'connected' || current.sessionBackupDone) return;
+        persistRemoteSession(client, userIdStr).catch(() => {});
+    }, delayMs);
 
-            persistRemoteSession(client, userIdStr).catch(() => {});
-        }, delayMs);
-
-        entry.sessionBackupTimers.push(timer);
-    });
+    entry.sessionBackupTimers.push(timer);
 };
 
 const isClientReady = (userId) => {
@@ -317,6 +356,43 @@ const markSessionUnlinked = async (userId) => {
     );
 };
 
+const clearStaleStoredSession = async (userId) => {
+    await deleteStoredRemoteSession(userId);
+    cleanupLocalAuthArtifacts(userId);
+    await markSessionUnlinked(userId);
+};
+
+const scheduleDeferredAbort = async (userId, reason) => {
+    const userIdStr = userId.toString();
+    const entry = clients.get(userIdStr);
+
+    if (!entry) {
+        clientsBeingCreated.delete(userIdStr);
+        return;
+    }
+
+    if (entry.initializing) {
+        entry.pendingAbort = { reason };
+        return;
+    }
+
+    await abortPendingClient(userId, reason);
+};
+
+const finishClientInitialization = async (userId, userIdStr) => {
+    clientsBeingCreated.delete(userIdStr);
+    const entry = clients.get(userIdStr);
+    if (!entry) return;
+
+    entry.initializing = false;
+
+    if (entry.pendingAbort) {
+        const { reason } = entry.pendingAbort;
+        entry.pendingAbort = null;
+        await abortPendingClient(userId, reason);
+    }
+};
+
 //create client
 
 const createClient = async (userId, onQR, onReady, onDisconnected, options = {}) => {
@@ -418,20 +494,23 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
         puppeteer: getPuppeteerLaunchOptions(executablePath)
     });
 
+    patchRemoteAuthBackup(client, userIdStr);
+
     //store client and status
     const qrTimeoutHandle = setTimeout(async () => {
         const entry = clients.get(userIdStr);
         if (!entry || entry.status !== 'pending' || entry.qrReceived) return;
 
         console.warn(
-            `⚠️  QR Code timeout for user: ${userIdStr} - no QR received in ${getQrTimeoutMs() / 1000} seconds`
+            `⚠️  QR Code timeout for user: ${userIdStr} - no QR received in ${getQrTimeoutMs(suppressQrNotification) / 1000} seconds`
         );
 
         if (suppressQrNotification) {
             console.warn(
                 `Stored session could not be restored for user ${userIdStr}. Use Connect to scan a new QR.`
             );
-            await abortPendingClient(userId, 'Recovery timed out waiting for session restore');
+            await clearStaleStoredSession(userId);
+            await scheduleDeferredAbort(userId, 'Recovery timed out waiting for session restore');
             return;
         }
 
@@ -451,7 +530,7 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
             suppressQrNotification: false,
             initRetry: true
         });
-    }, getQrTimeoutMs());
+    }, getQrTimeoutMs(suppressQrNotification));
 
     clients.set(userIdStr, {
         client,
@@ -459,7 +538,9 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
         pendingStartTime: Date.now(),
         qrTimeoutHandle,
         qrReceived: false,
-        freshAuthRetried: initRetry
+        freshAuthRetried: initRetry,
+        initializing: true,
+        pendingAbort: null
     });
 
     // Add health check interval — periodically verify client is still alive
@@ -503,20 +584,16 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
 
         if (suppressQrNotification) {
             const entry = clients.get(userIdStr);
-            if (entry && !entry.recoveryQrGraceTimer) {
-                console.log(
-                    `ℹ️  QR during startup recovery for user: ${userIdStr} — waiting up to ${RECOVERY_QR_GRACE_MS / 1000}s for session restore`
-                );
-                entry.recoveryQrGraceTimer = setTimeout(async () => {
-                    const current = clients.get(userIdStr);
-                    if (!current || current.status === 'connected') return;
-
-                    console.log(
-                        `Stored session could not be recovered for user ${userIdStr}. Click Connect to scan QR.`
-                    );
-                    await abortPendingClient(userId, 'Recovery grace period elapsed after QR');
-                }, RECOVERY_QR_GRACE_MS);
+            if (entry?.recoveryQrGraceTimer) {
+                clearTimeout(entry.recoveryQrGraceTimer);
+                entry.recoveryQrGraceTimer = null;
             }
+
+            console.log(
+                `Stored WhatsApp session expired for user ${userIdStr}. Clearing saved session — click Connect to scan QR.`
+            );
+            await clearStaleStoredSession(userId);
+            await scheduleDeferredAbort(userId, 'Stored session expired during recovery');
             return;
         }
         try{
@@ -640,12 +717,20 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
     });
 
     await withBrowserLaunchLock(async () => {
-        await client.initialize();
+        try {
+            await client.initialize();
+        } finally {
+            const entry = clients.get(userIdStr);
+            if (entry) entry.initializing = false;
+        }
     })
-        .then(() => {
-            clientsBeingCreated.delete(userIdStr);
+        .then(async () => {
+            await finishClientInitialization(userId, userIdStr);
         })
         .catch(async(err) => {
+            const entry = clients.get(userIdStr);
+            if (entry) entry.initializing = false;
+
             if (isBrowserAlreadyRunningError(err)) {
                 console.warn(`Browser lock detected for user: ${userIdStr}. Attempting recovery and retrying once.`);
                 // Attempt to force-release any browser process and retry without touching local auth files
@@ -667,13 +752,21 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
             }
 
             console.error(`Client initialization failed for user: ${userIdStr}:`, err.message);
-            const entry = clients.get(userIdStr);
+            const pendingAbort = entry?.pendingAbort;
             if(entry && entry.client === client){
                 if(entry.qrTimeoutHandle) clearTimeout(entry.qrTimeoutHandle);
                 await cleanupClient(client);
                 clients.delete(userIdStr);
             }
             clientsBeingCreated.delete(userIdStr);
+
+            if (suppressQrNotification && !initRetry) {
+                await clearStaleStoredSession(userId);
+                if (pendingAbort) {
+                    await abortPendingClient(userId, pendingAbort.reason);
+                }
+                return;
+            }
 
             if (!initRetry && isRecoverableInitError(err)) {
                 console.warn(
@@ -697,6 +790,7 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
             }
 
             onDisconnected(`WhatsApp browser failed to start: ${err.message}`);
+            await finishClientInitialization(userId, userIdStr);
         }); // start the client
 
     // Handle initialization errors gracefully without blocking

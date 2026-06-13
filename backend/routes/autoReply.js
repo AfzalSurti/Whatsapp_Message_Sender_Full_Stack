@@ -15,7 +15,7 @@ const {
 
 const updateValidation = [
   body('isEnabled').optional().isBoolean().withMessage('isEnabled must be a boolean'),
-  body('mode').optional().isIn(['all', 'selected']).withMessage('mode must be all or selected'),
+  body('mode').optional().isIn(['smart', 'all', 'selected']).withMessage('mode must be smart, all, or selected'),
   body('selectedContacts').optional().isArray().withMessage('selectedContacts must be an array'),
   body('systemPrompt')
     .optional()

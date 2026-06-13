@@ -6,47 +6,65 @@ const { trackUsage } = require('./keysController');
 const connectWhatsApp = async (req, res) => {
   try {
     const userId = req.user._id;
+    const userIdStr = userId.toString();
     const sendToUser = req.app.get('sendToUser');
     const status = clientManager.getStatus(userId);
-    const wasPending = status === 'pending';
-    const freshAuth = req.body?.fresh === true || wasPending;
+    const explicitFresh = req.body?.fresh === true;
 
     if (status === 'connected') {
       return res.json({ message: 'Already connected', status: 'connected' });
     }
 
-    if (wasPending) {
-      await clientManager.abortPendingClient(userId, 'User clicked Connect — restarting with visible QR');
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+    if (status === 'pending') {
+      if (explicitFresh) {
+        await clientManager.abortPendingClient(userId, 'User requested fresh QR');
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      } else {
+        return res.json({
+          message: 'WhatsApp is already connecting. Please wait for QR or session restore.',
+          status: 'pending'
+        });
+      }
     }
 
-    clientManager.cleanupLocalAuthArtifacts(userId);
+    const hasStoredSession = await clientManager.canRecoverSession(userId);
+
+    if (explicitFresh) {
+      clientManager.cleanupLocalAuthArtifacts(userId);
+    }
+
+    const suppressQrNotification = !explicitFresh && hasStoredSession;
 
     await clientManager.createClient(
       userId,
       (qrImage) => {
-        console.log(`📨 Sending QR to user ${userId.toString()} via WebSocket (image size: ${qrImage?.length || 0} bytes)`);
-        const sent = sendToUser(userId.toString(), { type: 'qr', qr: qrImage });
-        console.log(`${sent ? '✅' : '⚠️'} QR message ${sent ? 'sent' : 'not sent'} - WebSocket ${sent ? 'connected' : 'not connected or closed'}`);
+        console.log(`📨 Sending QR to user ${userIdStr} via WebSocket (image size: ${qrImage?.length || 0} bytes)`);
+        const sent = sendToUser(userIdStr, { type: 'qr', qr: qrImage });
+        console.log(`${sent ? '✅' : '⚠️'} QR message ${sent ? 'sent' : 'buffered'} for WebSocket delivery`);
       },
       () => {
-        console.log(`📨 Sending ready status to user ${userId.toString()}`);
-        sendToUser(userId.toString(), { type: 'ready' });
+        console.log(`📨 Sending ready status to user ${userIdStr}`);
+        sendToUser(userIdStr, { type: 'ready' });
       },
       (reason) => {
-        console.log(`📨 Sending disconnected status to user ${userId.toString()}: ${reason}`);
-        sendToUser(userId.toString(), { type: 'disconnected', reason });
+        console.log(`📨 Sending disconnected status to user ${userIdStr}: ${reason}`);
+        sendToUser(userIdStr, { type: 'disconnected', reason });
       },
-      { freshAuth, suppressQrNotification: false }
+      { freshAuth: explicitFresh, suppressQrNotification }
     );
 
-    res.json({ message: 'WhatsApp initializing. Scan QR.', status: 'pending' });
+    const responseStatus = clientManager.getStatus(userId);
+    const message = suppressQrNotification
+      ? 'Restoring WhatsApp session...'
+      : 'WhatsApp initializing. Scan QR.';
+
+    res.json({ message, status: responseStatus || 'pending', hasStoredSession });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-const reconnectCooldownMs = 60_000;
+const reconnectCooldownMs = process.env.NODE_ENV === 'production' ? 60_000 : 15_000;
 const lastReconnectAttempt = new Map();
 
 const getWhatsAppStatus = async (req, res) => {

@@ -2,6 +2,7 @@ const { validationResult } = require('express-validator');
 const AITemplate = require('../models/AITemplate');
 const ConversationState = require('../models/ConversationState');
 const exampleAITemplate = require('../data/exampleAITemplate');
+const { starterAITemplates, starterBySlug } = require('../data/starterAITemplates');
 const {
   normalizeCustomFields,
   normalizeExampleConversations,
@@ -25,7 +26,67 @@ const getTemplates = async (req, res) => {
 };
 
 const getExampleTemplate = async (req, res) => {
-  res.json({ template: exampleAITemplate });
+  const slug = String(req.params.slug || req.query.slug || 'welcome').toLowerCase();
+
+  if (slug === 'welcome' || slug === 'welcome-business-intro') {
+    return res.json({ template: exampleAITemplate });
+  }
+
+  const template = starterBySlug[slug];
+  if (!template) {
+    return res.status(404).json({ error: 'Starter template not found' });
+  }
+
+  res.json({ template });
+};
+
+const getStarterTemplates = async (req, res) => {
+  const starters = starterAITemplates.map(({ slug, name, description, isExample }) => ({
+    slug: slug || name,
+    name,
+    description,
+    isExample
+  }));
+
+  res.json({ starters });
+};
+
+const createStarterTemplate = async (req, res) => {
+  try {
+    const slug = String(req.params.slug || '').toLowerCase();
+    const template = starterBySlug[slug];
+
+    if (!template) {
+      return res.status(404).json({ error: 'Starter template not found' });
+    }
+
+    const existing = await AITemplate.findOne({
+      userId: req.user._id,
+      name: template.name
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        error: `"${template.name}" already exists. Edit it from your templates list.`,
+        template: serializeTemplate(existing)
+      });
+    }
+
+    const { slug: _slug, isExample, ...payload } = template;
+
+    const created = await AITemplate.create({
+      userId: req.user._id,
+      ...payload,
+      customFields: normalizeCustomFields(payload.customFields),
+      exampleConversations: normalizeExampleConversations(payload.exampleConversations),
+      sharedDocuments: normalizeSharedDocuments(payload.sharedDocuments)
+    });
+
+    res.status(201).json({ template: serializeTemplate(created) });
+  } catch (err) {
+    console.error('Create starter AI template failed:', err.message);
+    res.status(500).json({ error: 'Failed to add starter template' });
+  }
 };
 
 const createTemplate = async (req, res) => {
@@ -254,6 +315,8 @@ const getLeads = async (req, res) => {
 module.exports = {
   getTemplates,
   getExampleTemplate,
+  getStarterTemplates,
+  createStarterTemplate,
   createTemplate,
   updateTemplate,
   deleteTemplate,

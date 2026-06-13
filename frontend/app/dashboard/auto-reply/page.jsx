@@ -55,7 +55,7 @@ export default function AutoReplyPage() {
   const [clearing, setClearing] = useState(false);
 
   const [isEnabled, setIsEnabled] = useState(false);
-  const [mode, setMode] = useState('all');
+  const [mode, setMode] = useState('smart');
   const [selectedContacts, setSelectedContacts] = useState([]);
   const [systemPrompt, setSystemPrompt] = useState(
     'You are a helpful WhatsApp assistant. Reply naturally and concisely.'
@@ -69,7 +69,7 @@ export default function AutoReplyPage() {
   const whatsappFetchInFlightRef = useRef(false);
   const [savedContacts, setSavedContacts] = useState([]);
   const [savedContactsLoading, setSavedContactsLoading] = useState(false);
-  const [contactSource, setContactSource] = useState('saved');
+  const [contactSource, setContactSource] = useState('whatsapp');
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactsError, setContactsError] = useState('');
   const [contactSearch, setContactSearch] = useState('');
@@ -103,7 +103,7 @@ export default function AutoReplyPage() {
       const res = await autoReplyAPI.getConfig();
       const config = res.data.config;
       setIsEnabled(Boolean(config.isEnabled));
-      setMode(config.mode || 'all');
+      setMode(config.mode === 'all' || config.mode === 'selected' ? 'smart' : config.mode || 'smart');
       setSelectedContacts(config.selectedContacts || []);
       setSystemPrompt(
         config.systemPrompt ||
@@ -267,9 +267,9 @@ export default function AutoReplyPage() {
   }, [templatesLoading, configLoading, enabledTemplateIds.length, activeAiTemplates]);
 
   useEffect(() => {
-    if (!user || mode !== 'selected' || contactSource !== 'whatsapp' || !waConnected) return;
+    if (!user || contactSource !== 'whatsapp' || !waConnected) return;
     fetchWhatsAppContacts();
-  }, [user, mode, contactSource, waConnected, fetchWhatsAppContacts]);
+  }, [user, contactSource, waConnected, fetchWhatsAppContacts]);
 
   useEffect(() => {
     if (!user) return;
@@ -377,7 +377,7 @@ export default function AutoReplyPage() {
     try {
       const res = await autoReplyAPI.updateConfig({
         isEnabled,
-        mode,
+        mode: 'smart',
         selectedContacts,
         systemPrompt,
         delay,
@@ -385,7 +385,7 @@ export default function AutoReplyPage() {
       });
       const config = res.data.config;
       setIsEnabled(Boolean(config.isEnabled));
-      setMode(config.mode || 'all');
+      setMode(config.mode === 'all' || config.mode === 'selected' ? 'smart' : config.mode || 'smart');
       setSelectedContacts(config.selectedContacts || []);
       setSystemPrompt(config.systemPrompt || systemPrompt);
       setDelay(config.delay || delay);
@@ -501,103 +501,100 @@ export default function AutoReplyPage() {
             </span>
           </div>
 
-          <div className="space-y-3">
-            <div className="text-sm font-semibold text-gray-200">Reply Mode</div>
-            <label className="flex items-center gap-3 text-sm text-gray-300 cursor-pointer">
-              <input
-                type="radio"
-                name="mode"
-                checked={mode === 'all'}
-                onChange={() => setMode('all')}
-                className="accent-[#25D366] w-4 h-4"
-              />
-              All Messages
-            </label>
-            <label className="flex items-center gap-3 text-sm text-gray-300 cursor-pointer">
-              <input
-                type="radio"
-                name="mode"
-                checked={mode === 'selected'}
-                onChange={() => setMode('selected')}
-                className="accent-[#25D366] w-4 h-4"
-              />
-              Selected Contacts
-            </label>
+          <div className="rounded-xl border border-[#25D366]/20 bg-[#25D366]/5 p-4 space-y-2">
+            <div className="text-sm font-semibold text-[#25D366]">Who gets auto-replies</div>
+            <ul className="text-sm text-gray-300 space-y-1.5 list-disc list-inside">
+              <li>
+                <strong className="text-white">New numbers</strong> — anyone not in your Contacts page gets
+                replies using <strong className="text-white">all active AI templates</strong>
+              </li>
+              <li>
+                <strong className="text-white">Selected chats</strong> — WhatsApp chats you pick below also get
+                auto-reply (uses templates you enable)
+              </li>
+              <li>
+                Saved contacts are skipped unless you add them from WhatsApp Chats
+              </li>
+            </ul>
           </div>
 
-          {mode === 'selected' && (
-            <div className="space-y-4 border border-white/10 rounded-2xl p-4 bg-[#0a0a0a]">
-              <div className="inline-flex w-full p-1 rounded-xl bg-[#111] border border-white/10 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setContactSource('saved')}
-                  className={`flex-1 text-sm py-2.5 rounded-lg font-medium transition-colors ${
+          <div className="space-y-4 border border-white/10 rounded-2xl p-4 bg-[#0a0a0a]">
+            <div className="text-sm font-semibold text-gray-200">Also reply to these chats</div>
+            <p className="text-xs text-gray-500">
+              Pick WhatsApp chats to include even if they are already in your Contacts list.
+            </p>
+
+            <div className="inline-flex w-full p-1 rounded-xl bg-[#111] border border-white/10 gap-1">
+              <button
+                type="button"
+                onClick={() => setContactSource('saved')}
+                className={`flex-1 text-sm py-2.5 rounded-lg font-medium transition-colors ${
+                  contactSource === 'saved'
+                    ? 'bg-[#25D366] text-black'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                Saved Contacts
+              </button>
+              <button
+                type="button"
+                onClick={() => setContactSource('whatsapp')}
+                className={`flex-1 text-sm py-2.5 rounded-lg font-medium transition-colors ${
+                  contactSource === 'whatsapp'
+                    ? 'bg-[#25D366] text-black'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                WhatsApp Chats
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input
+                  type="text"
+                  value={contactSearch}
+                  onChange={(e) => setContactSearch(e.target.value)}
+                  placeholder={
                     contactSource === 'saved'
-                      ? 'bg-[#25D366] text-black'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  Saved Contacts
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setContactSource('whatsapp')}
-                  className={`flex-1 text-sm py-2.5 rounded-lg font-medium transition-colors ${
-                    contactSource === 'whatsapp'
-                      ? 'bg-[#25D366] text-black'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  WhatsApp Chats
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
-                  <input
-                    type="text"
-                    value={contactSearch}
-                    onChange={(e) => setContactSearch(e.target.value)}
-                    placeholder={
-                      contactSource === 'saved'
-                        ? 'Search saved contacts...'
-                        : 'Search WhatsApp chats...'
-                    }
-                    className="w-full bg-[#111] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-[#25D366]/40"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={
-                    contactSource === 'saved' ? fetchSavedContacts : fetchWhatsAppContacts
+                      ? 'Search saved contacts...'
+                      : 'Search WhatsApp chats...'
                   }
-                  disabled={contactSource === 'saved' ? savedContactsLoading : contactsLoading}
-                  className="text-sm border border-white/10 hover:border-[#25D366]/40 px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50 shrink-0"
-                >
-                  {contactSource === 'saved'
-                    ? savedContactsLoading
-                      ? 'Loading...'
-                      : 'Refresh'
-                    : contactsLoading
-                      ? 'Loading...'
-                      : 'Refresh'}
-                </button>
+                  className="w-full bg-[#111] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm outline-none focus:border-[#25D366]/40"
+                />
               </div>
+              <button
+                type="button"
+                onClick={
+                  contactSource === 'saved' ? fetchSavedContacts : fetchWhatsAppContacts
+                }
+                disabled={contactSource === 'saved' ? savedContactsLoading : contactsLoading}
+                className="text-sm border border-white/10 hover:border-[#25D366]/40 px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50 shrink-0"
+              >
+                {contactSource === 'saved'
+                  ? savedContactsLoading
+                    ? 'Loading...'
+                    : 'Refresh'
+                  : contactsLoading
+                    ? 'Loading...'
+                    : 'Refresh'}
+              </button>
+            </div>
 
-              {contactSource === 'saved' && (
-                <p className="text-sm text-gray-500">
-                  Numbers from your Contacts page. No WhatsApp connection required.
-                </p>
-              )}
+            {contactSource === 'saved' && (
+              <p className="text-sm text-gray-500">
+                Add saved contacts here if you want the bot to reply to them too.
+              </p>
+            )}
 
-              {contactSource === 'whatsapp' && !waConnected && (
-                <p className="text-sm text-amber-400">
-                  Connect WhatsApp from the header, then click Refresh.
-                </p>
-              )}
+            {contactSource === 'whatsapp' && !waConnected && (
+              <p className="text-sm text-amber-400">
+                Connect WhatsApp from the header, then click Refresh.
+              </p>
+            )}
 
-              <div className="max-h-52 overflow-y-auto space-y-1">
+            <div className="max-h-52 overflow-y-auto space-y-1">
                 {contactSource === 'saved' ? (
                   savedContactsLoading ? (
                     <div className="py-6 flex justify-center">
@@ -709,7 +706,6 @@ export default function AutoReplyPage() {
                 )}
               </div>
             </div>
-          )}
 
           <div className="space-y-3 border border-white/10 rounded-2xl p-4 bg-[#0a0a0a]">
             <div className="flex items-start justify-between gap-3">
@@ -719,7 +715,8 @@ export default function AutoReplyPage() {
                   AI Templates for Auto Reply
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Checked templates are used when a message matches. If none match, AI Personality is used.
+                  New numbers use every active template. Selected chats use the templates you check below.
+                  If none match, AI Personality is used.
                 </p>
               </div>
               <Link

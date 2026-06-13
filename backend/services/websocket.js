@@ -1,22 +1,36 @@
 const WebSocket = require('ws');
 
-// ─── WEBSOCKET STORE ──────────────────────────────────────────
-// Stores active WebSocket connections per user
-// Key: userId (string), Value: WebSocket connection
 const wsClients = new Map();
+const pendingByUser = new Map();
 
-// ─── SETUP WEBSOCKET SERVER ───────────────────────────────────
-// Attaches WebSocket server to existing Express HTTP server
-const setupWebSocket = (server, verifyToken) => {
+const BUFFERABLE_TYPES = new Set(['qr', 'ready', 'disconnected']);
 
-  // Create WebSocket server on same port as Express
+const bufferForUser = (userId, data) => {
+  if (!BUFFERABLE_TYPES.has(data.type)) return;
+  pendingByUser.set(userId.toString(), data);
+};
+
+const flushPendingForUser = (userId) => {
+  const key = userId.toString();
+  const pending = pendingByUser.get(key);
+  if (!pending) return;
+
+  const ws = wsClients.get(key);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(pending));
+    console.log(`📤 Flushed buffered ${pending.type} message to user ${key}`);
+    if (pending.type === 'ready') {
+      pendingByUser.delete(key);
+    }
+  }
+};
+
+const setupWebSocket = (server, verifyToken, onUserConnected) => {
   const wss = new WebSocket.Server({ server });
 
   wss.on('connection', async (ws, req) => {
     console.log('🔌 New WebSocket connection attempt');
 
-    // ── AUTHENTICATE ────────────────────────────────────────
-    // Token comes in URL query: ws://localhost:5000?token=xxx
     const url = new URL(req.url, 'http://localhost');
     const token = url.searchParams.get('token');
 
@@ -26,44 +40,45 @@ const setupWebSocket = (server, verifyToken) => {
       return;
     }
 
-    // Verify JWT token
     let userId;
     try {
-      userId = verifyToken(token); // returns userId from token
+      userId = verifyToken(token);
     } catch (err) {
       ws.send(JSON.stringify({ type: 'error', message: 'Invalid token' }));
       ws.close();
       return;
     }
 
-    // Store WebSocket connection for this user
-    wsClients.set(userId, ws);
-    console.log(`✅ WebSocket connected for user: ${userId}`);
+    const userIdStr = userId.toString();
+    wsClients.set(userIdStr, ws);
+    console.log(`✅ WebSocket connected for user: ${userIdStr}`);
 
-    // Send welcome message
     ws.send(JSON.stringify({ type: 'connected', message: 'WebSocket ready' }));
+    flushPendingForUser(userIdStr);
 
-    // ── HANDLE MESSAGES FROM FRONTEND ───────────────────────
+    if (typeof onUserConnected === 'function') {
+      onUserConnected(userIdStr).catch((err) => {
+        console.warn(`Post-connect WhatsApp recovery failed for ${userIdStr}: ${err.message}`);
+      });
+    }
+
     ws.on('message', (data) => {
       try {
         const msg = JSON.parse(data);
-        console.log(`📨 Message from ${userId}:`, msg);
-        // Handle frontend messages if needed later
+        console.log(`📨 Message from ${userIdStr}:`, msg);
       } catch (err) {
         console.error('Invalid WebSocket message:', err.message);
       }
     });
 
-    // ── HANDLE DISCONNECT ────────────────────────────────────
     ws.on('close', () => {
-      wsClients.delete(userId);
-      console.log(`👋 WebSocket disconnected for user: ${userId}`);
+      wsClients.delete(userIdStr);
+      console.log(`👋 WebSocket disconnected for user: ${userIdStr}`);
     });
 
-    // ── HANDLE ERRORS ────────────────────────────────────────
     ws.on('error', (err) => {
-      console.error(`WebSocket error for ${userId}:`, err.message);
-      wsClients.delete(userId);
+      console.error(`WebSocket error for ${userIdStr}:`, err.message);
+      wsClients.delete(userIdStr);
     });
   });
 
@@ -71,27 +86,31 @@ const setupWebSocket = (server, verifyToken) => {
   return wss;
 };
 
-// ─── SEND TO USER ─────────────────────────────────────────────
-// Send a message to a specific user's WebSocket
 const sendToUser = (userId, data) => {
-  const ws = wsClients.get(userId.toString());
+  const key = userId.toString();
+  const ws = wsClients.get(key);
 
-  // Check connection is open (readyState 1 = OPEN)
   if (ws && ws.readyState === WebSocket.OPEN) {
-    console.log(`📤 WebSocket SEND to ${userId}: ${data.type} (message size: ${JSON.stringify(data).length} bytes)`);
+    console.log(`📤 WebSocket SEND to ${key}: ${data.type} (message size: ${JSON.stringify(data).length} bytes)`);
     ws.send(JSON.stringify(data));
+    if (data.type === 'ready') {
+      pendingByUser.delete(key);
+    }
     return true;
   }
 
-  if (!ws) {
-    console.warn(`⚠️  No WebSocket connection found for user ${userId}`);
+  if (BUFFERABLE_TYPES.has(data.type)) {
+    bufferForUser(key, data);
+    console.log(`📥 Buffered ${data.type} for user ${key} (WebSocket not ready)`);
+  } else if (!ws) {
+    console.warn(`⚠️  No WebSocket connection found for user ${key}`);
   } else {
-    console.warn(`⚠️  WebSocket for ${userId} not in OPEN state (readyState: ${ws.readyState})`);
+    console.warn(`⚠️  WebSocket for ${key} not in OPEN state (readyState: ${ws.readyState})`);
   }
-  return false; // user not connected
+
+  return false;
 };
 
-// ─── GET WS CLIENTS MAP ───────────────────────────────────────
 const getWsClients = () => wsClients;
 
-module.exports = { setupWebSocket, sendToUser, getWsClients };
+module.exports = { setupWebSocket, sendToUser, getWsClients, flushPendingForUser };

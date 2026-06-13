@@ -1,4 +1,5 @@
 module.exports = {
+  slug: 'welcome',
   name: 'Welcome & Business Intro',
   description:
     'Use when someone sends a greeting like Hi, Hello, or Hey. Introduce the business warmly and ask how you can help.',
