@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import ConfirmModal from '@/components/dashboard/ConfirmModal';
 import { Activity, BarChart3, Bot, ClipboardList, History, Key, Layers, Loader2, LogOut, MessageSquare, Send, Settings2, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { getToken } from '@/lib/auth';
 import { whatsappAPI } from '@/lib/api';
 import useWebSocket from '@/hooks/useWebSocket';
 import { DashboardShellProvider } from './DashboardShellContext';
@@ -88,7 +89,9 @@ export default function DashboardLayout({ children }) {
   }, []);
 
   useEffect(() => {
-    if (!loading && !user) router.push('/login');
+    if (!loading && !user && !getToken()) {
+      router.replace('/login');
+    }
   }, [loading, router, user]);
 
   useEffect(() => {
@@ -225,8 +228,17 @@ export default function DashboardLayout({ children }) {
     setProgress,
   }), [progress, sending, waStatus]);
 
-  if (loading) {
-    return <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center"><Loader2 className="animate-spin text-[#25D366]" size={32} /></div>;
+  if (loading && !user) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center gap-3">
+        <Loader2 className="animate-spin text-[#25D366]" size={32} />
+        <p className="text-sm text-gray-500">Loading dashboard...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
   }
 
   return (

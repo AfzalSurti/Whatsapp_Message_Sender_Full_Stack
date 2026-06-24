@@ -17,6 +17,7 @@ import {
   PlayCircle,
   TrendingUp,
 } from 'lucide-react';
+import { AuthRedirectGate } from '@/hooks/useRedirectIfAuthenticated';
 
 const features = [
   { icon: <Zap size={22} />, title: 'Bulk Sending', desc: 'Send to hundreds of contacts at once with smart delays.' },
@@ -90,6 +91,7 @@ export default function LandingPage() {
   }, []);
 
   return (
+    <AuthRedirectGate>
     <div className="min-h-screen bg-[#070b09] text-white font-sans">
 
       {/* NAVBAR */}
@@ -321,5 +323,6 @@ export default function LandingPage() {
       </footer>
 
     </div>
+    </AuthRedirectGate>
   );
 }

@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { getToken } from '@/lib/auth';
 import { whatsappAPI, aiAPI, contactsAPI, logsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import InternationalPhoneInput from '@/components/InternationalPhoneInput';
@@ -113,7 +114,9 @@ export default function Dashboard() {
 
   // Redirect if not logged in
   useEffect(() => {
-    if (!loading && !user) router.push('/login');
+    if (!loading && !user && !getToken()) {
+      router.replace('/login');
+    }
   }, [user, loading, router]);
 
   // Fetch contacts and dashboard data on load
@@ -326,12 +329,8 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="animate-spin text-[#25D366]" size={32} />
-      </div>
-    );
+  if (loading && !user) {
+    return null;
   }
 
   const progressPct = progress?.total > 0

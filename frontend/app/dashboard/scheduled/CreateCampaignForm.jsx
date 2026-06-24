@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
@@ -37,10 +37,14 @@ const DEFAULT_MANUAL_DETAILS = {
 export default function CreateCampaignForm() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editCampaignId = searchParams.get('edit');
   const handledTemplateQueryRef = useRef(null);
+  const handledEditQueryRef = useRef(null);
 
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(Boolean(editCampaignId));
 
   const [allContacts, setAllContacts] = useState([]);
   const [tagLibrary, setTagLibrary] = useState([]);
@@ -134,6 +138,96 @@ export default function CreateCampaignForm() {
       setMessageSource('template');
     }
   }, [templates, user, applyTemplateSelection]);
+
+  const applyCampaignForEdit = useCallback((campaign) => {
+    if (campaign.status !== 'pending') {
+      toast.error('Only pending campaigns can be edited');
+      router.replace('/dashboard/scheduled');
+      return;
+    }
+
+    if (campaign.templateId) {
+      const templateId =
+        typeof campaign.templateId === 'object' ? campaign.templateId._id : campaign.templateId;
+      const template = templates.find((item) => item._id === templateId);
+
+      if (template) {
+        applyTemplateSelection(template);
+      } else {
+        setMessageSource('manual');
+        setMessage(campaign.message || '');
+        setManualDetails((prev) => ({ ...prev, name: campaign.name || prev.name }));
+      }
+    } else {
+      setMessageSource('manual');
+      setMessage(campaign.message || '');
+      setManualDetails((prev) => ({ ...prev, name: campaign.name || prev.name }));
+    }
+
+    setTemplateVariables(campaign.templateVariables || {});
+    setSendingSpeed(campaign.sendingSpeed || 'safe');
+    setRecurrencePattern(campaign.recurrencePattern || 'none');
+
+    if (campaign.recurrenceStartDate) {
+      const start = new Date(campaign.recurrenceStartDate);
+      setRecurrenceStartDate(start.toISOString().slice(0, 10));
+    }
+    if (campaign.recurrenceEndDate) {
+      const end = new Date(campaign.recurrenceEndDate);
+      setRecurrenceEndDate(end.toISOString().slice(0, 10));
+    }
+
+    const phones = (campaign.individualNumbers || []).map((entry) =>
+      String(entry.phone || '').replace(/\D/g, '')
+    );
+    setSelectedContactPhones(phones.filter(Boolean));
+
+    const contactPhoneSet = new Set(
+      allContacts.map((contact) => String(contact.phone || '').replace(/\D/g, ''))
+    );
+    const manualOnly = (campaign.individualNumbers || [])
+      .filter((entry) => !contactPhoneSet.has(String(entry.phone || '').replace(/\D/g, '')))
+      .map((entry) => ({
+        name: entry.name || '',
+        phone: entry.phone
+      }));
+    setManualRecipients(manualOnly);
+
+    const scheduled = new Date(campaign.scheduledAt);
+    setScheduleMode('later');
+    setScheduleDate(scheduled.toISOString().slice(0, 10));
+    setScheduleTime(
+      `${String(scheduled.getHours()).padStart(2, '0')}:${String(scheduled.getMinutes()).padStart(2, '0')}`
+    );
+  }, [allContacts, applyTemplateSelection, router, templates]);
+
+  useEffect(() => {
+    if (!user || !editCampaignId || handledEditQueryRef.current === editCampaignId) return;
+    if (loadingContacts || loadingTemplates) return;
+
+    const loadCampaignForEdit = async () => {
+      setLoadingEdit(true);
+      try {
+        const res = await scheduledAPI.getCampaign(editCampaignId);
+        handledEditQueryRef.current = editCampaignId;
+        applyCampaignForEdit(res.data.campaign);
+      } catch (err) {
+        toast.error(err.response?.data?.error || 'Failed to load campaign');
+        router.replace('/dashboard/scheduled');
+      } finally {
+        setLoadingEdit(false);
+      }
+    };
+
+    loadCampaignForEdit();
+  }, [
+    applyCampaignForEdit,
+    editCampaignId,
+    loadingContacts,
+    loadingTemplates,
+    router,
+    user
+  ]);
 
   const campaignName = useMemo(() => {
     if (messageSource === 'template' && selectedTemplate) return selectedTemplate.name;
@@ -392,7 +486,7 @@ export default function CreateCampaignForm() {
 
     setSubmitting(true);
     try {
-      await scheduledAPI.createCampaign({
+      const payload = {
         name: finalName,
         message,
         scheduledAt: scheduledAt.toISOString(),
@@ -413,9 +507,16 @@ export default function CreateCampaignForm() {
           recurrencePattern !== 'none' && recurrenceEndDate
             ? new Date(`${recurrenceEndDate}T23:59:59`).toISOString()
             : undefined
-      });
+      };
 
-      toast.success(scheduleMode === 'now' ? 'Campaign launched!' : 'Campaign scheduled!');
+      if (editCampaignId) {
+        await scheduledAPI.updateCampaign(editCampaignId, payload);
+        toast.success('Campaign updated!');
+      } else {
+        await scheduledAPI.createCampaign(payload);
+        toast.success(scheduleMode === 'now' ? 'Campaign launched!' : 'Campaign scheduled!');
+      }
+
       router.push('/dashboard/scheduled');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to launch campaign');
@@ -442,7 +543,7 @@ export default function CreateCampaignForm() {
     setStep((prev) => Math.min(prev + 1, 5));
   };
 
-  if (loading) {
+  if (loading || loadingEdit) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="animate-spin text-[#25D366]" size={32} />
@@ -465,7 +566,7 @@ export default function CreateCampaignForm() {
               <ChevronLeft size={16} /> Back
                       </Link>
                                   <div>
-              <h2 className="font-bold text-lg">New Campaign</h2>
+              <h2 className="font-bold text-lg">{editCampaignId ? 'Edit Campaign' : 'New Campaign'}</h2>
               <p className="text-xs text-gray-500 mt-0.5">
                 Step {step} of 5 · {currentStepMeta?.label}
                                     </p>

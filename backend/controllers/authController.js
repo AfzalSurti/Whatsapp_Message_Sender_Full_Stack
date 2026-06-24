@@ -83,6 +83,8 @@ const login = async (req, res) => {
 // ─── GET ME ───────────────────────────────────────────────────
 // Returns currently logged in user data
 const getMe = async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.set('Pragma', 'no-cache');
   res.json({ user: req.user });
 };
 
@@ -125,10 +127,17 @@ const updateProfile = async (req, res) => {
 // Sends token to frontend via URL redirect
 const googleCallback = (req, res) => {
   const token = generateToken(req.user._id);
+  const userSnapshot = {
+    _id: req.user._id,
+    name: req.user.name,
+    email: req.user.email,
+    authProvider: req.user.authProvider || 'google'
+  };
+  const userParam = Buffer.from(JSON.stringify(userSnapshot)).toString('base64url');
 
-  // Redirect to frontend with token in URL
-  // Frontend extracts token and stores in localStorage
-  res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${token}`);
+  res.redirect(
+    `${process.env.CLIENT_URL}/auth/callback?token=${token}&user=${encodeURIComponent(userParam)}`
+  );
 };
 
 // ─── LOGOUT ───────────────────────────────────────────────────
