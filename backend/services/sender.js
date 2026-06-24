@@ -3,6 +3,7 @@ const Campaign = require('../models/Campaign');
 const { getOrCreateBusinessProfile } = require('../utils/businessProfile');
 const { formatMessageForLog, resolveMessageFooter } = require('../utils/messageFooter');
 const { sendMessageWithFooter } = require('../utils/sendMessageWithFooter');
+const { toBaileysJid } = require('../utils/baileysAdapter');
 
 // ─── SEND MESSAGES ────────────────────────────────────────────
 // client — WhatsApp client for this user
@@ -65,7 +66,7 @@ const sendMessages = async (client, userId, numbersOrRecipients, message, onProg
         continue;
       }
 
-      const whatsappId = `${cleanNumber}@c.us`;
+      const whatsappId = toBaileysJid(cleanNumber);
 
       let retries = 0;
       const maxRetries = 2;

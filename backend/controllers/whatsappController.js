@@ -16,9 +16,17 @@ const connectWhatsApp = async (req, res) => {
       return res.json({ message: 'Already connected', status: 'connected' });
     }
 
-    if (status === 'pending') {
-      await clientManager.abortPendingClient(userId, explicitFresh ? 'User requested fresh QR' : 'User clicked Connect');
+    if (status === 'pending' && explicitFresh) {
+      await clientManager.abortPendingClient(userId, 'User requested fresh QR');
       await new Promise((resolve) => setTimeout(resolve, 2000));
+    } else if (status === 'pending') {
+      const qr = getLatestQr(userIdStr);
+      return res.json({
+        message: 'WhatsApp session restore already in progress',
+        status: 'pending',
+        hasStoredSession: true,
+        qr: qr || null
+      });
     }
 
     const hasStoredSession = await clientManager.canRecoverSession(userId);
@@ -65,9 +73,17 @@ const connectWhatsApp = async (req, res) => {
 const getWhatsAppStatus = async (req, res) => {
   try {
     const userId = req.user._id;
-    const status = clientManager.getStatus(userId);
+    let status = clientManager.getStatus(userId);
     const session = await Session.findOne({ userId });
     const recoverable = await clientManager.canRecoverSession(userId);
+
+    if (status === 'disconnected' && recoverable && !clientManager.isClientPending(userId)) {
+      const sendToUser = req.app.get('sendToUser');
+      clientManager.ensureClientConnected(userId, sendToUser).catch((err) => {
+        console.error(`Background session restore failed for ${userId}:`, err.message);
+      });
+      status = clientManager.getStatus(userId);
+    }
 
     const client = clientManager.getClient(userId);
     let clientReady = false;
@@ -82,6 +98,7 @@ const getWhatsAppStatus = async (req, res) => {
       status: clientReady ? 'connected' : status,
       isActive: session?.isActive || false,
       hasStoredSession: recoverable,
+      restoring: status === 'pending' && recoverable,
       lastSeen: session?.lastSeen || null,
       clientReady,
       qr: qr || null
@@ -107,54 +124,18 @@ const sendBulkMessages = async (req, res) => {
     const userId = req.user._id;
     const sendToUser = req.app.get('sendToUser');
 
+    if (!clientManager.isClientReady(userId)) {
+      const readyClient = await clientManager.waitForClientReady(userId, 5000);
+      if (!readyClient) {
+        return res.status(400).json({ error: 'WhatsApp not connected. Please scan QR again.' });
+      }
+    }
+
     const client = clientManager.getClient(userId);
-    if (!client) {
-      return res.status(400).json({ error: 'WhatsApp not connected. Please scan QR again.' });
+    if (!client?.sendMessage) {
+      return res.status(400).json({ error: 'WhatsApp client not ready. Please connect again.' });
     }
 
-    // Log detailed client info for debugging
-    console.log(`\n📋 Client check for user ${userId}:`);
-    console.log(`   - sendMessage available: ${typeof client.sendMessage}`);
-    console.log(`   - Client constructor: ${client.constructor.name}`);
-    console.log(`   - Client methods: ${Object.getOwnPropertyNames(Object.getPrototypeOf(client)).filter(m => typeof client[m] === 'function').slice(0, 10).join(', ')}`);
-
-    // Wait for client to be fully ready (max 5 seconds)
-    let attempts = 0;
-    while (!client.sendMessage && attempts < 10) {
-      console.log(`⏳ Waiting for client to be ready... (attempt ${attempts + 1}/10)`);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      attempts++;
-    }
-
-    // Verify client is actually ready and has sendMessage method
-    if (!client.sendMessage || typeof client.sendMessage !== 'function') {
-      console.error(`❌ Client sendMessage not available after waiting for user ${userId}`);
-      console.error(`   Final check - typeof sendMessage: ${typeof client.sendMessage}`);
-      return res.status(400).json({ error: 'WhatsApp client not fully initialized. Please scan QR code again.' });
-    }
-
-    // Additional checks for client health
-    try {
-      // Check if browser page is still open
-      if (client.pupPage) {
-        if (typeof client.pupPage.isClosed === 'function' && client.pupPage.isClosed()) {
-          console.warn(`Browser page closed for user ${userId}`);
-          clientManager.disconnectClient(userId);
-          return res.status(400).json({ error: 'WhatsApp browser connection lost. Reconnecting...' });
-        }
-      }
-
-      // Check if client is actually connected by checking internal state
-      if (!client.pupBrowser || client.pupBrowser.isClosed && client.pupBrowser.isClosed()) {
-        console.warn(`Browser instance closed for user ${userId}`);
-        clientManager.disconnectClient(userId);
-        return res.status(400).json({ error: 'WhatsApp browser crashed. Please reconnect.' });
-      }
-    } catch (err) {
-      console.warn(`Error during pre-send health check for user ${userId}:`, err.message);
-    }
-
-    // Respond immediately — progress via WebSocket
     res.json({ message: 'Sending started', total: numbers.length });
 
     // Run in background with error handling
@@ -192,12 +173,8 @@ const sendBulkMessagesViaApiKey = async (req, res) => {
     const apiUser = req.apiUser;
 
     const client = clientManager.getClient(apiUser._id);
-    if (!client) {
+    if (!clientManager.isClientReady(apiUser._id)) {
       return res.status(400).json({ error: 'WhatsApp not connected. Please connect first via dashboard.' });
-    }
-
-    if (!client.sendMessage || typeof client.sendMessage !== 'function') {
-      return res.status(400).json({ error: 'WhatsApp client not ready. Please scan QR code.' });
     }
 
     res.json({ message: 'Sending started', total: numbers.length });

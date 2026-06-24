@@ -159,7 +159,7 @@ export default function CreateCampaignForm() {
       if (contact) {
         return {
           name: contact.name || manual?.name || '',
-          phone: clean,
+        phone: clean,
           segment: (contact.tags || []).join(', ') || ''
         };
       }
@@ -181,15 +181,15 @@ export default function CreateCampaignForm() {
 
   const getStepBlockers = useCallback(
     (currentStep) => {
-      const blockers = [];
+    const blockers = [];
 
       if (currentStep === 1) {
         if (messageSource === 'template' && !selectedTemplateId) {
           blockers.push('Select a template');
         }
         if (messageSource === 'manual' && !manualDetails.name.trim()) {
-          blockers.push('Enter a campaign name');
-        }
+      blockers.push('Enter a campaign name');
+    }
       }
 
       if (currentStep === 2) {
@@ -211,13 +211,13 @@ export default function CreateCampaignForm() {
           if (scheduleDate && scheduleDate < minDate) {
             blockers.push('Cannot schedule for a past date');
           }
-          if (scheduleDate && scheduleTime) {
-            const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
-            if (Number.isNaN(scheduledAt.getTime())) {
-              blockers.push('Enter a valid date and time');
-            } else if (scheduledAt <= new Date(Date.now() + 60000)) {
-              blockers.push('Schedule time must be at least 1 minute in the future');
-            }
+    if (scheduleDate && scheduleTime) {
+      const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
+      if (Number.isNaN(scheduledAt.getTime())) {
+        blockers.push('Enter a valid date and time');
+      } else if (scheduledAt <= new Date(Date.now() + 60000)) {
+        blockers.push('Schedule time must be at least 1 minute in the future');
+      }
             if (scheduleDate === minDate && scheduleTime < getMinScheduleTime(scheduleDate)) {
               blockers.push('Select a future time for today');
             }
@@ -233,22 +233,22 @@ export default function CreateCampaignForm() {
         }
       }
 
-      return blockers;
+    return blockers;
     },
     [
       manualDetails.name,
-      message,
+    message,
       messageSource,
-      missingTemplateVariables,
+    missingTemplateVariables,
       recipientCount,
       recurrenceEndDate,
       recurrencePattern,
       recurrenceStartDate,
-      scheduleDate,
+    scheduleDate,
       scheduleMode,
-      scheduleTime,
+    scheduleTime,
       selectedContactPhones.length,
-      selectedTemplateId
+    selectedTemplateId
     ]
   );
 
@@ -463,17 +463,17 @@ export default function CreateCampaignForm() {
               className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"
             >
               <ChevronLeft size={16} /> Back
-            </Link>
-            <div>
+                      </Link>
+                                  <div>
               <h2 className="font-bold text-lg">New Campaign</h2>
               <p className="text-xs text-gray-500 mt-0.5">
                 Step {step} of 5 · {currentStepMeta?.label}
-              </p>
-            </div>
-          </div>
-        </div>
+                                    </p>
+                                  </div>
+                                </div>
+                                        </div>
         <CampaignWizardStepper step={step} />
-      </div>
+                                  </div>
 
       <div className="p-6 min-h-[420px]">
         {step === 1 && (
@@ -552,32 +552,32 @@ export default function CreateCampaignForm() {
             sendingSpeed={sendingSpeed}
             message={message}
           />
-        )}
-      </div>
+                    )}
+                  </div>
 
       <div className="border-t border-white/10 p-6 space-y-4">
         {stepBlockers.length > 0 && step < 5 && (
-          <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
+                <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
             <p className="text-sm font-medium text-amber-200 mb-1">Complete to continue:</p>
-            <ul className="space-y-1">
+                  <ul className="space-y-1">
               {stepBlockers.map((blocker) => (
                 <li key={blocker} className="text-xs text-amber-100/90">
                   • {blocker}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-        <div className="flex gap-3">
+              <div className="flex gap-3">
           {step > 1 ? (
-            <button
+                <button
               type="button"
               onClick={() => setStep((prev) => prev - 1)}
               className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
-            >
+                >
               <ChevronLeft size={16} /> Back
-            </button>
+                </button>
           ) : (
             <Link
               href="/dashboard/scheduled"
@@ -588,19 +588,19 @@ export default function CreateCampaignForm() {
           )}
 
           {step < 5 ? (
-            <button
+                <button
               type="button"
               onClick={goNext}
               disabled={stepBlockers.length > 0}
               className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
             >
               Continue <ChevronRight size={16} />
-            </button>
+                </button>
           ) : (
-            <button
+                <button
               type="button"
               onClick={handleLaunch}
-              disabled={submitting}
+                  disabled={submitting}
               className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
             >
               {submitting ? (
@@ -609,10 +609,10 @@ export default function CreateCampaignForm() {
                 <Send size={16} />
               )}
               {submitting ? 'Launching...' : 'Launch Campaign'}
-            </button>
+              </button>
           )}
-        </div>
-      </div>
+              </div>
+            </div>
     </div>
   );
 }

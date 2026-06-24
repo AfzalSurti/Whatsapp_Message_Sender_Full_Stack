@@ -72,10 +72,16 @@ export default function DashboardLayout({ children }) {
         setQrImage(null);
       } else if (status === 'pending') {
         setWaStatus('pending');
+        if (res.data.restoring) {
+          setQrStatusText('Restoring WhatsApp session...');
+        }
       } else {
         setWaStatus('disconnected');
       }
+
+      return res.data;
     } catch {
+      return null;
     } finally {
       setSessionLoading(false);
     }
@@ -134,12 +140,19 @@ export default function DashboardLayout({ children }) {
   useWebSocket(handleWsMessage);
 
   const handleConnect = async (options = {}) => {
+    const { silent = false, restoreOnly = false } = options;
+
     try {
-      setShowQR(true);
-      setQrImage(null);
-      setConnectError('');
-      setQrStatusText('Starting WhatsApp connection...');
-      setWaStatus('pending');
+      if (restoreOnly) {
+        setWaStatus('pending');
+        setQrStatusText('Restoring WhatsApp session...');
+      } else {
+        setShowQR(true);
+        setQrImage(null);
+        setConnectError('');
+        setQrStatusText('Starting WhatsApp connection...');
+        setWaStatus('pending');
+      }
 
       const res = await whatsappAPI.connect({ fresh: false });
 
@@ -148,7 +161,7 @@ export default function DashboardLayout({ children }) {
         setShowQR(false);
         setQrImage(null);
         setQrStatusText('WhatsApp connected successfully.');
-        if (!options.silent) toast.success('WhatsApp connected!');
+        if (!silent) toast.success('WhatsApp connected!');
         return;
       }
 
@@ -156,17 +169,20 @@ export default function DashboardLayout({ children }) {
         setQrImage(res.data.qr);
         setShowQR(true);
         setQrStatusText('Scan the QR code in WhatsApp to finish connecting.');
+      } else if (res.data.hasStoredSession || restoreOnly) {
+        setWaStatus('pending');
+        await fetchStatus();
       } else {
         await fetchStatus();
       }
 
-      if (!options.silent) {
+      if (!silent && !restoreOnly) {
         toast('Scan the QR code to connect', { icon: 'QR' });
       }
     } catch (err) {
       setConnectError(err.response?.data?.error || 'Connection failed');
       setQrStatusText('Could not start the connection.');
-      toast.error(err.response?.data?.error || 'Connection failed');
+      if (!silent) toast.error(err.response?.data?.error || 'Connection failed');
     }
   };
 
@@ -289,7 +305,7 @@ export default function DashboardLayout({ children }) {
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border border-white/5">
                   <span className={`w-2 h-2 rounded-full ${waStatus === 'connected' ? 'bg-[#25D366]' : 'bg-red-500'}`} />
-                  {waStatus === 'connected' ? 'Connected' : waStatus === 'pending' ? 'Scanning' : 'Disconnected'}
+                  {waStatus === 'connected' ? 'Connected' : waStatus === 'pending' ? 'Restoring...' : 'Disconnected'}
                 </span>
                 {waStatus === 'connected' ? (
                   <button onClick={handleDisconnect} className="hidden sm:flex items-center gap-2 text-xs border border-white/10 hover:border-red-400/40 hover:text-red-400 px-3 py-2 rounded-xl transition-colors"><WifiOff size={14} /> Disconnect</button>

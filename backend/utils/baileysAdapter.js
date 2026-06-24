@@ -1,0 +1,218 @@
+const PERSONAL_SERVERS = new Set(['s.whatsapp.net', 'lid', 'c.us']);
+
+const toBaileysJid = (chatId) => {
+  const raw = String(chatId || '').trim();
+  if (!raw) return '';
+
+  if (raw.includes('@')) {
+    return raw.replace('@c.us', '@s.whatsapp.net');
+  }
+
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+  return `${digits}@s.whatsapp.net`;
+};
+
+const extractMessageText = (waMessage) => {
+  const content = waMessage?.message;
+  if (!content) return '';
+
+  if (content.conversation) return content.conversation;
+  if (content.extendedTextMessage?.text) return content.extendedTextMessage.text;
+  if (content.imageMessage?.caption) return content.imageMessage.caption;
+  if (content.videoMessage?.caption) return content.videoMessage.caption;
+  if (content.documentMessage?.caption) return content.documentMessage.caption;
+  if (content.buttonsResponseMessage?.selectedDisplayText) {
+    return content.buttonsResponseMessage.selectedDisplayText;
+  }
+  if (content.listResponseMessage?.title) return content.listResponseMessage.title;
+
+  return '';
+};
+
+const isMediaLikePayload = (content) =>
+  Boolean(
+    content &&
+      typeof content === 'object' &&
+      (content.mimetype || content.data || content.dataUrl)
+  );
+
+const buildMediaContent = (payload = {}, caption = '') => {
+  const mimeType = String(payload.mimetype || payload.mimeType || 'application/octet-stream');
+  const base64 = String(payload.data || payload.base64 || '');
+  const dataUrl = String(payload.dataUrl || '');
+
+  let buffer;
+  if (base64) {
+    buffer = Buffer.from(base64, 'base64');
+  } else if (dataUrl.startsWith('data:')) {
+    const comma = dataUrl.indexOf(',');
+    buffer = Buffer.from(dataUrl.slice(comma + 1), 'base64');
+  }
+
+  if (!buffer?.length) {
+    throw new Error('Media payload is empty');
+  }
+
+  const fileName = payload.filename || payload.fileName || payload.name || 'file';
+
+  if (mimeType.startsWith('image/')) {
+    return { image: buffer, caption: caption || undefined };
+  }
+
+  if (mimeType.startsWith('video/')) {
+    return { video: buffer, caption: caption || undefined };
+  }
+
+  if (mimeType.startsWith('audio/')) {
+    return { audio: buffer, mimetype: mimeType, ptt: mimeType.includes('ogg') };
+  }
+
+  return {
+    document: buffer,
+    mimetype: mimeType,
+    fileName,
+    caption: caption || undefined
+  };
+};
+
+const createSendMessage = (sock) => async (chatId, content, options = {}) => {
+  const jid = toBaileysJid(chatId);
+  if (!jid) throw new Error('Invalid chat id');
+
+  if (typeof content === 'string') {
+    return sock.sendMessage(jid, { text: content }, options);
+  }
+
+  if (isMediaLikePayload(content)) {
+    const mediaContent = buildMediaContent(content, options.caption || content.caption);
+    return sock.sendMessage(jid, mediaContent, options);
+  }
+
+  if (content && typeof content === 'object') {
+    return sock.sendMessage(jid, content, options);
+  }
+
+  throw new Error('Unsupported message content');
+};
+
+const wrapIncomingMessage = (sock, waMessage, contactStore = new Map()) => {
+  const chatId = String(waMessage?.key?.remoteJid || '');
+  const body = extractMessageText(waMessage);
+  const contact = contactStore.get(chatId);
+
+  return {
+    fromMe: Boolean(waMessage?.key?.fromMe),
+    from: chatId,
+    body,
+    isStatus: chatId === 'status@broadcast',
+    broadcast: false,
+    id: {
+      _serialized: String(waMessage?.key?.id || ''),
+      id: waMessage?.key?.id
+    },
+    _baileys: waMessage,
+    getContact: async () => ({
+      name: contact?.name || waMessage.pushName || '',
+      pushname: contact?.notify || waMessage.pushName || '',
+      shortName: contact?.notify || '',
+      verifiedName: contact?.verifiedName || '',
+      number: chatId.split('@')[0],
+      id: {
+        user: chatId.split('@')[0],
+        _serialized: chatId
+      }
+    }),
+    reply: async (text, _chatId, replyOptions = {}) => {
+      const jid = toBaileysJid(_chatId || chatId);
+      return sock.sendMessage(jid, { text: String(text) }, { quoted: waMessage, ...replyOptions });
+    }
+  };
+};
+
+const upsertChatRecord = (chatMap, chat) => {
+  if (!chat?.id) return;
+  const id = String(chat.id);
+  chatMap.set(id, { ...chatMap.get(id), ...chat, id });
+};
+
+const upsertContactRecord = (contactMap, contact) => {
+  if (!contact?.id) return;
+  const id = String(contact.id);
+  contactMap.set(id, { ...contactMap.get(id), ...contact, id });
+};
+
+const getChatsForPicker = (chatMap, contactMap, { limit = 100 } = {}) => {
+  const { normalizePhoneValue } = require('./whatsappChat');
+
+  const rows = Array.from(chatMap.values())
+    .filter((chat) => {
+      const chatId = String(chat.id || '');
+      const server = chatId.split('@')[1] || '';
+      return chatId && PERSONAL_SERVERS.has(server) && !chatId.endsWith('@g.us');
+    })
+    .sort((a, b) => (Number(b.conversationTimestamp) || 0) - (Number(a.conversationTimestamp) || 0))
+    .slice(0, limit)
+    .map((chat) => {
+      const chatId = String(chat.id);
+      const server = chatId.split('@')[1] || '';
+      const userPart = chatId.split('@')[0];
+      const contact = contactMap.get(chatId);
+      const name =
+        String(chat.name || contact?.name || contact?.notify || chat.pushName || userPart).trim() ||
+        userPart;
+
+      const phoneNumber =
+        server === 'lid'
+          ? ''
+          : normalizePhoneValue(userPart) || '';
+
+      return {
+        chatId,
+        name,
+        phoneNumber: phoneNumber && !String(phoneNumber).includes('@') ? phoneNumber : '',
+        source: 'whatsapp'
+      };
+    });
+
+  rows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return rows;
+};
+
+const createBaileysClientAdapter = (sock, { chatMap, contactMap }) => {
+  const sendMessage = createSendMessage(sock);
+  const phoneUser = String(sock?.user?.id || '').split('@')[0] || '';
+
+  return {
+    sock,
+    sendMessage,
+    chatMap,
+    contactMap,
+    info: {
+      wid: {
+        user: phoneUser
+      }
+    },
+    getChatsForPicker: (limit) => getChatsForPicker(chatMap, contactMap, { limit }),
+    end: async () => {
+      try {
+        sock.end(undefined);
+      } catch {
+        // ignore
+      }
+    },
+    _healthCheckCleanup: () => {}
+  };
+};
+
+module.exports = {
+  toBaileysJid,
+  extractMessageText,
+  buildMediaContent,
+  createSendMessage,
+  wrapIncomingMessage,
+  upsertChatRecord,
+  upsertContactRecord,
+  getChatsForPicker,
+  createBaileysClientAdapter
+};

@@ -1,6 +1,5 @@
 const express = require('express');
 require('dotenv').config();
-require('./config/puppeteerEnv');
 const fs = require('fs');
 const http = require('http');           // needed to share server with WebSocket
 const cors = require('cors');
@@ -36,7 +35,7 @@ connectDB();
 // ─── RATE LIMITING ────────────────────────────────────────────
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000,
   message: { error: 'Too many requests. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -95,7 +94,7 @@ app.use((err, req, res, next) => {
 
 // ─── HANDLE UNCAUGHT EXCEPTIONS ────────────────────────────────
 process.on('uncaughtException', (err) => {
-  if (err?.code === 'ENOENT' && String(err?.path || '').includes('.wwebjs_auth')) {
+  if (err?.code === 'ENOENT' && String(err?.path || '').includes('baileys_auth')) {
     console.warn('WhatsApp local session file warning:', err.message);
     return;
   }
@@ -108,13 +107,13 @@ process.on('unhandledRejection', (reason) => {
 
   if (
     reason?.code === 'ENOENT' &&
-    reasonPath.includes('.wwebjs_auth')
+    reasonPath.includes('baileys_auth')
   ) {
     console.warn('WhatsApp local session warning:', message);
     return;
   }
 
-  if (reason?.code === 'EBUSY' && reasonPath.includes('.wwebjs_auth')) {
+  if (reason?.code === 'EBUSY' && reasonPath.includes('baileys_auth')) {
     console.warn('WhatsApp session folder locked during cleanup:', message);
     return;
   }
@@ -133,20 +132,10 @@ server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   logCorsConfig();
 
-  if (process.platform === 'linux') {
-    const { resolveChromeExecutable } = require('./config/puppeteerEnv');
-    const chromePath = resolveChromeExecutable();
-    console.log(`Puppeteer cache: ${process.env.PUPPETEER_CACHE_DIR}`);
-    console.log(`Chrome executable: ${chromePath || 'NOT FOUND — run node scripts/ensure-chrome.js during build'}`);
-  }
-
-  // Recover active sessions after startup (delay longer while Chrome warms up / nodemon settles)
   const recoveryDelayMs =
     process.env.NODE_ENV === 'production' || process.env.RENDER === 'true'
-      ? 10000
-      : process.platform === 'win32'
-        ? 5000
-        : 3000;
+      ? 5000
+      : 2000;
 
   setTimeout(() => {
     recoverSessions(sendToUser);

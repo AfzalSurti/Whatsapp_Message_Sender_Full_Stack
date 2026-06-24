@@ -4,8 +4,6 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "postinstall": "node scripts/ensure-chrome.js",
-    "build": "node scripts/ensure-chrome.js",
     "start": "node index.js",
     "dev": "nodemon index.js"
   },
@@ -13,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
     "axios": "^1.16.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
@@ -26,10 +25,8 @@
     "morgan": "^1.10.1",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "puppeteer": "^24.38.0",
+    "pino": "^9.6.0",
     "qrcode": "^1.5.4",
-    "whatsapp-web.js": "^1.34.7",
-    "ws": "^8.20.1",
-    "wwebjs-mongo": "^1.1.0"
+    "ws": "^8.20.1"
   }
 }

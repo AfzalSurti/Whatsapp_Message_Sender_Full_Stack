@@ -1,7 +1,8 @@
+const axios = require('axios');
 const { getOrCreateBusinessProfile } = require('../utils/businessProfile');
 const { formatMessageForLog, resolveMessageFooter } = require('../utils/messageFooter');
 const { sendMessageWithFooter, replyWithFooter } = require('../utils/sendMessageWithFooter');
-const { MessageMedia } = require('whatsapp-web.js');
+const { buildMediaContent } = require('../utils/baileysAdapter');
 const AutoReplyConfig = require('../models/AutoReplyConfig');
 const AutoReplyLog = require('../models/AutoReplyLog');
 const AITemplate = require('../models/AITemplate');
@@ -92,16 +93,19 @@ const callOpenRouter = async (userPrompt, { systemPrompt = 'You are a helpful as
   return content.trim();
 };
 
+const isSentConfirmed = (sentMsg) =>
+  Boolean(sentMsg?.key?.id || sentMsg?.id?._serialized || sentMsg?.id?.id);
+
 const sendWhatsAppReply = async (client, msg, chatId, aiReply, messageFooter = '') => {
   try {
     const sentMsg = await replyWithFooter(msg, aiReply, messageFooter, chatId);
-    if (sentMsg?.id?._serialized) return sentMsg;
+    if (isSentConfirmed(sentMsg)) return sentMsg;
   } catch (err) {
     console.warn(`msg.reply failed, trying sendMessage: ${err.message}`);
   }
 
   const sentMsg = await sendMessageWithFooter(client, chatId, aiReply, messageFooter);
-  if (!sentMsg?.id?._serialized) {
+  if (!isSentConfirmed(sentMsg)) {
     throw new Error('WhatsApp did not confirm the message was sent');
   }
 
@@ -215,9 +219,11 @@ const sendMediaFiles = async (client, chatId, files = [], placeholderMap = {}) =
     if (!parsed) continue;
 
     try {
-      const media = new MessageMedia(parsed.mimeType, parsed.base64, file.name || 'file');
-      const caption = applyPlaceholders(file.caption || '', placeholderMap);
-      await client.sendMessage(chatId, media, caption ? { caption } : undefined);
+      const mediaContent = buildMediaContent(
+        { mimeType: parsed.mimeType, dataUrl: file.dataUrl, name: file.name },
+        applyPlaceholders(file.caption || '', placeholderMap)
+      );
+      await client.sendMessage(chatId, mediaContent);
     } catch (err) {
       console.warn(`Failed to send media ${file.name}: ${err.message}`);
     }

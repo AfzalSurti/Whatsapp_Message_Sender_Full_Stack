@@ -99,6 +99,23 @@ const setupWebSocket = (server, verifyToken) => {
       console.log(`📤 Re-sent latest QR to reconnected user ${userIdStr}`);
     }
 
+    try {
+      const clientManager = require('./clientManager');
+      const recoverable = await clientManager.canRecoverSession(userIdStr);
+
+      if (
+        recoverable &&
+        clientManager.getStatus(userIdStr) === 'disconnected' &&
+        !clientManager.isClientPending(userIdStr)
+      ) {
+        clientManager.ensureClientConnected(userIdStr, sendToUser).catch((err) => {
+          console.error(`WebSocket session restore failed for ${userIdStr}:`, err.message);
+        });
+      }
+    } catch (err) {
+      console.error(`WebSocket session restore check failed for ${userIdStr}:`, err.message);
+    }
+
     ws.on('message', (data) => {
       try {
         const msg = JSON.parse(data);

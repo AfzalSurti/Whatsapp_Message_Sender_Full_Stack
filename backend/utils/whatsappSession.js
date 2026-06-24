@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const AUTH_DATA_PATH = process.env.WHATSAPP_AUTH_PATH
-  || path.join(__dirname, '..', '.wwebjs_auth');
+  || path.join(__dirname, '..', '.baileys_auth');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -22,12 +22,13 @@ const hasStoredLocalSession = (userId) => {
     const sessionDir = getLocalSessionDir(userId);
     if (!fs.existsSync(sessionDir)) return false;
 
-    const defaultDir = path.join(sessionDir, 'Default');
-    if (fs.existsSync(defaultDir)) {
-      return fs.readdirSync(defaultDir).length > 0;
+    const credsPath = path.join(sessionDir, 'creds.json');
+    if (fs.existsSync(credsPath)) {
+      const raw = fs.readFileSync(credsPath, 'utf8');
+      return raw.trim().length > 2;
     }
 
-    return fs.readdirSync(sessionDir).length > 0;
+    return fs.readdirSync(sessionDir).some((name) => name.endsWith('.json'));
   } catch {
     return false;
   }
@@ -61,12 +62,12 @@ const cleanupLocalAuthArtifacts = async (userId, { maxAttempts = 6 } = {}) => {
         maxRetries: 3,
         retryDelay: 500
       });
-      console.log(`🗑️  Deleted local WhatsApp session folder: ${sessionDir}`);
+      console.log(`Deleted Baileys session folder: ${sessionDir}`);
       return true;
     } catch (err) {
       const retriable = ['EBUSY', 'EPERM', 'EACCES'].includes(err.code);
       if (!retriable || attempt === maxAttempts) {
-        console.warn(`Failed to remove local WhatsApp session: ${err.message}`);
+        console.warn(`Failed to remove Baileys session: ${err.message}`);
         return false;
       }
       await sleep(750 * attempt);
@@ -95,13 +96,13 @@ const purgeAllLocalSessions = async () => {
         fs.unlinkSync(targetPath);
       }
       removed += 1;
-      console.log(`🗑️  Removed WhatsApp auth artifact: ${entry.name}`);
+      console.log(`Removed WhatsApp auth artifact: ${entry.name}`);
     } catch (err) {
       console.warn(`Could not remove ${entry.name}: ${err.message}`);
     }
   }
 
-  console.log(`🧹 Purged ${removed} item(s) from ${AUTH_DATA_PATH}`);
+  console.log(`Purged ${removed} item(s) from ${AUTH_DATA_PATH}`);
   return removed;
 };
 

@@ -280,105 +280,12 @@ const withTimeout = (promise, ms, label) =>
     })
   ]);
 
-const fetchRecentChatsFromStore = async (client, limit = 100) => {
-  if (!client?.pupPage || (client.pupPage.isClosed && client.pupPage.isClosed())) {
-    throw new Error('WhatsApp browser page not available');
-  }
-
-  const rows = await withTimeout(
-    client.pupPage.evaluate((max) => {
-      const getChatModels = () => {
-        try {
-          return window.require('WAWebCollections').Chat.getModelsArray();
-        } catch {
-          // legacy WhatsApp Web builds
-          return window.Store?.Chat?.getModelsArray?.() || [];
-        }
-      };
-
-      const getContactName = (chat) => {
-        try {
-          const contact = window.require('WAWebCollections').Contact.get(chat.id);
-          return (
-            contact?.name ||
-            contact?.pushname ||
-            contact?.shortName ||
-            contact?.verifiedName ||
-            ''
-          );
-        } catch {
-          return '';
-        }
-      };
-
-      const isGroupChat = (chat) => {
-        if (chat.isGroup) return true;
-        if (chat.groupMetadata) return true;
-        try {
-          return window.require('WAWebChatGetters').getIsGroup(chat);
-        } catch {
-          return false;
-        }
-      };
-
-      return getChatModels()
-        .filter((chat) => !isGroupChat(chat))
-        .filter((chat) => {
-          const chatId = chat.id?._serialized || '';
-          const server = chatId.split('@')[1] || '';
-          return chatId && ['c.us', 's.whatsapp.net', 'lid'].includes(server);
-        })
-        .sort((a, b) => {
-          const tsA = a.t?.low ?? a.t ?? 0;
-          const tsB = b.t?.low ?? b.t ?? 0;
-          return tsB - tsA;
-        })
-        .slice(0, max)
-        .map((chat) => {
-          const chatId = chat.id._serialized;
-          const server = chatId.split('@')[1] || '';
-          const userPart = chatId.split('@')[0];
-          const name = String(
-            chat.name ||
-              chat.formattedTitle ||
-              getContactName(chat) ||
-              userPart ||
-              ''
-          ).trim();
-          return { chatId, name, server, userPart };
-        });
-    }, limit),
-    20000,
-    'WhatsApp chat list'
-  );
-
-  const serialized = [];
-  const seen = new Set();
-
-  for (const row of rows) {
-    if (!row?.chatId || seen.has(row.chatId)) continue;
-    seen.add(row.chatId);
-
-    const phoneNumber =
-      row.server === 'lid'
-        ? ''
-        : resolvePhoneFromChatId(row.chatId) || normalizePhoneValue(row.userPart) || '';
-
-    serialized.push({
-      chatId: row.chatId,
-      name: row.name || row.userPart,
-      phoneNumber: phoneNumber && !String(phoneNumber).includes('@') ? phoneNumber : '',
-      source: 'whatsapp'
-    });
-  }
-
-  return serialized;
-};
-
 const fetchWhatsAppContacts = async (client, { limit = 100 } = {}) => {
-  const fastList = await fetchRecentChatsFromStore(client, limit);
-  fastList.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  return fastList;
+  if (typeof client?.getChatsForPicker === 'function') {
+    return client.getChatsForPicker(limit);
+  }
+
+  throw new Error('WhatsApp client does not support contact listing');
 };
 
 const isPersonalChat = (chat) => {
