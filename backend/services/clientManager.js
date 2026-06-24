@@ -21,7 +21,10 @@ const {
   createBaileysClientAdapter,
   wrapIncomingMessage,
   upsertChatRecord,
-  upsertContactRecord
+  upsertContactRecord,
+  getChatsForPicker,
+  hasPickerCandidates,
+  normalizeJid
 } = require('../utils/baileysAdapter');
 
 const clients = new Map();
@@ -123,12 +126,28 @@ const bindSocketEvents = ({
     chats.forEach((chat) => upsertChatRecord(entry.chatMap, chat));
   });
 
+  sock.ev.on('chats.update', (updates = []) => {
+    updates.forEach((update) => {
+      const id = normalizeJid(update.id);
+      if (!id) return;
+      upsertChatRecord(entry.chatMap, { ...entry.chatMap.get(id), ...update, id });
+    });
+  });
+
   sock.ev.on('contacts.set', ({ contacts = [] }) => {
     contacts.forEach((contact) => upsertContactRecord(entry.contactMap, contact));
   });
 
   sock.ev.on('contacts.upsert', (contacts = []) => {
     contacts.forEach((contact) => upsertContactRecord(entry.contactMap, contact));
+  });
+
+  sock.ev.on('contacts.update', (updates = []) => {
+    updates.forEach((update) => {
+      const id = normalizeJid(update.id);
+      if (!id) return;
+      upsertContactRecord(entry.contactMap, { ...entry.contactMap.get(id), ...update, id });
+    });
   });
 
   sock.ev.on('messaging-history.set', ({ chats = [], contacts = [] }) => {
@@ -206,6 +225,15 @@ const bindSocketEvents = ({
 
     for (const waMessage of messages) {
       try {
+        const chatId = normalizeJid(waMessage?.key?.remoteJid);
+        if (chatId) {
+          upsertChatRecord(entry.chatMap, {
+            id: chatId,
+            conversationTimestamp: waMessage.messageTimestamp,
+            pushName: waMessage.pushName
+          });
+        }
+
         const { isAutoReplyEligibleMessage } = require('../utils/whatsappChat');
         const wrapped = wrapIncomingMessage(sock, waMessage, entry.contactMap);
         if (!isAutoReplyEligibleMessage(wrapped)) continue;
@@ -278,7 +306,8 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
     logger: silentLogger,
     browser: ['WA Sender', 'Chrome', '1.0.0'],
     syncFullHistory: false,
-    markOnlineOnConnect: false
+    markOnlineOnConnect: false,
+    shouldSyncHistoryMessage: () => true
   });
 
   const client = createBaileysClientAdapter(sock, { chatMap, contactMap });
@@ -399,6 +428,69 @@ const ensureClientConnected = async (userId, sendToUser) => {
   );
 };
 
+const waitForChatHydration = async (entry, maxMs = 12000) => {
+  if (!entry) return false;
+  if (hasPickerCandidates(entry.chatMap, entry.contactMap)) return true;
+
+  return new Promise((resolve) => {
+    const onHydrate = () => {
+      if (hasPickerCandidates(entry.chatMap, entry.contactMap)) {
+        cleanup();
+        resolve(true);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(hasPickerCandidates(entry.chatMap, entry.contactMap));
+    }, maxMs);
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      entry.sock?.ev?.off('chats.upsert', onHydrate);
+      entry.sock?.ev?.off('chats.update', onHydrate);
+      entry.sock?.ev?.off('messaging-history.set', onHydrate);
+      entry.sock?.ev?.off('contacts.upsert', onHydrate);
+      entry.sock?.ev?.off('contacts.update', onHydrate);
+    };
+
+    entry.sock?.ev?.on('chats.upsert', onHydrate);
+    entry.sock?.ev?.on('chats.update', onHydrate);
+    entry.sock?.ev?.on('messaging-history.set', onHydrate);
+    entry.sock?.ev?.on('contacts.upsert', onHydrate);
+    entry.sock?.ev?.on('contacts.update', onHydrate);
+  });
+};
+
+const pickerCache = new Map();
+const PICKER_CACHE_TTL_MS = 30000;
+
+const getPickerContacts = async (userId, { limit = 100, forceRefresh = false } = {}) => {
+  const userIdStr = userId.toString();
+  const cacheKey = `${userIdStr}:${limit}`;
+  const cached = pickerCache.get(cacheKey);
+
+  if (!forceRefresh && cached && Date.now() - cached.at < PICKER_CACHE_TTL_MS) {
+    return cached.contacts;
+  }
+
+  let client = getClient(userId);
+  if (!isClientReady(userId)) {
+    client = await waitForClientReady(userId, 20000);
+  }
+
+  if (!client || !isClientReady(userId)) {
+    throw new Error('WhatsApp not connected. Connect first, then click Refresh.');
+  }
+
+  const entry = clients.get(userIdStr);
+  await waitForChatHydration(entry, 12000);
+
+  const contacts = getChatsForPicker(entry.chatMap, entry.contactMap, { limit });
+  pickerCache.set(cacheKey, { contacts, at: Date.now() });
+  return contacts;
+};
+
 const recoverSessions = async (sendToUser) => {
   try {
     if (process.env.SKIP_SESSION_RECOVERY === 'true') {
@@ -443,6 +535,7 @@ module.exports = {
   isClientReady,
   isClientPending,
   waitForClientReady,
+  getPickerContacts,
   ensureClientConnected,
   abortPendingClient,
   disconnectClient,

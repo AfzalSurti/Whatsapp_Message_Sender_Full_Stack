@@ -17,6 +17,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { aiTemplateAPI, autoReplyAPI, groupsAPI } from '@/lib/api';
 import { formatPhoneNumber } from '@/lib/phone';
+import { cachedRequest } from '@/lib/requestCache';
 import { useDashboardShell } from '../DashboardShellContext';
 
 const statusConfig = {
@@ -80,6 +81,8 @@ export default function AutoReplyPage() {
 
   const latestLogIdRef = useRef(null);
   const pollInitializedRef = useRef(false);
+  const initLoadedRef = useRef(false);
+  const whatsappLoadedRef = useRef(false);
 
   const fetchAiTemplates = useCallback(async () => {
     setTemplatesLoading(true);
@@ -141,7 +144,7 @@ export default function AutoReplyPage() {
     }
   }, []);
 
-  const fetchWhatsAppContacts = useCallback(async () => {
+  const fetchWhatsAppContacts = useCallback(async ({ force = false } = {}) => {
     if (!waConnected) {
       setContactsError('Connect WhatsApp from the header, then click Refresh.');
       setWhatsappContacts([]);
@@ -155,8 +158,16 @@ export default function AutoReplyPage() {
     setContactsError('');
 
     try {
-      const res = await autoReplyAPI.getWhatsAppContacts();
-      setWhatsappContacts(res.data.contacts || []);
+      const contacts = await cachedRequest(
+        'whatsapp-picker-contacts',
+        async () => {
+          const res = await autoReplyAPI.getWhatsAppContacts({ force });
+          return res.data.contacts || [];
+        },
+        { force, ttlMs: 60000 }
+      );
+      setWhatsappContacts(contacts);
+      whatsappLoadedRef.current = true;
     } catch (err) {
       const message = err.response?.data?.error || err.message || 'Failed to load WhatsApp contacts';
       setContactsError(message);
@@ -237,12 +248,15 @@ export default function AutoReplyPage() {
   }, [loading, router, user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || initLoadedRef.current) return;
+    initLoadedRef.current = true;
+
     fetchConfig();
     fetchAiTemplates();
     fetchLogContacts();
     fetchSavedContacts();
-  }, [user, fetchConfig, fetchAiTemplates, fetchLogContacts, fetchSavedContacts]);
+    fetchLogs();
+  }, [user, fetchConfig, fetchAiTemplates, fetchLogContacts, fetchSavedContacts, fetchLogs]);
 
   const activeAiTemplates = useMemo(
     () => aiTemplates.filter((template) => template.isActive !== false),
@@ -258,12 +272,12 @@ export default function AutoReplyPage() {
   }, [templatesLoading, configLoading, enabledTemplateIds.length, activeAiTemplates]);
 
   useEffect(() => {
-    if (!user || contactSource !== 'whatsapp' || !waConnected) return;
+    if (!user || contactSource !== 'whatsapp' || !waConnected || whatsappLoadedRef.current) return;
     fetchWhatsAppContacts();
   }, [user, contactSource, waConnected, fetchWhatsAppContacts]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !initLoadedRef.current) return;
     pollInitializedRef.current = false;
     latestLogIdRef.current = null;
     fetchLogs();
@@ -274,11 +288,10 @@ export default function AutoReplyPage() {
 
     const intervalId = setInterval(() => {
       fetchLogs({ silent: true });
-      fetchLogContacts();
-    }, 30000);
+    }, 45000);
 
     return () => clearInterval(intervalId);
-  }, [user, fetchLogs, fetchLogContacts]);
+  }, [user, fetchLogs]);
 
   const getContactSelectionValue = (contact) => {
     const phone = String(contact.phoneNumber || '').trim();
@@ -525,7 +538,12 @@ export default function AutoReplyPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setContactSource('whatsapp')}
+                onClick={() => {
+                  setContactSource('whatsapp');
+                  if (waConnected && !whatsappLoadedRef.current) {
+                    fetchWhatsAppContacts();
+                  }
+                }}
                 className={`flex-1 text-sm py-2.5 rounded-lg font-medium transition-colors ${
                   contactSource === 'whatsapp'
                     ? 'bg-[#25D366] text-black'
@@ -553,9 +571,13 @@ export default function AutoReplyPage() {
               </div>
               <button
                 type="button"
-                onClick={
-                  contactSource === 'saved' ? fetchSavedContacts : fetchWhatsAppContacts
-                }
+                onClick={() => {
+                  if (contactSource === 'saved') {
+                    fetchSavedContacts();
+                    return;
+                  }
+                  fetchWhatsAppContacts({ force: true });
+                }}
                 disabled={contactSource === 'saved' ? savedContactsLoading : contactsLoading}
                 className="text-sm border border-white/10 hover:border-[#25D366]/40 px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50 shrink-0"
               >

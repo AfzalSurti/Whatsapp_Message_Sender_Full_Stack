@@ -6,7 +6,6 @@ const AutoReplyLog = require('../models/AutoReplyLog');
 const clientManager = require('../services/clientManager');
 const {
   isChatId,
-  fetchWhatsAppContacts,
   normalizePhoneValue
 } = require('../utils/whatsappChat');
 
@@ -217,19 +216,13 @@ const deleteContactLogs = async (req, res) => {
 const getWhatsAppContacts = async (req, res) => {
   try {
     const userId = req.user._id;
-    let client = clientManager.getClient(userId);
+    const forceRefresh = req.query.refresh === '1';
 
-    if (!clientManager.isClientReady(userId)) {
-      client = await clientManager.waitForClientReady(userId, 20000);
-    }
+    const contacts = await clientManager.getPickerContacts(userId, {
+      limit: 100,
+      forceRefresh
+    });
 
-    if (!client || !clientManager.isClientReady(userId)) {
-      return res.status(400).json({
-        error: 'WhatsApp not connected. Connect first, then click Refresh.'
-      });
-    }
-
-    const contacts = await fetchWhatsAppContacts(client, { limit: 100 });
     console.log(`Loaded ${contacts.length} WhatsApp chats for auto-reply picker`);
 
     res.json({ contacts });

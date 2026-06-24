@@ -150,7 +150,10 @@ export const templateAPI = aiTemplateAPI;
 export const autoReplyAPI = {
   getConfig: () => api.get('/api/auto-reply/config'),
   updateConfig: (data) => api.put('/api/auto-reply/config', data),
-  getWhatsAppContacts: () => api.get('/api/auto-reply/whatsapp-contacts', { timeout: 60000 }),
+  getWhatsAppContacts: (options = {}) => api.get('/api/auto-reply/whatsapp-contacts', {
+    timeout: 60000,
+    params: options.force ? { refresh: '1' } : undefined
+  }),
   getLogs: (params) => api.get('/api/auto-reply/logs', { params }),
   getContacts: () => api.get('/api/auto-reply/contacts'),
   deleteLog: (id) => api.delete(`/api/auto-reply/logs/${id}`),

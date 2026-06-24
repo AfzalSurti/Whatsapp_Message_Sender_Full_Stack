@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Loader2, Search } from 'lucide-react';
 import { autoReplyAPI } from '@/lib/api';
 import { formatPhoneNumber } from '@/lib/phone';
+import { cachedRequest } from '@/lib/requestCache';
 
 export default function WhatsAppChatPicker({
   waConnected,
@@ -15,8 +16,15 @@ export default function WhatsAppChatPicker({
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const fetchInFlightRef = useRef(false);
+  const loadedRef = useRef(false);
 
-  const fetchContacts = useCallback(async () => {
+  const fetchContacts = useCallback(async ({ force = false } = {}) => {
+    if (!waConnected) {
+      setError('Connect WhatsApp from the header, then click Refresh.');
+      setContacts([]);
+      return;
+    }
+
     if (fetchInFlightRef.current) return;
 
     fetchInFlightRef.current = true;
@@ -24,8 +32,16 @@ export default function WhatsAppChatPicker({
     setError('');
 
     try {
-      const res = await autoReplyAPI.getWhatsAppContacts();
-      setContacts(res.data.contacts || []);
+      const nextContacts = await cachedRequest(
+        'whatsapp-picker-contacts',
+        async () => {
+          const res = await autoReplyAPI.getWhatsAppContacts({ force });
+          return res.data.contacts || [];
+        },
+        { force, ttlMs: 60000 }
+      );
+      setContacts(nextContacts);
+      loadedRef.current = true;
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Failed to load WhatsApp chats');
       setContacts([]);
@@ -33,25 +49,23 @@ export default function WhatsAppChatPicker({
       fetchInFlightRef.current = false;
       setLoading(false);
     }
-  }, []);
+  }, [waConnected]);
 
-  useEffect(() => {
-    if (waConnected) {
+  const handleOpen = () => {
+    if (!loadedRef.current && waConnected) {
       fetchContacts();
     }
-  }, [fetchContacts, waConnected]);
+  };
 
-  const filteredContacts = useMemo(() => {
+  const filteredContacts = contacts.filter((contact) => {
     const query = search.trim().toLowerCase();
-    if (!query) return contacts;
+    if (!query) return true;
 
-    return contacts.filter((contact) => {
-      const name = String(contact.name || '').toLowerCase();
-      const phone = String(contact.phoneNumber || '').replace(/\D/g, '');
-      const queryDigits = query.replace(/\D/g, '');
-      return name.includes(query) || (queryDigits && phone.includes(queryDigits));
-    });
-  }, [contacts, search]);
+    const name = String(contact.name || '').toLowerCase();
+    const phone = String(contact.phoneNumber || '').replace(/\D/g, '');
+    const queryDigits = query.replace(/\D/g, '');
+    return name.includes(query) || (queryDigits && phone.includes(queryDigits));
+  });
 
   const formatContactPhone = (phone) => {
     if (!phone || String(phone).includes('@')) return phone;
@@ -61,20 +75,21 @@ export default function WhatsAppChatPicker({
   const normalizedSelected = String(selectedPhone || '').replace(/\D/g, '');
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" onFocus={handleOpen}>
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onFocus={handleOpen}
             placeholder="Search WhatsApp chats..."
             className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none focus:border-[#25D366]/40"
           />
         </div>
         <button
           type="button"
-          onClick={fetchContacts}
+          onClick={() => fetchContacts({ force: true })}
           disabled={loading}
           className="text-sm border border-white/10 hover:border-[#25D366]/40 px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50 shrink-0"
         >
@@ -97,7 +112,9 @@ export default function WhatsAppChatPicker({
           <p className="text-sm text-amber-400 py-2 px-2">{error}</p>
         ) : filteredContacts.length === 0 ? (
           <p className="text-sm text-gray-500 py-4 text-center">
-            No WhatsApp chats found. Click Refresh after connecting.
+            {loadedRef.current
+              ? 'No WhatsApp chats found. Click Refresh after connecting.'
+              : 'Click Refresh to load WhatsApp chats.'}
           </p>
         ) : (
           filteredContacts.map((contact) => {

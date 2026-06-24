@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { getToken } from '@/lib/auth';
@@ -85,6 +85,7 @@ export default function Dashboard() {
   const [newContactName, setNewContactName] = useState('');
   const [newContactCountry, setNewContactCountry] = useState(DEFAULT_COUNTRY);
   const [newContactPhone, setNewContactPhone] = useState('');
+  const dashboardDataLoadedRef = useRef(false);
 
   // Fetch dashboard data
   const fetchDashboardData = useCallback(async () => {
@@ -121,10 +122,10 @@ export default function Dashboard() {
 
   // Fetch contacts and dashboard data on load
   useEffect(() => {
-    if (user) {
-      fetchContacts();
-      fetchDashboardData();
-    }
+    if (!user || dashboardDataLoadedRef.current) return;
+    dashboardDataLoadedRef.current = true;
+    fetchContacts();
+    fetchDashboardData();
   }, [user, fetchContacts, fetchDashboardData]);
 
   const handleAddContact = async () => {

@@ -1,4 +1,20 @@
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const PERSONAL_SERVERS = new Set(['s.whatsapp.net', 'lid', 'c.us']);
+
+const normalizeJid = (value) => {
+  if (!value) return '';
+  const raw = typeof value === 'string' ? value : String(value.id || value._serialized || value.user || '');
+  if (!raw) return '';
+  if (raw.includes('@')) return jidNormalizedUser(raw) || raw;
+  return raw;
+};
+
+const isPersonalChatJid = (chatId) => {
+  const normalized = normalizeJid(chatId);
+  if (!normalized || normalized.endsWith('@g.us')) return false;
+  const server = normalized.split('@')[1] || '';
+  return PERSONAL_SERVERS.has(server);
+};
 
 const toBaileysJid = (chatId) => {
   const raw = String(chatId || '').trim();
@@ -131,52 +147,71 @@ const wrapIncomingMessage = (sock, waMessage, contactStore = new Map()) => {
 };
 
 const upsertChatRecord = (chatMap, chat) => {
-  if (!chat?.id) return;
-  const id = String(chat.id);
+  const id = normalizeJid(chat?.id);
+  if (!id) return;
   chatMap.set(id, { ...chatMap.get(id), ...chat, id });
 };
 
 const upsertContactRecord = (contactMap, contact) => {
-  if (!contact?.id) return;
-  const id = String(contact.id);
+  const id = normalizeJid(contact?.id);
+  if (!id) return;
   contactMap.set(id, { ...contactMap.get(id), ...contact, id });
+};
+
+const hasPickerCandidates = (chatMap, contactMap) => {
+  if (chatMap.size > 0) return true;
+
+  for (const contact of contactMap.values()) {
+    if (isPersonalChatJid(contact.id)) return true;
+  }
+
+  return false;
 };
 
 const getChatsForPicker = (chatMap, contactMap, { limit = 100 } = {}) => {
   const { normalizePhoneValue } = require('./whatsappChat');
+  const seen = new Set();
+  const rows = [];
 
-  const rows = Array.from(chatMap.values())
-    .filter((chat) => {
-      const chatId = String(chat.id || '');
-      const server = chatId.split('@')[1] || '';
-      return chatId && PERSONAL_SERVERS.has(server) && !chatId.endsWith('@g.us');
-    })
-    .sort((a, b) => (Number(b.conversationTimestamp) || 0) - (Number(a.conversationTimestamp) || 0))
-    .slice(0, limit)
-    .map((chat) => {
-      const chatId = String(chat.id);
-      const server = chatId.split('@')[1] || '';
-      const userPart = chatId.split('@')[0];
-      const contact = contactMap.get(chatId);
-      const name =
-        String(chat.name || contact?.name || contact?.notify || chat.pushName || userPart).trim() ||
-        userPart;
+  const pushRow = (chatId, chat = {}, contact = null) => {
+    const normalizedId = normalizeJid(chatId);
+    if (!normalizedId || seen.has(normalizedId) || !isPersonalChatJid(normalizedId)) return;
 
-      const phoneNumber =
-        server === 'lid'
-          ? ''
-          : normalizePhoneValue(userPart) || '';
+    seen.add(normalizedId);
+    const server = normalizedId.split('@')[1] || '';
+    const userPart = normalizedId.split('@')[0];
+    const resolvedContact = contact || contactMap.get(normalizedId);
+    const name =
+      String(
+        chat.name ||
+          chat.pushName ||
+          resolvedContact?.name ||
+          resolvedContact?.notify ||
+          resolvedContact?.verifiedName ||
+          userPart
+      ).trim() || userPart;
 
-      return {
-        chatId,
-        name,
-        phoneNumber: phoneNumber && !String(phoneNumber).includes('@') ? phoneNumber : '',
-        source: 'whatsapp'
-      };
+    const phoneNumber =
+      server === 'lid'
+        ? ''
+        : normalizePhoneValue(userPart) || '';
+
+    rows.push({
+      chatId: normalizedId,
+      name,
+      phoneNumber: phoneNumber && !String(phoneNumber).includes('@') ? phoneNumber : '',
+      source: 'whatsapp'
     });
+  };
+
+  Array.from(chatMap.values())
+    .sort((a, b) => (Number(b.conversationTimestamp) || 0) - (Number(a.conversationTimestamp) || 0))
+    .forEach((chat) => pushRow(chat.id, chat));
+
+  Array.from(contactMap.values()).forEach((contact) => pushRow(contact.id, {}, contact));
 
   rows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  return rows;
+  return rows.slice(0, limit);
 };
 
 const createBaileysClientAdapter = (sock, { chatMap, contactMap }) => {
@@ -214,5 +249,8 @@ module.exports = {
   upsertChatRecord,
   upsertContactRecord,
   getChatsForPicker,
+  hasPickerCandidates,
+  normalizeJid,
+  isPersonalChatJid,
   createBaileysClientAdapter
 };

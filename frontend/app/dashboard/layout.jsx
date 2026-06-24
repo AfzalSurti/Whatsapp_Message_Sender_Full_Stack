@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -54,6 +54,7 @@ export default function DashboardLayout({ children }) {
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const statusInitRef = useRef(false);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -95,7 +96,9 @@ export default function DashboardLayout({ children }) {
   }, [loading, router, user]);
 
   useEffect(() => {
-    if (user) fetchStatus();
+    if (!user || statusInitRef.current) return;
+    statusInitRef.current = true;
+    fetchStatus();
   }, [fetchStatus, user]);
 
   useEffect(() => {
