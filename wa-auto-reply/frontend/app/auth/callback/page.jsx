@@ -1,0 +1,66 @@
+'use client';
+
+import { Suspense, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { saveToken, markAuthBootstrap, saveUser } from '@/lib/auth';
+
+function decodeBase64Url(value) {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  return atob(padded);
+}
+
+function AuthCallbackContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const token = searchParams.get('token');
+    const userParam = searchParams.get('user');
+
+    if (!token) {
+      router.replace('/login?error=oauth_failed');
+      return;
+    }
+
+    saveToken(token);
+    markAuthBootstrap();
+
+    if (userParam) {
+      try {
+        const user = JSON.parse(decodeBase64Url(decodeURIComponent(userParam)));
+        if (user?._id) {
+          saveUser(user);
+        }
+      } catch {
+        // getMe will hydrate on dashboard if decode fails
+      }
+    }
+
+    window.location.replace('/dashboard');
+  }, [router, searchParams]);
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-8 h-8 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-gray-400 text-sm">Completing login...</p>
+      </div>
+    </div>
+  );
+}
+
+export default function AuthCallback() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-[#25D366] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400 text-sm">Completing login...</p>
+        </div>
+      </div>
+    }>
+      <AuthCallbackContent />
+    </Suspense>
+  );
+}

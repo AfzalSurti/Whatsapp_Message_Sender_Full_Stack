@@ -1,0 +1,93 @@
+@config "../tailwind.config.js";
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  body {
+    /* Use DM Sans from prototype for body and Syne for headings */
+    font-family: 'DM Sans', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    @apply bg-white dark:bg-dark-bg text-gray-900 dark:text-white transition-colors duration-300;
+  }
+
+  button:not(:disabled),
+  [type='button']:not(:disabled),
+  [type='submit']:not(:disabled),
+  [type='reset']:not(:disabled),
+  a[href],
+  label,
+  select:not(:disabled),
+  summary,
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='range']:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='link'],
+  [role='tab'],
+  [role='menuitem'],
+  .cursor-pointer {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [type='button']:disabled,
+  [type='submit']:disabled,
+  [type='reset']:disabled,
+  select:disabled,
+  input:disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100 dark:bg-dark-surface;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-primary rounded-full;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary hover:bg-primary-hover text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-outline {
+    @apply border-2 border-primary text-primary hover:bg-primary hover:text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200 cursor-pointer;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:border-primary transition-all duration-200;
+  }
+
+  .card {
+    @apply bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-2xl p-6 shadow-sm;
+  }
+}
+
+/* Scroll pop-up animation: elements start slightly down/transparent and scale to place */
+.pop-up {
+  opacity: 0;
+  transform: translateY(10px) scale(0.985);
+  transition: opacity 420ms cubic-bezier(0.2,0.8,0.2,1), transform 420ms cubic-bezier(0.2,0.8,0.2,1);
+  will-change: transform, opacity;
+}
+.pop-up.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* Slight stagger utility when applied via inline style or JS */
+.pop-up--delayed {
+  transition-delay: 80ms;
+}
+
+/* Third-party phone input country selector */
+.react-international-phone-country-selector-button,
+.react-international-phone-country-selector-button:hover {
+  cursor: pointer;
+}
