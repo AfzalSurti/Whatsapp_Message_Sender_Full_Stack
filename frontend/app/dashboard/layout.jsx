@@ -137,10 +137,11 @@ export default function DashboardLayout({ children }) {
   }, [fetchStatus, user]);
 
   useEffect(() => {
-    if (waStatus !== 'pending') return;
+    if (waStatus !== 'pending' ) return;
+    if (qrImage == null  ) return;
     const id = setInterval(fetchStatus, 2000);
     return () => clearInterval(id);
-  }, [fetchStatus, waStatus]);
+  }, [fetchStatus, waStatus,qrImage]);
 
   const handleWsMessage = useCallback((data) => {
     if (data.type === 'qr') {

@@ -254,6 +254,7 @@ export default function Dashboard() {
         audience: aiAudience === 'Other' ? customAiAudience : aiAudience,
         guidance: aiGuidance
       });
+      console.log(res)
       setMessage(res.data.message);
       toast.success('AI message generated');
     } catch (err) {

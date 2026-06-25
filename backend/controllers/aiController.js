@@ -113,6 +113,7 @@ const requestAIMessage = async ({ systemPrompt, userPrompt }) => {
       }
     }
   );
+  console.log(response?.data)
 
   return response.data.choices[0].message.content.trim();
 };
@@ -183,7 +184,7 @@ Return only the requested message content. No explanation, no quotes.`;
     res.json({ message });
   } catch (err) {
     console.error('AI generation failed:', err.message);
-    res.status(500).json({ error: 'AI generation failed. Try again.' });
+    res.status(500).json({ error: err.message });
   }
 };
 
