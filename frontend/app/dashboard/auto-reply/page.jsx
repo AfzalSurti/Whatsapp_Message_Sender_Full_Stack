@@ -255,8 +255,7 @@ export default function AutoReplyPage() {
     fetchAiTemplates();
     fetchLogContacts();
     fetchSavedContacts();
-    fetchLogs();
-  }, [user, fetchConfig, fetchAiTemplates, fetchLogContacts, fetchSavedContacts, fetchLogs]);
+  }, [user, fetchConfig, fetchAiTemplates, fetchLogContacts, fetchSavedContacts]);
 
   const activeAiTemplates = useMemo(
     () => aiTemplates.filter((template) => template.isActive !== false),
@@ -277,7 +276,7 @@ export default function AutoReplyPage() {
   }, [user, contactSource, waConnected, fetchWhatsAppContacts]);
 
   useEffect(() => {
-    if (!user || !initLoadedRef.current) return;
+    if (!user) return;
     pollInitializedRef.current = false;
     latestLogIdRef.current = null;
     fetchLogs();

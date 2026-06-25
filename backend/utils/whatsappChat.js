@@ -280,7 +280,55 @@ const withTimeout = (promise, ms, label) =>
     })
   ]);
 
-const fetchWhatsAppContacts = async (client, { limit = 100 } = {}) => {
+const getRecentChatsFromDb = async (userId, { limit = 100 } = {}) => {
+  const AutoReplyLog = require('../models/AutoReplyLog');
+  const MessageLog = require('../models/MessageLog');
+  const ContactGroup = require('../models/ContactGroup');
+
+  const seen = new Set();
+  const rows = [];
+
+  const pushRow = (phone, name = '') => {
+    const normalized = normalizePhoneValue(phone);
+    if (!normalized || String(normalized).includes('@')) return;
+
+    const digits = String(normalized).replace(/\D/g, '');
+    if (!digits || seen.has(digits)) return;
+
+    seen.add(digits);
+    rows.push({
+      chatId: `${digits}@s.whatsapp.net`,
+      name: String(name || '').trim() || normalized,
+      phoneNumber: normalized,
+      source: 'recent'
+    });
+  };
+
+  const [autoReplyLogs, messageLogs, groups] = await Promise.all([
+    AutoReplyLog.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .select('contactPhone contactName')
+      .lean(),
+    MessageLog.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .select('number')
+      .lean(),
+    ContactGroup.find({ userId }).select('numbers').lean()
+  ]);
+
+  autoReplyLogs.forEach((log) => pushRow(log.contactPhone, log.contactName));
+  messageLogs.forEach((log) => pushRow(log.number));
+  groups.forEach((group) => {
+    (group.numbers || []).forEach((entry) => pushRow(entry.phone, entry.name));
+  });
+
+  rows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return rows.slice(0, limit);
+};
+
+const fetchWhatsAppContacts = async (client, { limit = 100, userId = null } = {}) => {
   if (typeof client?.getChatsForPicker === 'function') {
     return client.getChatsForPicker(limit);
   }
@@ -303,6 +351,7 @@ module.exports = {
   contactMatchesSelection,
   enrichChatContact,
   fetchWhatsAppContacts,
+  getRecentChatsFromDb,
   getChatTimestamp,
   normalizePhoneValue
 };
