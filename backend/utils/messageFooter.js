@@ -58,18 +58,7 @@ const appendMessageFooter = (message, footer) => formatMessageForLog(message, fo
 
 const DEFAULT_FOOTER_SEPARATOR = '───────────────';
 
-const resolveFooterBlock = (profile) => {
-  if (!profile?.footerEnabled) return '';
-
-  const footerText = String(profile?.footerText || profile?.businessName || '').trim();
-  if (!footerText) return '';
-
-  const separator =
-    String(profile?.footerSeparator || DEFAULT_FOOTER_SEPARATOR).trim() ||
-    DEFAULT_FOOTER_SEPARATOR;
-
-  return `${separator}\n${footerText}`;
-};
+const resolveFooterBlock = () => '';
 
 const resolveMessageFooter = resolveFooterBlock;
 

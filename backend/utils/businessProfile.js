@@ -14,8 +14,8 @@ const getOrCreateBusinessProfile = async (userId) => {
   profile = await BusinessProfile.create({
     userId,
     businessName: user?.name || '',
-    footerText: user?.messageFooter || user?.name || '',
-    footerEnabled: user?.messageFooterEnabled !== false,
+    footerText: user?.messageFooter || '',
+    footerEnabled: false,
     footerSeparator: DEFAULT_FOOTER_SEPARATOR
   });
 

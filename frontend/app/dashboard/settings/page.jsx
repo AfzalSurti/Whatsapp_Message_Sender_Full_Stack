@@ -1,13 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Loader2, Settings2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { autoReplyAPI, businessProfileAPI } from '@/lib/api';
 
-const DEFAULT_SEPARATOR = '───────────────';
 const DEFAULT_SYSTEM_PROMPT =
   'You are a helpful WhatsApp assistant. Reply naturally and concisely.';
 
@@ -21,23 +20,9 @@ export default function SettingsPage() {
   const [savingAi, setSavingAi] = useState(false);
 
   const [businessName, setBusinessName] = useState('');
-  const [footerText, setFooterText] = useState('');
-  const [footerSeparator, setFooterSeparator] = useState(DEFAULT_SEPARATOR);
-  const [footerEnabled, setFooterEnabled] = useState(false);
 
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
   const [delay, setDelay] = useState(2000);
-
-  const previewMessage = useMemo(() => {
-    const body = 'Your message here...';
-    if (!footerEnabled) return body;
-
-    const text = footerText.trim() || businessName.trim();
-    if (!text) return body;
-
-    const separator = footerSeparator.trim() || DEFAULT_SEPARATOR;
-    return `${body}\n\n${separator}\n${text}`;
-  }, [businessName, footerEnabled, footerSeparator, footerText]);
 
   const fetchProfile = useCallback(async () => {
     setProfileLoading(true);
@@ -45,9 +30,6 @@ export default function SettingsPage() {
       const res = await businessProfileAPI.getProfile();
       const profile = res.data.profile;
       setBusinessName(profile.businessName || user?.name || '');
-      setFooterText(profile.footerText || '');
-      setFooterSeparator(profile.footerSeparator || DEFAULT_SEPARATOR);
-      setFooterEnabled(Boolean(profile.footerEnabled));
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to load business profile');
     } finally {
@@ -85,15 +67,10 @@ export default function SettingsPage() {
     try {
       const res = await businessProfileAPI.updateProfile({
         businessName,
-        footerText,
-        footerSeparator,
-        footerEnabled
+        footerEnabled: false
       });
       const profile = res.data.profile;
       setBusinessName(profile.businessName || '');
-      setFooterText(profile.footerText || '');
-      setFooterSeparator(profile.footerSeparator || DEFAULT_SEPARATOR);
-      setFooterEnabled(Boolean(profile.footerEnabled));
       toast.success('Business profile saved');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to save business profile');
@@ -138,7 +115,7 @@ export default function SettingsPage() {
           <div>
             <h1 className="text-2xl font-bold">Settings</h1>
             <p className="text-sm text-gray-400 mt-0.5">
-              Business profile, message footer, and AI personality
+              Business profile and AI personality
             </p>
           </div>
         </div>
@@ -148,77 +125,20 @@ export default function SettingsPage() {
         <div>
           <h2 className="text-lg font-semibold">Business Profile</h2>
           <p className="text-sm text-gray-400 mt-1">
-            Optional footer appended to bulk, scheduled, auto-reply, and API messages.
+            Your business or display name used in the app.
           </p>
         </div>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-200">Business Name</label>
-            <input
-              type="text"
-              value={businessName}
-              onChange={(e) => setBusinessName(e.target.value)}
-              maxLength={120}
-              className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#25D366]/40"
-              placeholder="Jain Collections"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-200">Footer Text</label>
-            <input
-              type="text"
-              value={footerText}
-              onChange={(e) => setFooterText(e.target.value)}
-              maxLength={200}
-              className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#25D366]/40"
-              placeholder="Your Business | City"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-200">Footer Separator</label>
-            <input
-              type="text"
-              value={footerSeparator}
-              onChange={(e) => setFooterSeparator(e.target.value)}
-              maxLength={40}
-              className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#25D366]/40 font-mono"
-              placeholder="───────────────"
-            />
-          </div>
-
-          <label className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-[#0a0a0a] px-4 py-3 cursor-pointer">
-            <div>
-              <div className="text-sm font-medium text-gray-200">Enable Footer</div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                {footerEnabled ? 'Active — footer is added to outgoing messages' : 'Inactive — messages send without footer'}
-              </div>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={footerEnabled}
-              onClick={() => setFooterEnabled((prev) => !prev)}
-              className={`relative h-7 w-12 rounded-full transition-colors ${
-                footerEnabled ? 'bg-[#25D366]' : 'bg-zinc-700'
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 h-6 w-6 rounded-full bg-white transition-transform ${
-                  footerEnabled ? 'left-[22px]' : 'left-0.5'
-                }`}
-              />
-            </button>
-          </label>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-200">Live Preview</label>
-            <div className="rounded-xl border border-white/10 bg-[#0a0a0a] px-4 py-4 text-sm text-gray-300 whitespace-pre-wrap leading-relaxed min-h-[120px]">
-              {previewMessage}
-            </div>
-          </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-gray-200">Business Name</label>
+          <input
+            type="text"
+            value={businessName}
+            onChange={(e) => setBusinessName(e.target.value)}
+            maxLength={120}
+            className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-[#25D366]/40"
+            placeholder="Your business name"
+          />
         </div>
 
         <button

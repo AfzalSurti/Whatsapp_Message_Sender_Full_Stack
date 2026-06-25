@@ -55,7 +55,7 @@ const UserSchema = new mongoose.Schema(
 
     messageFooterEnabled: {
       type: Boolean,
-      default: true
+      default: false
     }
   },
   {
