@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { Loader2, Search } from 'lucide-react';
-import { autoReplyAPI } from '@/lib/api';
+import { whatsappAPI } from '@/lib/api';
 import { formatPhoneNumber } from '@/lib/phone';
 import { cachedRequest } from '@/lib/requestCache';
 
@@ -35,7 +35,7 @@ export default function WhatsAppChatPicker({
       const nextContacts = await cachedRequest(
         'whatsapp-picker-contacts',
         async () => {
-          const res = await autoReplyAPI.getWhatsAppContacts({ force });
+          const res = await whatsappAPI.getWhatsAppContacts({ force });
           return res.data.contacts || [];
         },
         { force, ttlMs: 60000 }

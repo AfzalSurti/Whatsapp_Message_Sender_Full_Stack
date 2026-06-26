@@ -1,23 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { ArrowRight, Bot, Layers, MessageSquare, Sparkles, Wifi } from 'lucide-react';
 import { AuthRedirectGate } from '@/hooks/useRedirectIfAuthenticated';
 
 export default function LandingPage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (token) {
-      router.replace('/dashboard/auto-reply');
-    }
-  }, [router]);
-
   return (
-    <AuthRedirectGate>
+    <AuthRedirectGate redirectTo="/dashboard">
       <div className="min-h-screen bg-[#070b09] text-white font-sans">
         <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-16 py-4 bg-[#070b09]/78 backdrop-blur-xl border-b border-white/5">
           <div className="flex items-center gap-3">

@@ -118,6 +118,24 @@ const disconnectWhatsApp = async (req, res) => {
   }
 };
 
+const getWhatsAppContacts = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const forceRefresh = req.query.refresh === '1';
+
+    const contacts = await clientManager.getPickerContacts(userId, {
+      limit: 100,
+      forceRefresh
+    });
+
+    res.json({ contacts });
+  } catch (err) {
+    console.error('Get WhatsApp contacts failed:', err.message);
+    const status = /not connected|timed out/i.test(err.message) ? 400 : 500;
+    res.status(status).json({ error: err.message || 'Failed to load WhatsApp contacts' });
+  }
+};
+
 const sendBulkMessages = async (req, res) => {
   try {
     const { numbers, message } = req.body;
@@ -201,6 +219,7 @@ module.exports = {
   connectWhatsApp,
   getWhatsAppStatus,
   disconnectWhatsApp,
+  getWhatsAppContacts,
   sendBulkMessages,
   sendBulkMessagesViaApiKey
 };

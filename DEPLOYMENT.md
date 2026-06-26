@@ -1,5 +1,8 @@
 # Deployment Guide
 
+> **AWS + auto-deploy (CI/CD):** see [AWS_CI_CD_SETUP.md](./AWS_CI_CD_SETUP.md)  
+> **AWS manual Docker deploy:** see [DEPLOYMENT_AWS.md](./DEPLOYMENT_AWS.md)
+
 This app is split into two deployable parts:
 
 - Frontend: `frontend/` on Vercel

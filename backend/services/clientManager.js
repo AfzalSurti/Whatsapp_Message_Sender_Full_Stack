@@ -19,7 +19,6 @@ const {
 } = require('../utils/whatsappSession');
 const {
   createBaileysClientAdapter,
-  wrapIncomingMessage,
   upsertChatRecord,
   upsertContactRecord,
   getChatsForPicker,
@@ -248,15 +247,8 @@ const bindSocketEvents = ({
             pushName: waMessage.pushName
           });
         }
-
-        const { isAutoReplyEligibleMessage } = require('../utils/whatsappChat');
-        const wrapped = wrapIncomingMessage(sock, waMessage, entry.contactMap);
-        if (!isAutoReplyEligibleMessage(wrapped)) continue;
-
-        const { handleIncomingMessage } = require('./autoReplyService');
-        await handleIncomingMessage(current.client, userId, wrapped);
       } catch (err) {
-        console.error(`Auto-reply error for user ${userIdStr}:`, err.message);
+        console.error(`Message sync error for user ${userIdStr}:`, err.message);
       }
     }
   });

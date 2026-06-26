@@ -6,28 +6,17 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import ConfirmModal from '@/components/dashboard/ConfirmModal';
-import { Activity, BarChart3, Bot, ClipboardList, History, Key, Layers, Loader2, LogOut, MessageSquare, Send, Settings2, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { Activity, BarChart3, ClipboardList, History, Key, Loader2, LogOut, MessageSquare, Send, Settings2, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getToken } from '@/lib/auth';
 import { whatsappAPI } from '@/lib/api';
 import useWebSocket from '@/hooks/useWebSocket';
 import { DashboardShellProvider } from './DashboardShellContext';
 
-const FEATURE_FLAGS = {
-  showAutoReply: true,
-  showAiTemplates: true
-};
-
 const mainNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
   { href: '/dashboard/live-feed', label: 'Live Feed', icon: Activity },
   { href: '/dashboard/groups', label: 'Contacts & Segments', icon: Users },
-  ...(FEATURE_FLAGS.showAutoReply
-    ? [{ href: '/dashboard/auto-reply', label: 'Auto Reply', icon: Bot }]
-    : []),
-  ...(FEATURE_FLAGS.showAiTemplates
-    ? [{ href: '/dashboard/ai-templates', label: 'AI Templates', icon: Layers }]
-    : []),
   { href: '/dashboard/scheduled', label: 'Scheduler', icon: Send },
   { href: '/dashboard/templates', label: 'Templates', icon: ClipboardList },
   { href: '/dashboard/history', label: 'History', icon: History },
