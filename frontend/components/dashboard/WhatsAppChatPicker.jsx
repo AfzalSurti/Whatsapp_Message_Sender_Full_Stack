@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
-import { Loader2, Search } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Loader2, Search, UserPlus } from 'lucide-react';
 import { whatsappAPI } from '@/lib/api';
 import { formatPhoneNumber } from '@/lib/phone';
 import { cachedRequest } from '@/lib/requestCache';
@@ -9,18 +9,22 @@ import { cachedRequest } from '@/lib/requestCache';
 export default function WhatsAppChatPicker({
   waConnected,
   onSelect,
-  selectedPhone = ''
+  onQuickAdd,
+  selectedPhone = '',
+  active = true,
+  autoLoad = true
 }) {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [addingPhone, setAddingPhone] = useState('');
   const fetchInFlightRef = useRef(false);
   const loadedRef = useRef(false);
 
   const fetchContacts = useCallback(async ({ force = false } = {}) => {
     if (!waConnected) {
-      setError('Connect WhatsApp from the header, then click Refresh.');
+      setError('Connect WhatsApp using the Connect button at the top of the page.');
       setContacts([]);
       return;
     }
@@ -51,11 +55,12 @@ export default function WhatsAppChatPicker({
     }
   }, [waConnected]);
 
-  const handleOpen = () => {
-    if (!loadedRef.current && waConnected) {
+  useEffect(() => {
+    if (!active || !autoLoad || !waConnected) return;
+    if (!loadedRef.current && !loading) {
       fetchContacts();
     }
-  };
+  }, [active, autoLoad, waConnected, fetchContacts, loading]);
 
   const filteredContacts = contacts.filter((contact) => {
     const query = search.trim().toLowerCase();
@@ -74,67 +79,104 @@ export default function WhatsAppChatPicker({
 
   const normalizedSelected = String(selectedPhone || '').replace(/\D/g, '');
 
+  const handleContactAction = async (contact) => {
+    const payload = {
+      name: contact.name || formatContactPhone(contact.phoneNumber),
+      phone: contact.phoneNumber
+    };
+
+    if (onQuickAdd) {
+      const phoneKey = String(contact.phoneNumber || '').replace(/\D/g, '');
+      setAddingPhone(phoneKey);
+      try {
+        await onQuickAdd(payload);
+      } finally {
+        setAddingPhone('');
+      }
+      return;
+    }
+
+    onSelect?.(payload);
+  };
+
   return (
-    <div className="space-y-3" onFocus={handleOpen}>
+    <div className="space-y-3">
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            onFocus={handleOpen}
-            placeholder="Search WhatsApp chats..."
+            placeholder="Search by name or number..."
             className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none focus:border-[#25D366]/40"
           />
         </div>
         <button
           type="button"
           onClick={() => fetchContacts({ force: true })}
-          disabled={loading}
+          disabled={loading || !waConnected}
           className="text-sm border border-white/10 hover:border-[#25D366]/40 px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50 shrink-0"
         >
           {loading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
 
-      {!waConnected && (
-        <p className="text-sm text-amber-400">
-          Connect WhatsApp from the header, then click Refresh.
+      {!waConnected ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          WhatsApp is not connected. Click <strong>Connect</strong> in the top bar, scan the QR code, then come back here.
+        </div>
+      ) : (
+        <p className="text-xs text-gray-400">
+          {onQuickAdd
+            ? 'Tap a chat below to add it instantly to your contacts.'
+            : 'Select a chat to fill the form below.'}
+          {contacts.length > 0 ? ` · ${contacts.length} chats loaded` : ''}
         </p>
       )}
 
-      <div className="max-h-52 overflow-y-auto space-y-1 border border-white/10 rounded-xl p-2 bg-[#0a0a0a]">
+      <div className="max-h-64 overflow-y-auto space-y-1 border border-white/10 rounded-xl p-2 bg-[#0a0a0a]">
         {loading ? (
-          <div className="py-8 flex justify-center">
+          <div className="py-10 flex flex-col items-center justify-center gap-2 text-gray-400">
             <Loader2 size={22} className="animate-spin text-[#25D366]" />
+            <span className="text-sm">Loading your WhatsApp chats...</span>
           </div>
         ) : error ? (
-          <p className="text-sm text-amber-400 py-2 px-2">{error}</p>
+          <div className="py-4 px-2 space-y-2">
+            <p className="text-sm text-amber-400">{error}</p>
+            <button
+              type="button"
+              onClick={() => fetchContacts({ force: true })}
+              className="text-sm text-[#25D366] hover:underline"
+            >
+              Try again
+            </button>
+          </div>
         ) : filteredContacts.length === 0 ? (
-          <p className="text-sm text-gray-500 py-4 text-center">
+          <p className="text-sm text-gray-500 py-6 text-center px-4">
             {loadedRef.current
-              ? 'No WhatsApp chats found. Click Refresh after connecting.'
-              : 'Click Refresh to load WhatsApp chats.'}
+              ? 'No chats match your search. Try a different name or number.'
+              : waConnected
+                ? 'Loading chats...'
+                : 'Connect WhatsApp first to see your chats here.'}
           </p>
         ) : (
           filteredContacts.map((contact) => {
             const phone = contact.phoneNumber || '';
             const phoneDigits = String(phone).replace(/\D/g, '');
             const isSelected = normalizedSelected && phoneDigits === normalizedSelected;
+            const isAdding = addingPhone && phoneDigits === addingPhone;
 
             return (
               <button
                 key={contact.chatId || phone}
                 type="button"
-                onClick={() => onSelect({
-                  name: contact.name || formatContactPhone(phone),
-                  phone
-                })}
-                className={`w-full flex items-start gap-3 p-3 rounded-xl text-left transition-colors border ${
+                disabled={Boolean(addingPhone)}
+                onClick={() => handleContactAction(contact)}
+                className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl text-left transition-colors border ${
                   isSelected
                     ? 'bg-[#25D366]/10 border-[#25D366]/30'
                     : 'border-transparent hover:bg-white/5 hover:border-white/5'
-                }`}
+                } disabled:opacity-60`}
               >
                 <div className="min-w-0">
                   <div className="text-sm font-medium truncate">{contact.name || 'Unknown'}</div>
@@ -142,6 +184,16 @@ export default function WhatsAppChatPicker({
                     <div className="text-xs text-gray-400 mt-0.5">{formatContactPhone(phone)}</div>
                   ) : null}
                 </div>
+                {onQuickAdd ? (
+                  <span className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-[#25D366] bg-[#25D366]/10 px-2.5 py-1 rounded-lg">
+                    {isAdding ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <UserPlus size={12} />
+                    )}
+                    Add
+                  </span>
+                ) : null}
               </button>
             );
           })
