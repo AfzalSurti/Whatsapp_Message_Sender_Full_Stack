@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import ConfirmModal from '@/components/dashboard/ConfirmModal';
-import { Bot, Layers, Loader2, LogOut, MessageSquare, Settings2, Wifi, WifiOff, X } from 'lucide-react';
+import { Bot, Layers, Loader2, LogOut, MessageSquare, Settings2, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getToken } from '@/lib/auth';
 import { whatsappAPI } from '@/lib/api';
@@ -15,6 +15,7 @@ import { DashboardShellProvider } from './DashboardShellContext';
 
 const navItems = [
   { href: '/dashboard/auto-reply', label: 'Auto Reply', icon: Bot },
+  { href: '/dashboard/contacts', label: 'Contacts', icon: Users },
   { href: '/dashboard/ai-templates', label: 'AI Templates', icon: Layers },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings2 },
 ];
