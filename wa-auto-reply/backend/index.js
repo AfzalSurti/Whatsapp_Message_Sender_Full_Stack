@@ -36,7 +36,7 @@ app.use(cors(createCorsOptions()));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
-app.use('/api', limiter);
+// app.use('/api', limiter);
 app.use(passport.initialize());
 
 app.set('wsClients', getWsClients());

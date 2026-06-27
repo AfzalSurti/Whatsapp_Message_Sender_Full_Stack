@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import ConfirmModal from '@/components/dashboard/ConfirmModal';
-import { Activity, BarChart3, ClipboardList, History, Key, Loader2, LogOut, MessageSquare, Send, Settings2, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { Activity, BarChart3, Bot, ClipboardList, History, Key, Layers, Loader2, LogOut, MessageSquare, Send, Settings2, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getToken } from '@/lib/auth';
 import { whatsappAPI } from '@/lib/api';
@@ -19,6 +19,8 @@ const mainNavItems = [
   { href: '/dashboard/groups', label: 'Contacts & Segments', icon: Users },
   { href: '/dashboard/scheduled', label: 'Scheduler', icon: Send },
   { href: '/dashboard/templates', label: 'Templates', icon: ClipboardList },
+  { href: '/dashboard/auto-reply', label: 'Auto Reply', icon: Bot },
+  { href: '/dashboard/ai-templates', label: 'AI Templates', icon: Layers },
   { href: '/dashboard/history', label: 'History', icon: History },
 ];
 

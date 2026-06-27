@@ -174,21 +174,175 @@ const looksLikeFormattedPhone = (value = '') => {
   return digits.length >= 7 && /^[\d\s+\-().]+$/.test(raw);
 };
 
+const isPhoneLikeDisplayName = (name = '', phoneNumber = '') => {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return true;
+  if (looksLikeFormattedPhone(trimmed)) return true;
+
+  const phoneDigits = extractDigits(phoneNumber || '');
+  const nameDigits = extractDigits(trimmed);
+  if (phoneDigits && nameDigits && phoneDigits === nameDigits) return true;
+  if (!phoneDigits && nameDigits.length >= 10 && /^\d+$/.test(trimmed.replace(/\s/g, ''))) return true;
+
+  return false;
+};
+
+const pickBetterDisplayName = (left = '', right = '', phoneNumber = '') => {
+  const leftBad = isPhoneLikeDisplayName(left, phoneNumber);
+  const rightBad = isPhoneLikeDisplayName(right, phoneNumber);
+
+  if (leftBad && !rightBad) return right;
+  if (rightBad && !leftBad) return left;
+  if (!leftBad) return left;
+  if (!rightBad) return right;
+  return left || right;
+};
+
 const pickContactDisplayName = (contact, chat, fallback) => {
   const savedName = String(contact?.name || '').trim();
-  const pushName = String(contact?.pushname || '').trim();
+  const pushName = String(contact?.pushname || contact?.notify || '').trim();
   const shortName = String(contact?.shortName || '').trim();
   const verifiedName = String(contact?.verifiedName || '').trim();
-  const chatName = String(chat?.name || '').trim();
+  const chatName = String(chat?.name || chat?.pushName || chat?.subject || '').trim();
 
-  if (savedName) return savedName;
-  if (pushName && !looksLikeFormattedPhone(pushName)) return pushName;
-  if (shortName && !looksLikeFormattedPhone(shortName)) return shortName;
-  if (verifiedName && !looksLikeFormattedPhone(verifiedName)) return verifiedName;
-  if (chatName && !looksLikeFormattedPhone(chatName)) return chatName;
+  if (savedName && !isPhoneLikeDisplayName(savedName)) return savedName;
+  if (pushName && !isPhoneLikeDisplayName(pushName)) return pushName;
+  if (shortName && !isPhoneLikeDisplayName(shortName)) return shortName;
+  if (verifiedName && !isPhoneLikeDisplayName(verifiedName)) return verifiedName;
+  if (chatName && !isPhoneLikeDisplayName(chatName)) return chatName;
 
-  return pushName || chatName || fallback;
+  const fallbackStr = String(fallback || '').trim();
+  if (fallbackStr && !isPhoneLikeDisplayName(fallbackStr)) return fallbackStr;
+
+  return savedName || pushName || chatName || verifiedName || shortName || '';
 };
+
+const baileysContactToPickerShape = (contact = null) => {
+  if (!contact) return null;
+
+  return {
+    name: contact.name,
+    pushname: contact.notify,
+    shortName: contact.notify,
+    verifiedName: contact.verifiedName,
+    number: contact.phoneNumber || contact.number || contact.phone
+  };
+};
+
+const resolvePickerPhone = (chatId, chat = {}, contact = null, lidPhoneMap = null) => {
+  const normalizedId = String(chatId || '').trim();
+  const server = getChatServer(normalizedId);
+  const userPart = normalizedId.split('@')[0] || '';
+
+  if (server === 's.whatsapp.net' || server === 'c.us') {
+    const fromJid = resolvePhoneFromChatId(normalizedId);
+    if (fromJid) return fromJid;
+  }
+
+  if (server === 'lid' && lidPhoneMap) {
+    const fromLidMap = lidPhoneMap.get(normalizedId);
+    if (fromLidMap) return fromLidMap;
+  }
+
+  if (contact) {
+    const fromContact = resolvePhoneFromContactSync({
+      id: { _serialized: normalizedId, user: userPart },
+      number: contact.phoneNumber || contact.number || contact.phone
+    });
+    if (fromContact) return fromContact;
+
+    if (contact.lid && lidPhoneMap) {
+      const linkedLid = String(contact.lid).includes('@')
+        ? contact.lid
+        : `${contact.lid}@lid`;
+      const fromLinkedLid = lidPhoneMap.get(linkedLid);
+      if (fromLinkedLid) return fromLinkedLid;
+    }
+  }
+
+  return null;
+};
+
+const classifyPickerContact = (name, contact = null, phoneNumber = '') => {
+  const savedName = String(contact?.name || '').trim();
+  const displayName = String(name || '').trim();
+  const phoneDigits = extractDigits(phoneNumber || displayName);
+
+  const isSaved = Boolean(savedName);
+  const hasDisplayName =
+    Boolean(displayName) &&
+    !isPhoneLikeDisplayName(displayName, phoneNumber);
+
+  let sortRank = 2;
+  if (isSaved) sortRank = 0;
+  else if (hasDisplayName) sortRank = 1;
+
+  return { isSaved, hasDisplayName, sortRank };
+};
+
+const mergePickerRows = (rows = []) => {
+  const mergedByPhone = new Map();
+  const mergedByChat = new Map();
+
+  const scoreRow = (row) => {
+    let score = 0;
+    if (row.isSaved) score += 100;
+    if (row.hasDisplayName) score += 20;
+    if (row.phoneNumber) score += 10;
+    if (String(row.chatId || '').endsWith('@s.whatsapp.net')) score += 5;
+    return score;
+  };
+
+  const mergeInto = (target, incoming) => {
+    const targetScore = scoreRow(target);
+    const incomingScore = scoreRow(incoming);
+    const winner = incomingScore > targetScore ? incoming : target;
+    const loser = winner === incoming ? target : incoming;
+
+    return {
+      ...loser,
+      ...winner,
+      chatId: winner.chatId || loser.chatId,
+      name: pickBetterDisplayName(winner.name, loser.name, winner.phoneNumber || loser.phoneNumber),
+      phoneNumber: winner.phoneNumber || loser.phoneNumber,
+      isSaved: winner.isSaved || loser.isSaved,
+      hasDisplayName: winner.hasDisplayName || loser.hasDisplayName,
+      sortRank: Math.min(winner.sortRank, loser.sortRank)
+    };
+  };
+
+  rows.forEach((row) => {
+    const phoneDigits = extractDigits(row.phoneNumber || '');
+    if (phoneDigits) {
+      const existing = mergedByPhone.get(phoneDigits);
+      mergedByPhone.set(phoneDigits, existing ? mergeInto(existing, row) : row);
+      return;
+    }
+
+    const existing = mergedByChat.get(row.chatId);
+    mergedByChat.set(row.chatId, existing ? mergeInto(existing, row) : row);
+  });
+
+  const phoneRows = Array.from(mergedByPhone.values());
+  const phoneDigitSet = new Set(phoneRows.map((row) => extractDigits(row.phoneNumber || '')));
+
+  mergedByChat.forEach((row) => {
+    const digits = extractDigits(row.phoneNumber || '');
+    if (digits && phoneDigitSet.has(digits)) return;
+    phoneRows.push(row);
+  });
+
+  return phoneRows;
+};
+
+const sortPickerContacts = (rows = []) =>
+  [...rows].sort((a, b) => {
+    if (a.sortRank !== b.sortRank) return a.sortRank - b.sortRank;
+    return String(a.name || '').localeCompare(String(b.name || ''), undefined, {
+      sensitivity: 'base',
+      numeric: true
+    });
+  });
 
 const mapWithConcurrency = async (items, limit, mapper) => {
   if (items.length === 0) return [];
@@ -282,6 +436,7 @@ const withTimeout = (promise, ms, label) =>
 
 const getRecentChatsFromDb = async (userId, { limit = 100 } = {}) => {
   const AutoReplyLog = require('../models/AutoReplyLog');
+  const MessageLog = require('../models/MessageLog');
   const ContactGroup = require('../models/ContactGroup');
 
   const seen = new Set();
@@ -303,22 +458,45 @@ const getRecentChatsFromDb = async (userId, { limit = 100 } = {}) => {
     });
   };
 
-  const [autoReplyLogs, groups] = await Promise.all([
+  const [autoReplyLogs, messageLogs, groups] = await Promise.all([
     AutoReplyLog.find({ userId })
       .sort({ createdAt: -1 })
       .limit(200)
       .select('contactPhone contactName')
       .lean(),
+    MessageLog.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .select('number')
+      .lean(),
     ContactGroup.find({ userId }).select('numbers').lean()
   ]);
 
   autoReplyLogs.forEach((log) => pushRow(log.contactPhone, log.contactName));
+  messageLogs.forEach((log) => pushRow(log.number));
   groups.forEach((group) => {
     (group.numbers || []).forEach((entry) => pushRow(entry.phone, entry.name));
   });
 
-  rows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  return rows.slice(0, limit);
+  const classified = rows.map((row) => {
+    const nameDigits = extractDigits(row.name || '');
+    const phoneDigits = extractDigits(row.phoneNumber || '');
+    const contactHint =
+      row.name &&
+      !looksLikeFormattedPhone(row.name) &&
+      nameDigits !== phoneDigits
+        ? { name: row.name }
+        : null;
+
+    const { isSaved, hasDisplayName, sortRank } = classifyPickerContact(
+      row.name,
+      contactHint,
+      row.phoneNumber
+    );
+    return { ...row, isSaved, hasDisplayName, sortRank };
+  });
+
+  return sortPickerContacts(classified).slice(0, limit);
 };
 
 const fetchWhatsAppContacts = async (client, { limit = 100, userId = null } = {}) => {
@@ -346,5 +524,15 @@ module.exports = {
   fetchWhatsAppContacts,
   getRecentChatsFromDb,
   getChatTimestamp,
-  normalizePhoneValue
+  normalizePhoneValue,
+  resolvePhoneFromChatId,
+  extractDigits,
+  isPhoneLikeDisplayName,
+  pickBetterDisplayName,
+  baileysContactToPickerShape,
+  resolvePickerPhone,
+  classifyPickerContact,
+  mergePickerRows,
+  sortPickerContacts,
+  pickContactDisplayName
 };

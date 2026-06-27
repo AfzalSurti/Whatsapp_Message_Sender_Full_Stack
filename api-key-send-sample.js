@@ -12,7 +12,7 @@
  *   3. The matching user's WhatsApp is connected in the dashboard.
  */
 
-const API_KEY = 'wsa_live_79f28684092e156fc2abf8a6cff93147';
+const API_KEY = 'wsa_live_13e91d4c7b488214a46cf7661b9aef5c';
 const BASE_URL = 'http://localhost:5000';
 const NUMBERS = ['+919327201924'];
 const MESSAGE = 'hello';

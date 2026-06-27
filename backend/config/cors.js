@@ -46,19 +46,10 @@ const createCorsOptions = () => {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization','x-api-key']
   };
 };
-
-const logCorsConfig = () => {
-  const origins = getAllowedOrigins();
-  if (origins.length === 0) {
-    console.warn('⚠️  CLIENT_URL is not set — CORS will allow all origins (not recommended for production)');
-    return;
-  }
-  console.log(`✅ CORS allowed origins: ${origins.join(', ')}`);
-};
-
+    
 module.exports = {
   getAllowedOrigins,
   createCorsOptions,

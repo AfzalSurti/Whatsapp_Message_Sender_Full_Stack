@@ -176,26 +176,25 @@ const buildLidPhoneMap = (contactMap, extraMap = new Map()) => {
     const contactId = normalizeJid(contact?.id);
     if (!contactId) return;
 
-    if (contact.lid) {
-      const lidJid = normalizeJid(contact.lid);
-      const phoneFromContactId = resolvePhoneFromChatId(contactId);
-      if (lidJid && phoneFromContactId) {
-        map.set(lidJid, phoneFromContactId);
-      }
+    const lidJid = contact.lid
+      ? normalizeJid(String(contact.lid).includes('@') ? contact.lid : `${contact.lid}@lid`)
+      : '';
+
+    const phoneFromContactId = resolvePhoneFromChatId(contactId);
+
+    if (lidJid && phoneFromContactId) {
+      map.set(lidJid, phoneFromContactId);
     }
 
-    if (contactId.endsWith('@lid')) {
-      const phoneFromContactId = resolvePhoneFromChatId(contactId);
-      if (phoneFromContactId) {
-        map.set(contactId, phoneFromContactId);
-      }
+    if (contactId.endsWith('@lid') && phoneFromContactId) {
+      map.set(contactId, phoneFromContactId);
     }
   });
 
   return map;
 };
 
-const resolveLidPhonesViaUsync = async (sock, lidJids, { batchSize = 12 } = {}) => {
+const resolveLidPhonesViaUsync = async (sock, lidJids, { batchSize = 8, maxLids = 20 } = {}) => {
   const { resolvePhoneFromChatId } = require('./whatsappChat');
   const map = new Map();
 
@@ -205,7 +204,10 @@ const resolveLidPhonesViaUsync = async (sock, lidJids, { batchSize = 12 } = {}) 
 
   const { USyncQuery } = require('@whiskeysockets/baileys/lib/WAUSync/USyncQuery');
   const { USyncUser } = require('@whiskeysockets/baileys/lib/WAUSync/USyncUser');
-  const unique = [...new Set(lidJids.map((jid) => normalizeJid(jid)).filter((jid) => jid.endsWith('@lid')))];
+  const unique = [...new Set(lidJids.map((jid) => normalizeJid(jid)).filter((jid) => jid.endsWith('@lid')))].slice(
+    0,
+    maxLids
+  );
 
   for (let offset = 0; offset < unique.length; offset += batchSize) {
     const batch = unique.slice(offset, offset + batchSize);
@@ -240,6 +242,131 @@ const resolveLidPhonesViaUsync = async (sock, lidJids, { batchSize = 12 } = {}) 
   return map;
 };
 
+const collectRecentUnresolvedLids = (chatMap, lidPhoneMap, max = 40) => {
+  const lids = [];
+  const seen = new Set();
+
+  Array.from(chatMap.values())
+    .sort((a, b) => (Number(b.conversationTimestamp) || 0) - (Number(a.conversationTimestamp) || 0))
+    .forEach((chat) => {
+      const chatId = normalizeJid(chat?.id);
+      if (!chatId.endsWith('@lid') || lidPhoneMap.has(chatId) || seen.has(chatId)) return;
+      seen.add(chatId);
+      lids.push(chatId);
+    });
+
+  return lids.slice(0, max);
+};
+
+const buildContactIndex = (contactMap, lidMap = new Map()) => {
+  const { resolvePhoneFromChatId, extractDigits } = require('./whatsappChat');
+  const byJid = new Map();
+  const byPhoneDigits = new Map();
+  const byLid = new Map();
+
+  const register = (contact) => {
+    if (!contact) return;
+
+    const id = normalizeJid(contact.id);
+    if (!id) return;
+
+    byJid.set(id, contact);
+
+    const phoneFromId = resolvePhoneFromChatId(id);
+    if (phoneFromId) {
+      byPhoneDigits.set(extractDigits(phoneFromId), contact);
+    }
+
+    if (contact.lid) {
+      const lidJid = normalizeJid(
+        String(contact.lid).includes('@') ? contact.lid : `${contact.lid}@lid`
+      );
+      byLid.set(lidJid, contact);
+
+      const mappedPhone = lidMap.get(lidJid);
+      if (mappedPhone) {
+        byPhoneDigits.set(extractDigits(mappedPhone), contact);
+      }
+    }
+  };
+
+  contactMap.forEach(register);
+  return { byJid, byPhoneDigits, byLid };
+};
+
+const resolveContactRecord = (chatId, { contactMap, lidMap, contactIndex }) => {
+  const { resolvePhoneFromChatId, extractDigits } = require('./whatsappChat');
+  const normalizedId = normalizeJid(chatId);
+  if (!normalizedId) return null;
+
+  let record =
+    contactIndex.byJid.get(normalizedId) ||
+    contactMap.get(normalizedId) ||
+    null;
+  if (record) return record;
+
+  if (normalizedId.endsWith('@lid')) {
+    record = contactIndex.byLid.get(normalizedId);
+    if (record) return record;
+  }
+
+  const phoneFromChat = resolvePhoneFromChatId(normalizedId);
+  const phoneDigits = phoneFromChat ? extractDigits(phoneFromChat) : '';
+
+  if (phoneDigits) {
+    record = contactIndex.byPhoneDigits.get(phoneDigits);
+    if (record) return record;
+  }
+
+  if (phoneDigits) {
+    for (const [lidJid, phone] of lidMap.entries()) {
+      if (extractDigits(phone) !== phoneDigits) continue;
+      record = contactIndex.byLid.get(lidJid) || contactMap.get(lidJid);
+      if (record) return record;
+    }
+  }
+
+  return null;
+};
+
+const enrichChatForPicker = (chat = {}, contactRecord = null) => {
+  const enriched = { ...chat };
+  const notify = String(
+    contactRecord?.name || contactRecord?.notify || contactRecord?.verifiedName || ''
+  ).trim();
+
+  if (notify) {
+    if (!enriched.name) enriched.name = contactRecord?.name || undefined;
+    if (!enriched.pushName) enriched.pushName = contactRecord?.notify || notify;
+  }
+
+  return enriched;
+};
+
+const syncContactToChatMap = (chatMap, contact) => {
+  const id = normalizeJid(contact?.id);
+  if (!id) return;
+
+  const patch = { id };
+  if (contact.name) patch.name = contact.name;
+  if (contact.notify) patch.pushName = contact.notify;
+
+  if (Object.keys(patch).length > 1) {
+    upsertChatRecord(chatMap, patch);
+  }
+
+  if (contact.lid && (id.endsWith('@s.whatsapp.net') || id.endsWith('@c.us'))) {
+    const lidJid = normalizeJid(
+      String(contact.lid).includes('@') ? contact.lid : `${contact.lid}@lid`
+    );
+    upsertChatRecord(chatMap, {
+      id: lidJid,
+      pushName: contact.notify || contact.name,
+      name: contact.name
+    });
+  }
+};
+
 const getChatsForPicker = (
   chatMap,
   contactMap,
@@ -257,6 +384,7 @@ const getChatsForPicker = (
   } = require('./whatsappChat');
 
   const lidMap = lidPhoneMap || buildLidPhoneMap(contactMap);
+  const contactIndex = buildContactIndex(contactMap, lidMap);
   const selfDigits = String(excludePhoneDigits || '').replace(/\D/g, '');
   const rawRows = [];
 
@@ -264,20 +392,23 @@ const getChatsForPicker = (
     const normalizedId = normalizeJid(chatId);
     if (!normalizedId || !isPersonalChatJid(normalizedId)) return;
 
-    const pickerContact = baileysContactToPickerShape(contactRecord);
+    const resolvedContact =
+      contactRecord || resolveContactRecord(normalizedId, { contactMap, lidMap, contactIndex });
+    const enrichedChat = enrichChatForPicker(chat, resolvedContact);
+    const pickerContact = baileysContactToPickerShape(resolvedContact);
     const userPart = normalizedId.split('@')[0] || '';
-    const phoneNumber = resolvePickerPhone(normalizedId, chat, contactRecord, lidMap) || '';
+    const phoneNumber = resolvePickerPhone(normalizedId, enrichedChat, resolvedContact, lidMap) || '';
     const fallback = phoneNumber ? normalizePhoneValue(phoneNumber)?.replace('+', '') || userPart : userPart;
-    const name = pickContactDisplayName(pickerContact, chat, fallback);
+    const name = pickContactDisplayName(pickerContact, enrichedChat, fallback);
     const { isSaved, hasDisplayName, sortRank } = classifyPickerContact(
       name,
-      contactRecord,
+      resolvedContact,
       phoneNumber
     );
 
     rawRows.push({
       chatId: normalizedId,
-      name,
+      name: name || pickContactDisplayName(pickerContact, enrichedChat, ''),
       phoneNumber: phoneNumber && !String(phoneNumber).includes('@') ? phoneNumber : '',
       source: 'whatsapp',
       isSaved,
@@ -286,17 +417,22 @@ const getChatsForPicker = (
     });
   };
 
-  // Saved address-book contacts first — most reliable names and numbers
-  Array.from(contactMap.values()).forEach((contact) => {
-    buildRow(contact.id, {}, contact);
+  const recentChats = Array.from(chatMap.values()).sort(
+    (a, b) => (Number(b.conversationTimestamp) || 0) - (Number(a.conversationTimestamp) || 0)
+  );
+
+  // Recent chats first — avoids scanning thousands of stale address-book entries
+  recentChats.slice(0, Math.max(limit * 4, 600)).forEach((chat) => {
+    const chatId = normalizeJid(chat.id);
+    const contactRecord = resolveContactRecord(chatId, { contactMap, lidMap, contactIndex });
+    buildRow(chat.id, chat, contactRecord);
   });
 
-  // Then recent chats (may add chats not in contact list)
-  Array.from(chatMap.values())
-    .sort((a, b) => (Number(b.conversationTimestamp) || 0) - (Number(a.conversationTimestamp) || 0))
-    .forEach((chat) => {
-      const contactRecord = contactMap.get(normalizeJid(chat.id));
-      buildRow(chat.id, chat, contactRecord);
+  // Saved phone-book contacts (have a saved name)
+  Array.from(contactMap.values())
+    .filter((contact) => String(contact?.name || '').trim())
+    .forEach((contact) => {
+      buildRow(contact.id, enrichChatForPicker({}, contact), contact);
     });
 
   const merged = mergePickerRows(rawRows);
@@ -306,10 +442,10 @@ const getChatsForPicker = (
     return extractDigits(row.phoneNumber || '') === selfDigits;
   };
 
-  // Contact picker needs a dialable number — keep saved/name rows even if phone missing last
+  // Contact picker needs a dialable number — keep named rows even if phone missing
   const withPhone = merged.filter((row) => row.phoneNumber && !isSelfNumber(row));
   const withoutPhone = merged.filter(
-    (row) => !row.phoneNumber && (row.isSaved || row.hasDisplayName) && !isSelfNumber(row)
+    (row) => !row.phoneNumber && (row.isSaved || row.hasDisplayName || row.name) && !isSelfNumber(row)
   );
 
   return sortPickerContacts([...withPhone, ...withoutPhone]).slice(0, limit);
@@ -351,6 +487,8 @@ module.exports = {
   upsertContactRecord,
   buildLidPhoneMap,
   resolveLidPhonesViaUsync,
+  collectRecentUnresolvedLids,
+  syncContactToChatMap,
   getChatsForPicker,
   hasPickerCandidates,
   normalizeJid,

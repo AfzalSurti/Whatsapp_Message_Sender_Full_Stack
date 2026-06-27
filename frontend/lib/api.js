@@ -137,4 +137,38 @@ export const businessProfileAPI = {
   updateProfile: (data) => api.put('/api/business-profile', data),
 };
 
+// ─── AI TEMPLATES (auto-reply conversational flows) ─────────────
+export const aiTemplateAPI = {
+  getTemplates: () => api.get('/api/ai-templates'),
+  getStarterTemplates: () => api.get('/api/ai-templates/starters'),
+  getExampleTemplate: (slug) => api.get(`/api/ai-templates/example/${slug}`),
+  addStarterTemplate: (slug) => api.post(`/api/ai-templates/starters/${slug}`),
+  createTemplate: (data) => api.post('/api/ai-templates', data),
+  updateTemplate: (id, data) => api.put(`/api/ai-templates/${id}`, data),
+  deleteTemplate: (id) => api.delete(`/api/ai-templates/${id}`),
+  toggleTemplate: (id) => api.patch(`/api/ai-templates/${id}/toggle`),
+  getConversations: (params) => api.get('/api/ai-templates/conversations', { params }),
+  getConversation: (id) => api.get(`/api/ai-templates/conversations/${id}`),
+  deleteConversation: (id) => api.delete(`/api/ai-templates/conversations/${id}`),
+  getLeads: (params) => api.get('/api/ai-templates/leads', { params }),
+};
+
+export const templateAPI = aiTemplateAPI;
+
+// ─── AUTO REPLY ────────────────────────────────────────────────
+export const autoReplyAPI = {
+  getConfig: () => api.get('/api/auto-reply/config'),
+  updateConfig: (data) => api.put('/api/auto-reply/config', data),
+  getWhatsAppContacts: (options = {}) => api.get('/api/auto-reply/whatsapp-contacts', {
+    timeout: 60000,
+    params: options.force ? { refresh: '1' } : undefined
+  }),
+  getLogs: (params) => api.get('/api/auto-reply/logs', { params }),
+  getContacts: () => api.get('/api/auto-reply/contacts'),
+  deleteLog: (id) => api.delete(`/api/auto-reply/logs/${id}`),
+  deleteContactLogs: (contactPhone) =>
+    api.delete('/api/auto-reply/contacts', { params: { contactPhone } }),
+  clearLogs: () => api.delete('/api/auto-reply/logs'),
+};
+
 export default api;
