@@ -3,10 +3,16 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
+  html {
+    overflow-y: auto;
+    scroll-behavior: smooth;
+  }
+
   body {
     /* Use DM Sans from prototype for body and Syne for headings */
     font-family: 'DM Sans', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
     @apply bg-white dark:bg-dark-bg text-gray-900 dark:text-white transition-colors duration-300;
+    overflow-y: auto;
   }
 
   button:not(:disabled),
@@ -69,12 +75,10 @@
   }
 }
 
-/* Scroll pop-up animation: elements start slightly down/transparent and scale to place */
+/* Optional scroll animation — content stays visible even before JS runs */
 .pop-up {
-  opacity: 0;
-  transform: translateY(10px) scale(0.985);
-  transition: opacity 420ms cubic-bezier(0.2,0.8,0.2,1), transform 420ms cubic-bezier(0.2,0.8,0.2,1);
-  will-change: transform, opacity;
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 .pop-up.is-visible {
   opacity: 1;

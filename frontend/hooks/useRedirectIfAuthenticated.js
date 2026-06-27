@@ -41,8 +41,8 @@ export function useRedirectIfAuthenticated(redirectTo = '/dashboard') {
     }
   }, [mounted, shouldCheckAuth, loading, hasSession, router, redirectTo]);
 
-  // Only block the page when there is a token to verify or an active session to redirect.
-  const showLoader = !mounted || (shouldCheckAuth && (loading || hasSession));
+  // Only block UI when we already know there is a session to redirect away.
+  const showLoader = mounted && shouldCheckAuth && (loading || hasSession);
 
   return { user, loading, isAuthenticated: hasSession, showLoader, mounted };
 }

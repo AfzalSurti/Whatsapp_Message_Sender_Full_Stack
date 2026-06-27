@@ -17,7 +17,7 @@ import {
   PlayCircle,
   TrendingUp,
 } from 'lucide-react';
-import { AuthRedirectGate } from '@/hooks/useRedirectIfAuthenticated';
+import { useRedirectIfAuthenticated } from '@/hooks/useRedirectIfAuthenticated';
 
 const features = [
   { icon: <Zap size={22} />, title: 'Bulk Sending', desc: 'Send to hundreds of contacts at once with smart delays.' },
@@ -72,26 +72,38 @@ const testimonials = [
 ];
 
 export default function LandingPage() {
+  useRedirectIfAuthenticated();
+
   useEffect(() => {
     const els = document.querySelectorAll('.pop-up');
     if (!els || els.length === 0) return;
 
+    const reveal = (el) => el.classList.add('is-visible');
+
     const observer = new IntersectionObserver((entries, obs) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
-          entry.target.classList.add('is-visible');
+          reveal(entry.target);
           obs.unobserve(entry.target);
         }
       });
-    }, { threshold: 0.14 });
+    }, { threshold: 0.08, rootMargin: '0px 0px -8% 0px' });
 
-    els.forEach((el) => observer.observe(el));
+    els.forEach((el) => {
+      observer.observe(el);
+      requestAnimationFrame(() => {
+        const rect = el.getBoundingClientRect();
+        if (rect.top < window.innerHeight * 0.92 && rect.bottom > 0) {
+          reveal(el);
+          observer.unobserve(el);
+        }
+      });
+    });
 
     return () => observer.disconnect();
   }, []);
 
   return (
-    <AuthRedirectGate>
     <div className="min-h-screen bg-[#070b09] text-white font-sans">
 
       {/* NAVBAR */}
@@ -116,18 +128,18 @@ export default function LandingPage() {
       </nav>
 
       {/* HERO */}
-      <section className="pt-32 pb-20 px-6 md:px-16 relative overflow-hidden">
+      <section className="pt-28 md:pt-32 pb-16 md:pb-20 px-6 md:px-16 relative overflow-x-hidden">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[820px] h-[520px] bg-[#25D366]/12 rounded-full blur-[130px]" />
           <div className="absolute bottom-0 right-[-8rem] w-[24rem] h-[24rem] bg-[#25D366]/8 rounded-full blur-[140px]" />
         </div>
 
-          <div className="relative z-10 max-w-7xl mx-auto grid gap-14 lg:grid-cols-[1.1fr_0.9fr] items-center">
+          <div className="relative z-10 max-w-7xl mx-auto grid gap-10 lg:gap-14 lg:grid-cols-[1.1fr_0.9fr] items-start lg:items-center">
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-2 text-xs font-semibold text-[#25D366] bg-[#25D366]/10 border border-[#25D366]/20 px-4 py-2 rounded-full mb-6 tracking-[0.28em] uppercase">
               <Sparkles size={14} /> No API Required
             </span>
-            <h1 className="text-6xl md:text-8xl font-black leading-[0.92] tracking-tight mb-6">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black leading-[1.05] tracking-tight mb-6">
               Bulk WhatsApp
               <span className="block text-white">Messaging that feels</span>
               <span className="block text-[#25D366]">built for growth</span>
@@ -136,7 +148,7 @@ export default function LandingPage() {
               Write campaigns faster with AI, send them safely with smart pacing, and watch every delivery update live from one clean dashboard.
             </p>
 
-            <div className="flex flex-wrap gap-3 mb-8 pop-up">
+            <div className="flex flex-wrap gap-3 mb-8">
               {stats.map((item) => (
                 <div key={item.label} className="min-w-[150px] rounded-2xl border border-white/8 bg-white/4 px-4 py-3 backdrop-blur-sm">
                   <div className="text-2xl font-black text-white">{item.value}</div>
@@ -145,7 +157,7 @@ export default function LandingPage() {
               ))}
             </div>
 
-            <div className="flex items-center gap-4 flex-wrap pop-up">
+            <div className="flex items-center gap-4 flex-wrap">
               <Link href="/signup" className="inline-flex items-center gap-2 bg-[#25D366] hover:bg-[#1ebe5d] text-black font-bold px-7 py-4 rounded-full transition-all text-base shadow-[0_0_24px_rgba(37,211,102,0.22)]">
                 Start for Free <ArrowRight size={18} />
               </Link>
@@ -154,7 +166,7 @@ export default function LandingPage() {
               </Link>
             </div>
 
-            <div className="mt-8 flex flex-wrap items-center gap-4 text-sm text-white/50 pop-up">
+            <div className="mt-8 flex flex-wrap items-center gap-4 text-sm text-white/50">
               <div className="flex items-center gap-2">
                 <BadgeCheck size={16} className="text-[#25D366]" /> Saved sessions
               </div>
@@ -323,6 +335,5 @@ export default function LandingPage() {
       </footer>
 
     </div>
-    </AuthRedirectGate>
   );
 }

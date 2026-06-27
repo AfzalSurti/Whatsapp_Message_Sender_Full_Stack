@@ -1,4 +1,4 @@
-const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { jidNormalizedUser, isJidUser } = require('@whiskeysockets/baileys');
 const PERSONAL_SERVERS = new Set(['s.whatsapp.net', 'lid', 'c.us']);
 
 const normalizeJid = (value) => {
@@ -168,7 +168,83 @@ const hasPickerCandidates = (chatMap, contactMap) => {
   return false;
 };
 
-const getChatsForPicker = (chatMap, contactMap, { limit = 200 } = {}) => {
+const buildLidPhoneMap = (contactMap, extraMap = new Map()) => {
+  const { resolvePhoneFromChatId } = require('./whatsappChat');
+  const map = new Map(extraMap);
+
+  contactMap.forEach((contact) => {
+    const contactId = normalizeJid(contact?.id);
+    if (!contactId) return;
+
+    if (contact.lid) {
+      const lidJid = normalizeJid(contact.lid);
+      const phoneFromContactId = resolvePhoneFromChatId(contactId);
+      if (lidJid && phoneFromContactId) {
+        map.set(lidJid, phoneFromContactId);
+      }
+    }
+
+    if (contactId.endsWith('@lid')) {
+      const phoneFromContactId = resolvePhoneFromChatId(contactId);
+      if (phoneFromContactId) {
+        map.set(contactId, phoneFromContactId);
+      }
+    }
+  });
+
+  return map;
+};
+
+const resolveLidPhonesViaUsync = async (sock, lidJids, { batchSize = 12 } = {}) => {
+  const { resolvePhoneFromChatId } = require('./whatsappChat');
+  const map = new Map();
+
+  if (!sock?.executeUSyncQuery || !Array.isArray(lidJids) || lidJids.length === 0) {
+    return map;
+  }
+
+  const { USyncQuery } = require('@whiskeysockets/baileys/lib/WAUSync/USyncQuery');
+  const { USyncUser } = require('@whiskeysockets/baileys/lib/WAUSync/USyncUser');
+  const unique = [...new Set(lidJids.map((jid) => normalizeJid(jid)).filter((jid) => jid.endsWith('@lid')))];
+
+  for (let offset = 0; offset < unique.length; offset += batchSize) {
+    const batch = unique.slice(offset, offset + batchSize);
+
+    try {
+      const query = new USyncQuery().withContactProtocol().withLIDProtocol();
+      batch.forEach((lid) => query.withUser(new USyncUser().withId(lid)));
+
+      const result = await sock.executeUSyncQuery(query);
+      const list = result?.list || [];
+
+      list.forEach((item, index) => {
+        const queryLid = batch[index];
+        const phoneJid = jidNormalizedUser(item?.id || '');
+        const phone = isJidUser(phoneJid) ? resolvePhoneFromChatId(phoneJid) : null;
+        if (!phone) return;
+
+        if (queryLid) map.set(queryLid, phone);
+
+        if (item?.lid) {
+          const lidJid = String(item.lid).includes('@')
+            ? jidNormalizedUser(item.lid)
+            : jidNormalizedUser(`${item.lid}@lid`);
+          if (lidJid) map.set(lidJid, phone);
+        }
+      });
+    } catch (err) {
+      console.warn(`LID phone lookup failed: ${err.message}`);
+    }
+  }
+
+  return map;
+};
+
+const getChatsForPicker = (
+  chatMap,
+  contactMap,
+  { limit = 200, lidPhoneMap = null, excludePhoneDigits = '' } = {}
+) => {
   const {
     baileysContactToPickerShape,
     resolvePickerPhone,
@@ -176,9 +252,12 @@ const getChatsForPicker = (chatMap, contactMap, { limit = 200 } = {}) => {
     mergePickerRows,
     sortPickerContacts,
     pickContactDisplayName,
-    normalizePhoneValue
+    normalizePhoneValue,
+    extractDigits
   } = require('./whatsappChat');
 
+  const lidMap = lidPhoneMap || buildLidPhoneMap(contactMap);
+  const selfDigits = String(excludePhoneDigits || '').replace(/\D/g, '');
   const rawRows = [];
 
   const buildRow = (chatId, chat = {}, contactRecord = null) => {
@@ -187,7 +266,7 @@ const getChatsForPicker = (chatMap, contactMap, { limit = 200 } = {}) => {
 
     const pickerContact = baileysContactToPickerShape(contactRecord);
     const userPart = normalizedId.split('@')[0] || '';
-    const phoneNumber = resolvePickerPhone(normalizedId, chat, contactRecord) || '';
+    const phoneNumber = resolvePickerPhone(normalizedId, chat, contactRecord, lidMap) || '';
     const fallback = phoneNumber ? normalizePhoneValue(phoneNumber)?.replace('+', '') || userPart : userPart;
     const name = pickContactDisplayName(pickerContact, chat, fallback);
     const { isSaved, hasDisplayName, sortRank } = classifyPickerContact(
@@ -222,9 +301,16 @@ const getChatsForPicker = (chatMap, contactMap, { limit = 200 } = {}) => {
 
   const merged = mergePickerRows(rawRows);
 
+  const isSelfNumber = (row) => {
+    if (!selfDigits) return false;
+    return extractDigits(row.phoneNumber || '') === selfDigits;
+  };
+
   // Contact picker needs a dialable number — keep saved/name rows even if phone missing last
-  const withPhone = merged.filter((row) => row.phoneNumber);
-  const withoutPhone = merged.filter((row) => !row.phoneNumber && row.isSaved);
+  const withPhone = merged.filter((row) => row.phoneNumber && !isSelfNumber(row));
+  const withoutPhone = merged.filter(
+    (row) => !row.phoneNumber && (row.isSaved || row.hasDisplayName) && !isSelfNumber(row)
+  );
 
   return sortPickerContacts([...withPhone, ...withoutPhone]).slice(0, limit);
 };
@@ -263,6 +349,8 @@ module.exports = {
   wrapIncomingMessage,
   upsertChatRecord,
   upsertContactRecord,
+  buildLidPhoneMap,
+  resolveLidPhonesViaUsync,
   getChatsForPicker,
   hasPickerCandidates,
   normalizeJid,

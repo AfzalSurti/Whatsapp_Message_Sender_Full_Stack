@@ -202,7 +202,7 @@ const baileysContactToPickerShape = (contact = null) => {
   };
 };
 
-const resolvePickerPhone = (chatId, chat = {}, contact = null) => {
+const resolvePickerPhone = (chatId, chat = {}, contact = null, lidPhoneMap = null) => {
   const normalizedId = String(chatId || '').trim();
   const server = getChatServer(normalizedId);
   const userPart = normalizedId.split('@')[0] || '';
@@ -212,12 +212,25 @@ const resolvePickerPhone = (chatId, chat = {}, contact = null) => {
     if (fromJid) return fromJid;
   }
 
+  if (server === 'lid' && lidPhoneMap) {
+    const fromLidMap = lidPhoneMap.get(normalizedId);
+    if (fromLidMap) return fromLidMap;
+  }
+
   if (contact) {
     const fromContact = resolvePhoneFromContactSync({
       id: { _serialized: normalizedId, user: userPart },
       number: contact.phoneNumber || contact.number || contact.phone
     });
     if (fromContact) return fromContact;
+
+    if (contact.lid && lidPhoneMap) {
+      const linkedLid = String(contact.lid).includes('@')
+        ? contact.lid
+        : `${contact.lid}@lid`;
+      const fromLinkedLid = lidPhoneMap.get(linkedLid);
+      if (fromLinkedLid) return fromLinkedLid;
+    }
   }
 
   return null;
@@ -486,6 +499,8 @@ module.exports = {
   getRecentChatsFromDb,
   getChatTimestamp,
   normalizePhoneValue,
+  resolvePhoneFromChatId,
+  extractDigits,
   baileysContactToPickerShape,
   resolvePickerPhone,
   classifyPickerContact,
