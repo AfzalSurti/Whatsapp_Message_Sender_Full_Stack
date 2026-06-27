@@ -9,6 +9,8 @@ import InternationalPhoneInput from '@/components/InternationalPhoneInput';
 import SegmentTagPicker from '@/components/dashboard/SegmentTagPicker';
 import EditContactModal from '@/components/dashboard/EditContactModal';
 import ConfirmModal from '@/components/dashboard/ConfirmModal';
+import WhatsAppChatPicker from '@/components/dashboard/WhatsAppChatPicker';
+import { useDashboardShell } from '../DashboardShellContext';
 import {
   DEFAULT_PHONE_COUNTRY,
   formatPhoneNumber,
@@ -32,6 +34,7 @@ const AVATAR_COLORS = ['#25D366', '#3B82F6', '#8B5CF6', '#F97316', '#EC4899', '#
 
 export default function GroupsPage() {
   const { user, loading } = useAuth();
+  const { waStatus } = useDashboardShell();
   const router = useRouter();
   const fileInputRef = useRef(null);
 
@@ -44,6 +47,7 @@ export default function GroupsPage() {
   const [activeTagFilters, setActiveTagFilters] = useState([]);
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [addContactMode, setAddContactMode] = useState('manual');
   const [contactName, setContactName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [contactCountry, setContactCountry] = useState(DEFAULT_PHONE_COUNTRY);
@@ -145,6 +149,27 @@ export default function GroupsPage() {
     }
   };
 
+  const handleWhatsAppChatSelect = (chat) => {
+    const normalized = normalizePhoneNumber(chat.phone);
+    if (!normalized) {
+      toast.error('This chat does not have a valid phone number');
+      return;
+    }
+
+    setContactName(chat.name || normalized.displayNumber);
+    setContactPhone(normalized.nationalNumber);
+    setContactCountry(normalized.country || DEFAULT_PHONE_COUNTRY);
+    setAddContactMode('manual');
+    toast.success('Contact details filled from WhatsApp');
+  };
+
+  const resetAddContactForm = () => {
+    setContactName('');
+    setContactPhone('');
+    setAddTags([]);
+    setAddContactMode('manual');
+  };
+
   const handleAddContact = async () => {
     if (!contactName.trim() || !contactPhone.trim()) {
       toast.error('Enter name and phone');
@@ -171,9 +196,7 @@ export default function GroupsPage() {
       });
       toast.success('Contact added');
       setShowAddModal(false);
-      setContactName('');
-      setContactPhone('');
-      setAddTags([]);
+      resetAddContactForm();
       await fetchOverview();
     } catch (err) {
       toast.error(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Failed to add contact');
@@ -412,12 +435,51 @@ export default function GroupsPage() {
           <div className="bg-[#111] border border-white/10 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="font-bold text-lg">Add Contact</h3>
-              <button type="button" onClick={() => setShowAddModal(false)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddModal(false);
+                  resetAddContactForm();
+                }}
+              >
                 <X size={16} />
               </button>
             </div>
 
+            <div className="inline-flex p-1 rounded-xl bg-[#0a0a0a] border border-white/10 gap-1 mb-5">
+              {[
+                { id: 'manual', label: 'Manual Entry' },
+                { id: 'whatsapp', label: 'WhatsApp Chats' }
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setAddContactMode(item.id)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    addContactMode === item.id
+                      ? 'bg-[#25D366] text-black'
+                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
             <div className="space-y-4">
+              {addContactMode === 'whatsapp' ? (
+                <>
+                  <p className="text-sm text-gray-400">
+                    Pick a WhatsApp chat to fill the name and phone number below.
+                  </p>
+                  <WhatsAppChatPicker
+                    waConnected={waStatus === 'connected'}
+                    selectedPhone={contactPhone}
+                    onSelect={handleWhatsAppChatSelect}
+                  />
+                </>
+              ) : null}
+
               <input
                 value={contactName}
                 onChange={(e) => setContactName(e.target.value)}

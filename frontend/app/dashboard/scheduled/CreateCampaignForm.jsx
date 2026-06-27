@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
@@ -37,10 +37,14 @@ const DEFAULT_MANUAL_DETAILS = {
 export default function CreateCampaignForm() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editCampaignId = searchParams.get('edit');
   const handledTemplateQueryRef = useRef(null);
+  const handledEditQueryRef = useRef(null);
 
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(Boolean(editCampaignId));
 
   const [allContacts, setAllContacts] = useState([]);
   const [tagLibrary, setTagLibrary] = useState([]);
@@ -135,6 +139,96 @@ export default function CreateCampaignForm() {
     }
   }, [templates, user, applyTemplateSelection]);
 
+  const applyCampaignForEdit = useCallback((campaign) => {
+    if (campaign.status !== 'pending') {
+      toast.error('Only pending campaigns can be edited');
+      router.replace('/dashboard/scheduled');
+      return;
+    }
+
+    if (campaign.templateId) {
+      const templateId =
+        typeof campaign.templateId === 'object' ? campaign.templateId._id : campaign.templateId;
+      const template = templates.find((item) => item._id === templateId);
+
+      if (template) {
+        applyTemplateSelection(template);
+      } else {
+        setMessageSource('manual');
+        setMessage(campaign.message || '');
+        setManualDetails((prev) => ({ ...prev, name: campaign.name || prev.name }));
+      }
+    } else {
+      setMessageSource('manual');
+      setMessage(campaign.message || '');
+      setManualDetails((prev) => ({ ...prev, name: campaign.name || prev.name }));
+    }
+
+    setTemplateVariables(campaign.templateVariables || {});
+    setSendingSpeed(campaign.sendingSpeed || 'safe');
+    setRecurrencePattern(campaign.recurrencePattern || 'none');
+
+    if (campaign.recurrenceStartDate) {
+      const start = new Date(campaign.recurrenceStartDate);
+      setRecurrenceStartDate(start.toISOString().slice(0, 10));
+    }
+    if (campaign.recurrenceEndDate) {
+      const end = new Date(campaign.recurrenceEndDate);
+      setRecurrenceEndDate(end.toISOString().slice(0, 10));
+    }
+
+    const phones = (campaign.individualNumbers || []).map((entry) =>
+      String(entry.phone || '').replace(/\D/g, '')
+    );
+    setSelectedContactPhones(phones.filter(Boolean));
+
+    const contactPhoneSet = new Set(
+      allContacts.map((contact) => String(contact.phone || '').replace(/\D/g, ''))
+    );
+    const manualOnly = (campaign.individualNumbers || [])
+      .filter((entry) => !contactPhoneSet.has(String(entry.phone || '').replace(/\D/g, '')))
+      .map((entry) => ({
+        name: entry.name || '',
+        phone: entry.phone
+      }));
+    setManualRecipients(manualOnly);
+
+    const scheduled = new Date(campaign.scheduledAt);
+    setScheduleMode('later');
+    setScheduleDate(scheduled.toISOString().slice(0, 10));
+    setScheduleTime(
+      `${String(scheduled.getHours()).padStart(2, '0')}:${String(scheduled.getMinutes()).padStart(2, '0')}`
+    );
+  }, [allContacts, applyTemplateSelection, router, templates]);
+
+  useEffect(() => {
+    if (!user || !editCampaignId || handledEditQueryRef.current === editCampaignId) return;
+    if (loadingContacts || loadingTemplates) return;
+
+    const loadCampaignForEdit = async () => {
+      setLoadingEdit(true);
+      try {
+        const res = await scheduledAPI.getCampaign(editCampaignId);
+        handledEditQueryRef.current = editCampaignId;
+        applyCampaignForEdit(res.data.campaign);
+      } catch (err) {
+        toast.error(err.response?.data?.error || 'Failed to load campaign');
+        router.replace('/dashboard/scheduled');
+      } finally {
+        setLoadingEdit(false);
+      }
+    };
+
+    loadCampaignForEdit();
+  }, [
+    applyCampaignForEdit,
+    editCampaignId,
+    loadingContacts,
+    loadingTemplates,
+    router,
+    user
+  ]);
+
   const campaignName = useMemo(() => {
     if (messageSource === 'template' && selectedTemplate) return selectedTemplate.name;
     return manualDetails.name.trim();
@@ -159,7 +253,7 @@ export default function CreateCampaignForm() {
       if (contact) {
         return {
           name: contact.name || manual?.name || '',
-          phone: clean,
+        phone: clean,
           segment: (contact.tags || []).join(', ') || ''
         };
       }
@@ -181,15 +275,15 @@ export default function CreateCampaignForm() {
 
   const getStepBlockers = useCallback(
     (currentStep) => {
-      const blockers = [];
+    const blockers = [];
 
       if (currentStep === 1) {
         if (messageSource === 'template' && !selectedTemplateId) {
           blockers.push('Select a template');
         }
         if (messageSource === 'manual' && !manualDetails.name.trim()) {
-          blockers.push('Enter a campaign name');
-        }
+      blockers.push('Enter a campaign name');
+    }
       }
 
       if (currentStep === 2) {
@@ -211,13 +305,13 @@ export default function CreateCampaignForm() {
           if (scheduleDate && scheduleDate < minDate) {
             blockers.push('Cannot schedule for a past date');
           }
-          if (scheduleDate && scheduleTime) {
-            const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
-            if (Number.isNaN(scheduledAt.getTime())) {
-              blockers.push('Enter a valid date and time');
-            } else if (scheduledAt <= new Date(Date.now() + 60000)) {
-              blockers.push('Schedule time must be at least 1 minute in the future');
-            }
+    if (scheduleDate && scheduleTime) {
+      const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`);
+      if (Number.isNaN(scheduledAt.getTime())) {
+        blockers.push('Enter a valid date and time');
+      } else if (scheduledAt <= new Date(Date.now() + 60000)) {
+        blockers.push('Schedule time must be at least 1 minute in the future');
+      }
             if (scheduleDate === minDate && scheduleTime < getMinScheduleTime(scheduleDate)) {
               blockers.push('Select a future time for today');
             }
@@ -233,22 +327,22 @@ export default function CreateCampaignForm() {
         }
       }
 
-      return blockers;
+    return blockers;
     },
     [
       manualDetails.name,
-      message,
+    message,
       messageSource,
-      missingTemplateVariables,
+    missingTemplateVariables,
       recipientCount,
       recurrenceEndDate,
       recurrencePattern,
       recurrenceStartDate,
-      scheduleDate,
+    scheduleDate,
       scheduleMode,
-      scheduleTime,
+    scheduleTime,
       selectedContactPhones.length,
-      selectedTemplateId
+    selectedTemplateId
     ]
   );
 
@@ -392,7 +486,7 @@ export default function CreateCampaignForm() {
 
     setSubmitting(true);
     try {
-      await scheduledAPI.createCampaign({
+      const payload = {
         name: finalName,
         message,
         scheduledAt: scheduledAt.toISOString(),
@@ -413,9 +507,16 @@ export default function CreateCampaignForm() {
           recurrencePattern !== 'none' && recurrenceEndDate
             ? new Date(`${recurrenceEndDate}T23:59:59`).toISOString()
             : undefined
-      });
+      };
 
-      toast.success(scheduleMode === 'now' ? 'Campaign launched!' : 'Campaign scheduled!');
+      if (editCampaignId) {
+        await scheduledAPI.updateCampaign(editCampaignId, payload);
+        toast.success('Campaign updated!');
+      } else {
+        await scheduledAPI.createCampaign(payload);
+        toast.success(scheduleMode === 'now' ? 'Campaign launched!' : 'Campaign scheduled!');
+      }
+
       router.push('/dashboard/scheduled');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to launch campaign');
@@ -442,7 +543,7 @@ export default function CreateCampaignForm() {
     setStep((prev) => Math.min(prev + 1, 5));
   };
 
-  if (loading) {
+  if (loading || loadingEdit) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="animate-spin text-[#25D366]" size={32} />
@@ -463,17 +564,17 @@ export default function CreateCampaignForm() {
               className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"
             >
               <ChevronLeft size={16} /> Back
-            </Link>
-            <div>
-              <h2 className="font-bold text-lg">New Campaign</h2>
+                      </Link>
+                                  <div>
+              <h2 className="font-bold text-lg">{editCampaignId ? 'Edit Campaign' : 'New Campaign'}</h2>
               <p className="text-xs text-gray-500 mt-0.5">
                 Step {step} of 5 · {currentStepMeta?.label}
-              </p>
-            </div>
-          </div>
-        </div>
+                                    </p>
+                                  </div>
+                                </div>
+                                        </div>
         <CampaignWizardStepper step={step} />
-      </div>
+                                  </div>
 
       <div className="p-6 min-h-[420px]">
         {step === 1 && (
@@ -552,32 +653,32 @@ export default function CreateCampaignForm() {
             sendingSpeed={sendingSpeed}
             message={message}
           />
-        )}
-      </div>
+                    )}
+                  </div>
 
       <div className="border-t border-white/10 p-6 space-y-4">
         {stepBlockers.length > 0 && step < 5 && (
-          <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
+                <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3">
             <p className="text-sm font-medium text-amber-200 mb-1">Complete to continue:</p>
-            <ul className="space-y-1">
+                  <ul className="space-y-1">
               {stepBlockers.map((blocker) => (
                 <li key={blocker} className="text-xs text-amber-100/90">
                   • {blocker}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-        <div className="flex gap-3">
+              <div className="flex gap-3">
           {step > 1 ? (
-            <button
+                <button
               type="button"
               onClick={() => setStep((prev) => prev - 1)}
               className="flex-1 border border-white/10 hover:border-white/20 text-white font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
-            >
+                >
               <ChevronLeft size={16} /> Back
-            </button>
+                </button>
           ) : (
             <Link
               href="/dashboard/scheduled"
@@ -588,19 +689,19 @@ export default function CreateCampaignForm() {
           )}
 
           {step < 5 ? (
-            <button
+                <button
               type="button"
               onClick={goNext}
               disabled={stepBlockers.length > 0}
               className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
             >
               Continue <ChevronRight size={16} />
-            </button>
+                </button>
           ) : (
-            <button
+                <button
               type="button"
               onClick={handleLaunch}
-              disabled={submitting}
+                  disabled={submitting}
               className="flex-1 bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-50 text-black font-semibold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2"
             >
               {submitting ? (
@@ -609,10 +710,10 @@ export default function CreateCampaignForm() {
                 <Send size={16} />
               )}
               {submitting ? 'Launching...' : 'Launch Campaign'}
-            </button>
+              </button>
           )}
-        </div>
-      </div>
+              </div>
+            </div>
     </div>
   );
 }

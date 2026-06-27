@@ -6,6 +6,7 @@ const {
   createCampaign,
   getCampaigns,
   getCampaign,
+  updateCampaign,
   cancelCampaign,
   deleteCampaign
 } = require('../controllers/scheduledController');
@@ -29,6 +30,7 @@ const createValidation = [
 router.post('/', protect, createValidation, createCampaign);
 router.get('/', protect, getCampaigns);
 router.get('/:id', protect, param('id').isMongoId(), getCampaign);
+router.put('/:id', protect, param('id').isMongoId(), createValidation, updateCampaign);
 router.patch('/:id/cancel', protect, param('id').isMongoId(), cancelCampaign);
 router.delete('/:id', protect, param('id').isMongoId(), deleteCampaign);
 

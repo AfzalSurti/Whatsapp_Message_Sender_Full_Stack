@@ -1,7 +1,9 @@
 const MessageLog = require('../models/MessageLog');
 const Campaign = require('../models/Campaign');
-const User = require('../models/User');
-const { appendMessageFooter } = require('../utils/messageFooter');
+const { getOrCreateBusinessProfile } = require('../utils/businessProfile');
+const { formatMessageForLog, resolveMessageFooter } = require('../utils/messageFooter');
+const { sendMessageWithFooter } = require('../utils/sendMessageWithFooter');
+const { toBaileysJid } = require('../utils/baileysAdapter');
 
 // ─── SEND MESSAGES ────────────────────────────────────────────
 // client — WhatsApp client for this user
@@ -32,8 +34,8 @@ const sendMessages = async (client, userId, numbersOrRecipients, message, onProg
   const recipients = normalizeRecipients(numbersOrRecipients, message);
   const baseMessage = recipients[0]?.message || message || '';
 
-  const user = await User.findById(userId).select('messageFooter name').lean();
-  const messageFooter = user?.messageFooter?.trim() || user?.name?.trim() || '';
+  const businessProfile = await getOrCreateBusinessProfile(userId);
+  const messageFooter = resolveMessageFooter(businessProfile);
 
   // Create campaign record in MongoDB
   const campaign = await Campaign.create({
@@ -50,7 +52,8 @@ const sendMessages = async (client, userId, numbersOrRecipients, message, onProg
 
   for (let i = 0; i < recipients.length; i++) {
     const { phone: rawNumber, message: recipientMessage } = recipients[i];
-    const messageWithFooter = appendMessageFooter(recipientMessage, messageFooter);
+    const messageForLog = formatMessageForLog(recipientMessage, messageFooter);
+    const uniqueBody = recipientMessage + '\u200B'.repeat(i + 1);
 
     try {
       // Clean number — remove all non-digits
@@ -63,22 +66,19 @@ const sendMessages = async (client, userId, numbersOrRecipients, message, onProg
         continue;
       }
 
-      const whatsappId = `${cleanNumber}@c.us`;
+      const whatsappId = toBaileysJid(cleanNumber);
 
-      // Make message unique per number (to avoid WhatsApp duplicate detection)
-      const uniqueMessage = messageWithFooter + '\u200B'.repeat(i + 1);
-
-      // Send message with retry logic
       let retries = 0;
       const maxRetries = 2;
       let sent = false;
 
+      // Make message body unique per number (to avoid WhatsApp duplicate detection)
       while (retries <= maxRetries && !sent) {
         try {
-          await client.sendMessage(whatsappId, uniqueMessage);
+          await sendMessageWithFooter(client, whatsappId, uniqueBody, messageFooter);
           sent = true;
           results.sent++;
-          await logMessage(userId, campaign._id, rawNumber, messageWithFooter, 'sent', null);
+          await logMessage(userId, campaign._id, rawNumber, messageForLog, 'sent', null);
           console.log(`✅ Message sent to ${rawNumber}`);
         } catch (err) {
           retries++;
@@ -93,7 +93,7 @@ const sendMessages = async (client, userId, numbersOrRecipients, message, onProg
 
     } catch (err) {
       results.failed++;
-      await logMessage(userId, campaign._id, rawNumber, messageWithFooter, 'failed', err.message);
+      await logMessage(userId, campaign._id, rawNumber, messageForLog, 'failed', err.message);
     }
 
     // Send live progress to frontend via WebSocket

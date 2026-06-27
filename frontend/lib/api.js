@@ -1,6 +1,5 @@
 import axios from 'axios';
-import Cookies from 'js-cookie';
-import { removeToken } from './auth';
+import { getToken, isAuthBootstrapping, removeToken } from './auth';
 
 // Base axios instance — all requests go through here
 const api = axios.create({
@@ -11,7 +10,7 @@ const api = axios.create({
 // ─── REQUEST INTERCEPTOR ──────────────────────────────────────
 // Automatically attach JWT token to every request
 api.interceptors.request.use((config) => {
-  const token = Cookies.get('token');
+  const token = getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -24,10 +23,14 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 && typeof window !== 'undefined') {
-      const isAuthRoute = error.config?.url?.includes('/api/auth/login')
-        || error.config?.url?.includes('/api/auth/signup');
+      const requestUrl = error.config?.url || '';
+      const isAuthRoute = requestUrl.includes('/api/auth/login')
+        || requestUrl.includes('/api/auth/signup')
+        || requestUrl.includes('/api/auth/me');
+      const hadAuthHeader = Boolean(error.config?.headers?.Authorization);
+      const onAuthCallback = window.location.pathname.startsWith('/auth/callback');
 
-      if (!isAuthRoute) {
+      if (!isAuthRoute && hadAuthHeader && !isAuthBootstrapping() && !onAuthCallback) {
         removeToken();
         window.location.href = '/login';
       }
@@ -40,7 +43,11 @@ api.interceptors.response.use(
 export const authAPI = {
   signup: (data) => api.post('/api/auth/signup', data),
   login: (data) => api.post('/api/auth/login', data),
-  getMe: () => api.get('/api/auth/me'),
+  getMe: () => api.get('/api/auth/me', {
+    params: { _: Date.now() },
+    headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    timeout: 8000
+  }),
   updateProfile: (data) => api.patch('/api/auth/profile', data),
   logout: () => api.post('/api/auth/logout'),
 };
@@ -106,6 +113,7 @@ export const scheduledAPI = {
   getCampaigns: () => api.get('/api/scheduled'),
   getCampaign: (id) => api.get(`/api/scheduled/${id}`),
   createCampaign: (data) => api.post('/api/scheduled', data),
+  updateCampaign: (id, data) => api.put(`/api/scheduled/${id}`, data),
   cancelCampaign: (id) => api.patch(`/api/scheduled/${id}/cancel`),
   deleteCampaign: (id) => api.delete(`/api/scheduled/${id}`),
 };
@@ -142,13 +150,22 @@ export const templateAPI = aiTemplateAPI;
 export const autoReplyAPI = {
   getConfig: () => api.get('/api/auto-reply/config'),
   updateConfig: (data) => api.put('/api/auto-reply/config', data),
-  getWhatsAppContacts: () => api.get('/api/auto-reply/whatsapp-contacts', { timeout: 60000 }),
+  getWhatsAppContacts: (options = {}) => api.get('/api/auto-reply/whatsapp-contacts', {
+    timeout: 60000,
+    params: options.force ? { refresh: '1' } : undefined
+  }),
   getLogs: (params) => api.get('/api/auto-reply/logs', { params }),
   getContacts: () => api.get('/api/auto-reply/contacts'),
   deleteLog: (id) => api.delete(`/api/auto-reply/logs/${id}`),
   deleteContactLogs: (contactPhone) =>
     api.delete('/api/auto-reply/contacts', { params: { contactPhone } }),
   clearLogs: () => api.delete('/api/auto-reply/logs'),
+};
+
+// ─── BUSINESS PROFILE ──────────────────────────────────────────
+export const businessProfileAPI = {
+  getProfile: () => api.get('/api/business-profile'),
+  updateProfile: (data) => api.put('/api/business-profile', data),
 };
 
 export default api;

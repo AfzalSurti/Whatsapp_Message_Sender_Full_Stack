@@ -7,13 +7,16 @@ import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
 import { scheduledAPI } from '@/lib/api';
 import ConfirmModal from '@/components/dashboard/ConfirmModal';
+import CampaignViewModal from '@/components/dashboard/CampaignViewModal';
 import { formatCampaignDate, getCampaignStatusBadge } from '@/lib/scheduledCampaign';
 import {
   AlertCircle,
   CheckCircle,
   Clock,
+  Eye,
   FileText,
   Loader2,
+  Pencil,
   Plus,
   Trash2
 } from 'lucide-react';
@@ -27,6 +30,7 @@ export default function CampaignsList() {
   const [fetching, setFetching] = useState(true);
   const [campaignToDelete, setCampaignToDelete] = useState(null);
   const [campaignToCancel, setCampaignToCancel] = useState(null);
+  const [viewCampaignId, setViewCampaignId] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   const fetchCampaigns = useCallback(async () => {
@@ -207,15 +211,30 @@ export default function CampaignsList() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 ml-4">
+                <div className="flex items-center gap-2 ml-4 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setViewCampaignId(campaign._id)}
+                    className="px-3 py-1.5 text-xs border border-white/10 hover:border-[#25D366]/40 rounded transition-colors flex items-center gap-1.5"
+                  >
+                    <Eye size={12} /> View
+                  </button>
                   {campaign.status === 'pending' && (
-                    <button
-                      type="button"
-                      onClick={() => setCampaignToCancel(campaign)}
-                      className="px-3 py-1.5 text-xs bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 rounded transition-colors"
-                    >
-                      Cancel
-                    </button>
+                    <>
+                      <Link
+                        href={`/dashboard/scheduled/create?edit=${campaign._id}`}
+                        className="px-3 py-1.5 text-xs border border-white/10 hover:border-[#25D366]/40 rounded transition-colors flex items-center gap-1.5"
+                      >
+                        <Pencil size={12} /> Edit
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setCampaignToCancel(campaign)}
+                        className="px-3 py-1.5 text-xs bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 rounded transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </>
                   )}
                   {['completed', 'cancelled', 'failed'].includes(campaign.status) && (
                     <button
@@ -233,6 +252,12 @@ export default function CampaignsList() {
           })}
         </div>
       )}
+
+      <CampaignViewModal
+        open={Boolean(viewCampaignId)}
+        campaignId={viewCampaignId}
+        onClose={() => setViewCampaignId(null)}
+      />
 
       <ConfirmModal
         open={Boolean(campaignToDelete)}

@@ -1,13 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import ConfirmModal from '@/components/dashboard/ConfirmModal';
-import { Activity, BarChart3, Bot, ClipboardList, History, Key, Layers, Loader2, LogOut, MessageSquare, Pencil, Send, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { Activity, BarChart3, Bot, ClipboardList, History, Key, Layers, Loader2, LogOut, MessageSquare, Send, Settings2, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { getToken } from '@/lib/auth';
 import { whatsappAPI } from '@/lib/api';
 import useWebSocket from '@/hooks/useWebSocket';
 import { DashboardShellProvider } from './DashboardShellContext';
@@ -36,65 +37,12 @@ const manageNavItems = [
   { href: '/dashboard/api-keys', label: 'API Keys', icon: Key },
 ];
 
-const navItems = [...mainNavItems, ...manageNavItems];
+const settingsNavItem = { href: '/dashboard/settings', label: 'Settings', icon: Settings2 };
 
-function MessageFooterField({ value, onSave, saving }) {
-  const [draft, setDraft] = useState(value || '');
-  const [editing, setEditing] = useState(false);
-
-  useEffect(() => {
-    if (!editing) setDraft(value || '');
-  }, [value, editing]);
-
-  const commit = async () => {
-    const trimmed = draft.trim();
-    if (trimmed === String(value || '').trim()) {
-      setEditing(false);
-      return;
-    }
-    await onSave(trimmed);
-    setEditing(false);
-  };
-
-  if (editing) {
-    return (
-      <input
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-          if (e.key === 'Escape') {
-            setDraft(value || '');
-            setEditing(false);
-          }
-        }}
-        maxLength={80}
-        autoFocus
-        disabled={saving}
-        className="hidden md:block w-40 lg:w-52 rounded-lg border border-[#25D366]/40 bg-white/5 px-2.5 py-1.5 text-sm text-white outline-none focus:border-[#25D366]"
-        placeholder="Business name footer"
-        aria-label="Message footer"
-      />
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      disabled={saving}
-      title="Message footer — shown at the bottom of every sent message"
-      className="hidden md:flex items-center gap-1.5 max-w-[12rem] rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-sm text-gray-300 hover:border-[#25D366]/40 hover:text-white transition-colors"
-    >
-      <span className="truncate">{value || 'Set message footer'}</span>
-      {saving ? <Loader2 size={12} className="animate-spin shrink-0" /> : <Pencil size={12} className="shrink-0 text-gray-500" />}
-    </button>
-  );
-}
+const navItems = [...mainNavItems, ...manageNavItems, settingsNavItem];
 
 export default function DashboardLayout({ children }) {
-  const { user, loading, logout, updateProfile } = useAuth();
+  const { user, loading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [waStatus, setWaStatus] = useState('disconnected');
@@ -106,12 +54,19 @@ export default function DashboardLayout({ children }) {
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [savingFooter, setSavingFooter] = useState(false);
+  const statusInitRef = useRef(false);
 
   const fetchStatus = useCallback(async () => {
     try {
       const res = await whatsappAPI.getStatus();
       const status = res.data.status;
+
+      if (res.data.qr) {
+        setQrImage(res.data.qr);
+        // setShowQR(true);
+        setQrStatusText('Scan the QR code in WhatsApp to finish connecting.');
+        setConnectError('');
+      }
 
       if (status === 'connected') {
         setWaStatus('connected');
@@ -119,34 +74,43 @@ export default function DashboardLayout({ children }) {
         setQrImage(null);
       } else if (status === 'pending') {
         setWaStatus('pending');
+        if (res.data.restoring) {
+          setQrStatusText('Restoring WhatsApp session...');
+        }
       } else {
         setWaStatus('disconnected');
       }
+
+      return res.data;
     } catch {
+      return null;
     } finally {
       setSessionLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!loading && !user) router.push('/login');
+    if (!loading && !user && !getToken()) {
+      router.replace('/login');
+    }
   }, [loading, router, user]);
 
   useEffect(() => {
-    if (user) fetchStatus();
+    if (!user || statusInitRef.current) return;
+    statusInitRef.current = true;
+    fetchStatus();
   }, [fetchStatus, user]);
 
   useEffect(() => {
     if (waStatus !== 'pending' ) return;
-    if (qrImage == null  ) return;
     const id = setInterval(fetchStatus, 2000);
     return () => clearInterval(id);
-  }, [fetchStatus, waStatus,qrImage]);
+  }, [fetchStatus, waStatus]);
 
   const handleWsMessage = useCallback((data) => {
     if (data.type === 'qr') {
       setQrImage(data.qr);
-      setShowQR(true);
+      // setShowQR(true);
       setWaStatus('pending');
       setQrStatusText('Scan the QR code in WhatsApp to finish connecting.');
       setConnectError('');
@@ -182,10 +146,19 @@ export default function DashboardLayout({ children }) {
   useWebSocket(handleWsMessage);
 
   const handleConnect = async (options = {}) => {
+    const { silent = false, restoreOnly = false } = options;
+
     try {
-      setConnectError('');
-      setQrStatusText('Restoring WhatsApp session...');
-      setWaStatus('pending');
+      if (restoreOnly) {
+        setWaStatus('pending');
+        setQrStatusText('Restoring WhatsApp session...');
+      } else {
+        setShowQR(true);
+        setQrImage(null);
+        setConnectError('');
+        setQrStatusText('Starting WhatsApp connection...');
+        setWaStatus('pending');
+      }
 
       const res = await whatsappAPI.connect({ fresh: false });
 
@@ -194,25 +167,28 @@ export default function DashboardLayout({ children }) {
         setShowQR(false);
         setQrImage(null);
         setQrStatusText('WhatsApp connected successfully.');
-        if (!options.silent) toast.success('WhatsApp connected!');
+        if (!silent) toast.success('WhatsApp connected!');
         return;
       }
 
-      setShowQR(true);
-      setQrImage(null);
-      setQrStatusText(
-        res.data.hasStoredSession
-          ? 'Restoring saved session... QR will appear only if re-link is required.'
-          : 'Waiting for QR code...'
-      );
+      if (res.data.qr) {
+        setQrImage(res.data.qr);
+        setShowQR(true);
+        setQrStatusText('Scan the QR code in WhatsApp to finish connecting.');
+      } else if (res.data.hasStoredSession || restoreOnly) {
+        setWaStatus('pending');
+        await fetchStatus();
+      } else {
+        await fetchStatus();
+      }
 
-      if (!options.silent && !res.data.hasStoredSession) {
+      if (!silent && !restoreOnly) {
         toast('Scan the QR code to connect', { icon: 'QR' });
       }
     } catch (err) {
       setConnectError(err.response?.data?.error || 'Connection failed');
       setQrStatusText('Could not start the connection.');
-      toast.error(err.response?.data?.error || 'Connection failed');
+      if (!silent) toast.error(err.response?.data?.error || 'Connection failed');
     }
   };
 
@@ -230,19 +206,6 @@ export default function DashboardLayout({ children }) {
     }
   };
 
-  const handleSaveFooter = async (messageFooter) => {
-    setSavingFooter(true);
-    try {
-      await updateProfile({ messageFooter });
-      toast.success('Message footer saved');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Could not save message footer');
-      throw err;
-    } finally {
-      setSavingFooter(false);
-    }
-  };
-
   const handleRegenerateQr = async () => {
     try {
       setShowQR(true);
@@ -251,6 +214,8 @@ export default function DashboardLayout({ children }) {
       setQrStatusText('Clearing old session and generating new QR...');
       setWaStatus('pending');
       await whatsappAPI.connect({ fresh: true });
+
+      await fetchStatus();
     } catch (err) {
       setConnectError(err.response?.data?.error || 'Could not regenerate QR');
       setQrStatusText('Could not regenerate QR.');
@@ -266,8 +231,17 @@ export default function DashboardLayout({ children }) {
     setProgress,
   }), [progress, sending, waStatus]);
 
-  if (loading) {
-    return <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center"><Loader2 className="animate-spin text-[#25D366]" size={32} /></div>;
+  if (loading && !user) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center gap-3">
+        <Loader2 className="animate-spin text-[#25D366]" size={32} />
+        <p className="text-sm text-gray-500">Loading dashboard...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
   }
 
   return (
@@ -310,6 +284,19 @@ export default function DashboardLayout({ children }) {
             </div>
           </nav>
 
+          <div className="px-3 pb-3 border-t border-white/5 pt-3">
+            <Link
+              href={settingsNavItem.href}
+              className={`flex items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                pathname === settingsNavItem.href
+                  ? 'bg-[#25D366] text-black font-semibold'
+                  : 'text-gray-400 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <Settings2 size={17} /> {settingsNavItem.label}
+            </Link>
+          </div>
+
           <div className="px-4 py-3 border-t border-white/5">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center text-sm font-semibold text-white">{user?.name?.split(' ').map(n=>n[0]).slice(0,2).join('') || 'U'}</div>
@@ -333,7 +320,7 @@ export default function DashboardLayout({ children }) {
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border border-white/5">
                   <span className={`w-2 h-2 rounded-full ${waStatus === 'connected' ? 'bg-[#25D366]' : 'bg-red-500'}`} />
-                  {waStatus === 'connected' ? 'Connected' : waStatus === 'pending' ? 'Scanning' : 'Disconnected'}
+                  {waStatus === 'connected' ? 'Connected' : waStatus === 'pending' ? 'Restoring...' : 'Disconnected'}
                 </span>
                 {waStatus === 'connected' ? (
                   <button onClick={handleDisconnect} className="hidden sm:flex items-center gap-2 text-xs border border-white/10 hover:border-red-400/40 hover:text-red-400 px-3 py-2 rounded-xl transition-colors"><WifiOff size={14} /> Disconnect</button>
@@ -341,11 +328,6 @@ export default function DashboardLayout({ children }) {
                   <button onClick={() => handleConnect()} className="flex items-center gap-2 text-xs bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-3 py-2 rounded-xl transition-colors"><Wifi size={14} /> Connect</button>
                 )}
               </div>
-              <MessageFooterField
-                value={user?.messageFooter || user?.name || ''}
-                onSave={handleSaveFooter}
-                saving={savingFooter}
-              />
             </div>
           </header>
 

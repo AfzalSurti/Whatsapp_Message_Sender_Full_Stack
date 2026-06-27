@@ -1,7 +1,8 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { getToken } from '@/lib/auth';
 import { whatsappAPI, aiAPI, contactsAPI, logsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import InternationalPhoneInput from '@/components/InternationalPhoneInput';
@@ -84,6 +85,7 @@ export default function Dashboard() {
   const [newContactName, setNewContactName] = useState('');
   const [newContactCountry, setNewContactCountry] = useState(DEFAULT_COUNTRY);
   const [newContactPhone, setNewContactPhone] = useState('');
+  const dashboardDataLoadedRef = useRef(false);
 
   // Fetch dashboard data
   const fetchDashboardData = useCallback(async () => {
@@ -113,15 +115,17 @@ export default function Dashboard() {
 
   // Redirect if not logged in
   useEffect(() => {
-    if (!loading && !user) router.push('/login');
+    if (!loading && !user && !getToken()) {
+      router.replace('/login');
+    }
   }, [user, loading, router]);
 
   // Fetch contacts and dashboard data on load
   useEffect(() => {
-    if (user) {
-      fetchContacts();
-      fetchDashboardData();
-    }
+    if (!user || dashboardDataLoadedRef.current) return;
+    dashboardDataLoadedRef.current = true;
+    fetchContacts();
+    fetchDashboardData();
   }, [user, fetchContacts, fetchDashboardData]);
 
   const handleAddContact = async () => {
@@ -327,12 +331,8 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="animate-spin text-[#25D366]" size={32} />
-      </div>
-    );
+  if (loading && !user) {
+    return null;
   }
 
   const progressPct = progress?.total > 0

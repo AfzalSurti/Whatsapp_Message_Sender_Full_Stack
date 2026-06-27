@@ -2,14 +2,16 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { MessageSquare, User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { MessageSquare, User, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useRedirectIfAuthenticated } from '@/hooks/useRedirectIfAuthenticated';
 import toast from 'react-hot-toast';
 import { validateEmail, validateName, validatePassword } from '@/lib/validation';
 
 export default function SignupPage() {
   const { signup } = useAuth();
   const router = useRouter();
+  const { loading: authLoading, isAuthenticated } = useRedirectIfAuthenticated();
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -38,13 +40,21 @@ export default function SignupPage() {
     try {
       await signup(form.name, form.email, form.password);
       toast.success('Account created!');
-      router.push('/dashboard');
+      router.replace('/dashboard');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Signup failed');
     } finally {
       setLoading(false);
     }
   };
+
+  if (authLoading || isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <Loader2 className="animate-spin text-[#25D366]" size={32} />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-4">

@@ -280,105 +280,60 @@ const withTimeout = (promise, ms, label) =>
     })
   ]);
 
-const fetchRecentChatsFromStore = async (client, limit = 100) => {
-  if (!client?.pupPage || (client.pupPage.isClosed && client.pupPage.isClosed())) {
-    throw new Error('WhatsApp browser page not available');
-  }
+const getRecentChatsFromDb = async (userId, { limit = 100 } = {}) => {
+  const AutoReplyLog = require('../models/AutoReplyLog');
+  const MessageLog = require('../models/MessageLog');
+  const ContactGroup = require('../models/ContactGroup');
 
-  const rows = await withTimeout(
-    client.pupPage.evaluate((max) => {
-      const getChatModels = () => {
-        try {
-          return window.require('WAWebCollections').Chat.getModelsArray();
-        } catch {
-          // legacy WhatsApp Web builds
-          return window.Store?.Chat?.getModelsArray?.() || [];
-        }
-      };
-
-      const getContactName = (chat) => {
-        try {
-          const contact = window.require('WAWebCollections').Contact.get(chat.id);
-          return (
-            contact?.name ||
-            contact?.pushname ||
-            contact?.shortName ||
-            contact?.verifiedName ||
-            ''
-          );
-        } catch {
-          return '';
-        }
-      };
-
-      const isGroupChat = (chat) => {
-        if (chat.isGroup) return true;
-        if (chat.groupMetadata) return true;
-        try {
-          return window.require('WAWebChatGetters').getIsGroup(chat);
-        } catch {
-          return false;
-        }
-      };
-
-      return getChatModels()
-        .filter((chat) => !isGroupChat(chat))
-        .filter((chat) => {
-          const chatId = chat.id?._serialized || '';
-          const server = chatId.split('@')[1] || '';
-          return chatId && ['c.us', 's.whatsapp.net', 'lid'].includes(server);
-        })
-        .sort((a, b) => {
-          const tsA = a.t?.low ?? a.t ?? 0;
-          const tsB = b.t?.low ?? b.t ?? 0;
-          return tsB - tsA;
-        })
-        .slice(0, max)
-        .map((chat) => {
-          const chatId = chat.id._serialized;
-          const server = chatId.split('@')[1] || '';
-          const userPart = chatId.split('@')[0];
-          const name = String(
-            chat.name ||
-              chat.formattedTitle ||
-              getContactName(chat) ||
-              userPart ||
-              ''
-          ).trim();
-          return { chatId, name, server, userPart };
-        });
-    }, limit),
-    20000,
-    'WhatsApp chat list'
-  );
-
-  const serialized = [];
   const seen = new Set();
+  const rows = [];
 
-  for (const row of rows) {
-    if (!row?.chatId || seen.has(row.chatId)) continue;
-    seen.add(row.chatId);
+  const pushRow = (phone, name = '') => {
+    const normalized = normalizePhoneValue(phone);
+    if (!normalized || String(normalized).includes('@')) return;
 
-    const phoneNumber =
-      row.server === 'lid'
-        ? ''
-        : resolvePhoneFromChatId(row.chatId) || normalizePhoneValue(row.userPart) || '';
+    const digits = String(normalized).replace(/\D/g, '');
+    if (!digits || seen.has(digits)) return;
 
-    serialized.push({
-      chatId: row.chatId,
-      name: row.name || row.userPart,
-      phoneNumber: phoneNumber && !String(phoneNumber).includes('@') ? phoneNumber : '',
-      source: 'whatsapp'
+    seen.add(digits);
+    rows.push({
+      chatId: `${digits}@s.whatsapp.net`,
+      name: String(name || '').trim() || normalized,
+      phoneNumber: normalized,
+      source: 'recent'
     });
-  }
+  };
 
-  return serialized;
+  const [autoReplyLogs, messageLogs, groups] = await Promise.all([
+    AutoReplyLog.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .select('contactPhone contactName')
+      .lean(),
+    MessageLog.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .select('number')
+      .lean(),
+    ContactGroup.find({ userId }).select('numbers').lean()
+  ]);
+
+  autoReplyLogs.forEach((log) => pushRow(log.contactPhone, log.contactName));
+  messageLogs.forEach((log) => pushRow(log.number));
+  groups.forEach((group) => {
+    (group.numbers || []).forEach((entry) => pushRow(entry.phone, entry.name));
+  });
+
+  rows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return rows.slice(0, limit);
 };
 
-const fetchWhatsAppContacts = async (client, { limit = 100 } = {}) => {
-  const fastList = await fetchRecentChatsFromStore(client, limit);
-  fastList.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  return fastList;
+const fetchWhatsAppContacts = async (client, { limit = 100, userId = null } = {}) => {
+  if (typeof client?.getChatsForPicker === 'function') {
+    return client.getChatsForPicker(limit);
+  }
+
+  throw new Error('WhatsApp client does not support contact listing');
 };
 
 const isPersonalChat = (chat) => {
@@ -396,6 +351,7 @@ module.exports = {
   contactMatchesSelection,
   enrichChatContact,
   fetchWhatsAppContacts,
+  getRecentChatsFromDb,
   getChatTimestamp,
   normalizePhoneValue
 };
