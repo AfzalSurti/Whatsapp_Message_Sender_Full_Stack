@@ -23,7 +23,9 @@ const {
   upsertContactRecord,
   getChatsForPicker,
   hasPickerCandidates,
-  normalizeJid
+  normalizeJid,
+  buildLidPhoneMap,
+  resolveLidPhonesViaUsync
 } = require('../utils/baileysAdapter');
 
 const clients = new Map();
@@ -163,6 +165,15 @@ const bindSocketEvents = ({
   sock.ev.on('messaging-history.set', ({ chats = [], contacts = [] }) => {
     chats.forEach((chat) => upsertChatRecord(entry.chatMap, chat));
     contacts.forEach((contact) => upsertContactRecord(entry.contactMap, contact));
+  });
+
+  sock.ev.on('chats.phoneNumberShare', ({ lid, jid }) => {
+    const { resolvePhoneFromChatId } = require('../utils/whatsappChat');
+    const lidNorm = normalizeJid(lid);
+    const phone = resolvePhoneFromChatId(normalizeJid(jid)) || resolvePhoneFromChatId(jid);
+    if (lidNorm && phone) {
+      entry.lidPhoneMap.set(lidNorm, phone);
+    }
   });
 
   sock.ev.on('connection.update', async (update) => {
@@ -305,6 +316,7 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
 
   const chatMap = new Map();
   const contactMap = new Map();
+  const lidPhoneMap = new Map();
 
   const sock = makeWASocket({
     version,
@@ -331,6 +343,7 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
     saveCreds,
     chatMap,
     contactMap,
+    lidPhoneMap,
     qrTimeoutHandle: null
   };
 
@@ -520,10 +533,40 @@ const getPickerContacts = async (userId, { limit = 200, forceRefresh = false } =
   const entry = clients.get(userIdStr);
   await hydratePickerMaps(entry, 15000);
 
-  let contacts = getChatsForPicker(entry.chatMap, entry.contactMap, { limit });
+  let lidPhoneMap = buildLidPhoneMap(entry.contactMap, entry.lidPhoneMap);
+
+  const unresolvedLids = [];
+  entry.chatMap.forEach((chat) => {
+    const chatId = normalizeJid(chat?.id);
+    if (chatId.endsWith('@lid') && !lidPhoneMap.has(chatId)) {
+      unresolvedLids.push(chatId);
+    }
+  });
+  entry.contactMap.forEach((contact) => {
+    const contactId = normalizeJid(contact?.id);
+    if (contactId.endsWith('@lid') && !lidPhoneMap.has(contactId)) {
+      unresolvedLids.push(contactId);
+    }
+  });
+
+  if (unresolvedLids.length > 0 && entry.sock) {
+    const resolved = await resolveLidPhonesViaUsync(entry.sock, unresolvedLids);
+    resolved.forEach((phone, lid) => {
+      lidPhoneMap.set(lid, phone);
+      entry.lidPhoneMap.set(lid, phone);
+    });
+  }
+
+  const selfDigits = String(entry.sock?.user?.id || '').split('@')[0] || '';
+
+  let contacts = getChatsForPicker(entry.chatMap, entry.contactMap, {
+    limit,
+    lidPhoneMap,
+    excludePhoneDigits: selfDigits
+  });
 
   console.log(
-    `Picker maps for ${userIdStr}: chats=${entry.chatMap.size}, contacts=${entry.contactMap.size}, picked=${contacts.length}`
+    `Picker maps for ${userIdStr}: chats=${entry.chatMap.size}, contacts=${entry.contactMap.size}, lidMap=${lidPhoneMap.size}, picked=${contacts.length}`
   );
 
   if (contacts.length === 0) {
