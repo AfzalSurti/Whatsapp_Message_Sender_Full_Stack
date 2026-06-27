@@ -168,50 +168,65 @@ const hasPickerCandidates = (chatMap, contactMap) => {
   return false;
 };
 
-const getChatsForPicker = (chatMap, contactMap, { limit = 100 } = {}) => {
-  const { normalizePhoneValue } = require('./whatsappChat');
-  const seen = new Set();
-  const rows = [];
+const getChatsForPicker = (chatMap, contactMap, { limit = 200 } = {}) => {
+  const {
+    baileysContactToPickerShape,
+    resolvePickerPhone,
+    classifyPickerContact,
+    mergePickerRows,
+    sortPickerContacts,
+    pickContactDisplayName,
+    normalizePhoneValue
+  } = require('./whatsappChat');
 
-  const pushRow = (chatId, chat = {}, contact = null) => {
+  const rawRows = [];
+
+  const buildRow = (chatId, chat = {}, contactRecord = null) => {
     const normalizedId = normalizeJid(chatId);
-    if (!normalizedId || seen.has(normalizedId) || !isPersonalChatJid(normalizedId)) return;
+    if (!normalizedId || !isPersonalChatJid(normalizedId)) return;
 
-    seen.add(normalizedId);
-    const server = normalizedId.split('@')[1] || '';
-    const userPart = normalizedId.split('@')[0];
-    const resolvedContact = contact || contactMap.get(normalizedId);
-    const name =
-      String(
-        chat.name ||
-          chat.pushName ||
-          resolvedContact?.name ||
-          resolvedContact?.notify ||
-          resolvedContact?.verifiedName ||
-          userPart
-      ).trim() || userPart;
+    const pickerContact = baileysContactToPickerShape(contactRecord);
+    const userPart = normalizedId.split('@')[0] || '';
+    const phoneNumber = resolvePickerPhone(normalizedId, chat, contactRecord) || '';
+    const fallback = phoneNumber ? normalizePhoneValue(phoneNumber)?.replace('+', '') || userPart : userPart;
+    const name = pickContactDisplayName(pickerContact, chat, fallback);
+    const { isSaved, hasDisplayName, sortRank } = classifyPickerContact(
+      name,
+      contactRecord,
+      phoneNumber
+    );
 
-    const phoneNumber =
-      server === 'lid'
-        ? ''
-        : normalizePhoneValue(userPart) || '';
-
-    rows.push({
+    rawRows.push({
       chatId: normalizedId,
       name,
       phoneNumber: phoneNumber && !String(phoneNumber).includes('@') ? phoneNumber : '',
-      source: 'whatsapp'
+      source: 'whatsapp',
+      isSaved,
+      hasDisplayName,
+      sortRank
     });
   };
 
+  // Saved address-book contacts first — most reliable names and numbers
+  Array.from(contactMap.values()).forEach((contact) => {
+    buildRow(contact.id, {}, contact);
+  });
+
+  // Then recent chats (may add chats not in contact list)
   Array.from(chatMap.values())
     .sort((a, b) => (Number(b.conversationTimestamp) || 0) - (Number(a.conversationTimestamp) || 0))
-    .forEach((chat) => pushRow(chat.id, chat));
+    .forEach((chat) => {
+      const contactRecord = contactMap.get(normalizeJid(chat.id));
+      buildRow(chat.id, chat, contactRecord);
+    });
 
-  Array.from(contactMap.values()).forEach((contact) => pushRow(contact.id, {}, contact));
+  const merged = mergePickerRows(rawRows);
 
-  rows.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  return rows.slice(0, limit);
+  // Contact picker needs a dialable number — keep saved/name rows even if phone missing last
+  const withPhone = merged.filter((row) => row.phoneNumber);
+  const withoutPhone = merged.filter((row) => !row.phoneNumber && row.isSaved);
+
+  return sortPickerContacts([...withPhone, ...withoutPhone]).slice(0, limit);
 };
 
 const createBaileysClientAdapter = (sock, { chatMap, contactMap }) => {

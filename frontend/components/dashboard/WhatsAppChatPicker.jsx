@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Search, UserPlus } from 'lucide-react';
 import { whatsappAPI } from '@/lib/api';
 import { formatPhoneNumber } from '@/lib/phone';
@@ -71,6 +71,70 @@ export default function WhatsAppChatPicker({
     const queryDigits = query.replace(/\D/g, '');
     return name.includes(query) || (queryDigits && phone.includes(queryDigits));
   });
+
+  const contactSections = useMemo(() => {
+    const saved = [];
+    const named = [];
+    const unknown = [];
+
+    filteredContacts.forEach((contact) => {
+      if (contact.isSaved || contact.sortRank === 0) {
+        saved.push(contact);
+        return;
+      }
+      if (contact.hasDisplayName || contact.sortRank === 1) {
+        named.push(contact);
+        return;
+      }
+      unknown.push(contact);
+    });
+
+    return [
+      { title: 'Saved contacts', items: saved },
+      { title: 'WhatsApp names', items: named },
+      { title: 'Phone numbers', items: unknown }
+    ].filter((section) => section.items.length > 0);
+  }, [filteredContacts]);
+
+  const renderContactRow = (contact) => {
+    const phone = contact.phoneNumber || '';
+    const phoneDigits = String(phone).replace(/\D/g, '');
+    const isSelected = normalizedSelected && phoneDigits === normalizedSelected;
+    const isAdding = addingPhone && phoneDigits === addingPhone;
+
+    return (
+      <button
+        key={contact.chatId || phone || contact.name}
+        type="button"
+        disabled={Boolean(addingPhone) || !phone}
+        onClick={() => handleContactAction(contact)}
+        className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl text-left transition-colors border ${
+          isSelected
+            ? 'bg-[#25D366]/10 border-[#25D366]/30'
+            : 'border-transparent hover:bg-white/5 hover:border-white/5'
+        } disabled:opacity-60`}
+      >
+        <div className="min-w-0">
+          <div className="text-sm font-medium truncate">{contact.name || 'Unknown'}</div>
+          {phone ? (
+            <div className="text-xs text-gray-400 mt-0.5">{formatContactPhone(phone)}</div>
+          ) : (
+            <div className="text-xs text-amber-400 mt-0.5">No phone number available</div>
+          )}
+        </div>
+        {onQuickAdd ? (
+          <span className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-[#25D366] bg-[#25D366]/10 px-2.5 py-1 rounded-lg">
+            {isAdding ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <UserPlus size={12} />
+            )}
+            Add
+          </span>
+        ) : null}
+      </button>
+    );
+  };
 
   const formatContactPhone = (phone) => {
     if (!phone || String(phone).includes('@')) return phone;
@@ -160,43 +224,14 @@ export default function WhatsAppChatPicker({
                 : 'Connect WhatsApp first to see your chats here.'}
           </p>
         ) : (
-          filteredContacts.map((contact) => {
-            const phone = contact.phoneNumber || '';
-            const phoneDigits = String(phone).replace(/\D/g, '');
-            const isSelected = normalizedSelected && phoneDigits === normalizedSelected;
-            const isAdding = addingPhone && phoneDigits === addingPhone;
-
-            return (
-              <button
-                key={contact.chatId || phone}
-                type="button"
-                disabled={Boolean(addingPhone)}
-                onClick={() => handleContactAction(contact)}
-                className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl text-left transition-colors border ${
-                  isSelected
-                    ? 'bg-[#25D366]/10 border-[#25D366]/30'
-                    : 'border-transparent hover:bg-white/5 hover:border-white/5'
-                } disabled:opacity-60`}
-              >
-                <div className="min-w-0">
-                  <div className="text-sm font-medium truncate">{contact.name || 'Unknown'}</div>
-                  {phone ? (
-                    <div className="text-xs text-gray-400 mt-0.5">{formatContactPhone(phone)}</div>
-                  ) : null}
-                </div>
-                {onQuickAdd ? (
-                  <span className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-[#25D366] bg-[#25D366]/10 px-2.5 py-1 rounded-lg">
-                    {isAdding ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      <UserPlus size={12} />
-                    )}
-                    Add
-                  </span>
-                ) : null}
-              </button>
-            );
-          })
+          contactSections.map((section) => (
+            <div key={section.title} className="space-y-1">
+              <div className="px-2 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                {section.title}
+              </div>
+              {section.items.map(renderContactRow)}
+            </div>
+          ))
         )}
       </div>
     </div>

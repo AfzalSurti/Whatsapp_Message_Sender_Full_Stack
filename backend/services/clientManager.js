@@ -494,7 +494,7 @@ const PICKER_CACHE_TTL_MS = 30000;
 
 const { getRecentChatsFromDb } = require('../utils/whatsappChat');
 
-const getPickerContacts = async (userId, { limit = 100, forceRefresh = false } = {}) => {
+const getPickerContacts = async (userId, { limit = 200, forceRefresh = false } = {}) => {
   const userIdStr = userId.toString();
   const cacheKey = `${userIdStr}:${limit}`;
 
