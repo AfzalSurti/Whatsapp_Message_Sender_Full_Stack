@@ -8,6 +8,7 @@ const{
     connectWhatsApp,
     getWhatsAppStatus,
     disconnectWhatsApp,
+    getWhatsAppContacts,
     sendBulkMessages,
     sendBulkMessagesViaApiKey
 }=require('../controllers/whatsappController');
@@ -23,6 +24,7 @@ const handleValidation = (req, res, next) => {
 router.post('/connect',protect,connectWhatsApp);
 router.get('/status',protect,getWhatsAppStatus);
 router.post('/disconnect',protect,disconnectWhatsApp);
+router.get('/contacts', protect, getWhatsAppContacts);
 router.post('/send', protect, [
   body('numbers').isArray({ min: 1, max: 500 }).withMessage('Provide 1 to 500 phone numbers'),
   body('message').exists().withMessage('Message is required')

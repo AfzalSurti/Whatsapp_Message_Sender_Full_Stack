@@ -1,34 +1,57 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { getCachedUser, getToken } from '@/lib/auth';
 import { Loader2 } from 'lucide-react';
 
+function AuthGateLoader() {
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <Loader2 className="animate-spin text-[#25D366]" size={32} />
+    </div>
+  );
+}
+
+function useMounted() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  return mounted;
+}
+
 export function useRedirectIfAuthenticated(redirectTo = '/dashboard') {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const hasSession = Boolean(user || (getToken() && getCachedUser()));
+  const mounted = useMounted();
+
+  const token = mounted ? getToken() : null;
+  const cachedUser = mounted ? getCachedUser() : null;
+  const hasSession = Boolean(user || (token && cachedUser));
+  const shouldCheckAuth = Boolean(token);
 
   useEffect(() => {
-    if (!loading && hasSession) {
+    if (!mounted) return;
+    if (shouldCheckAuth && !loading && hasSession) {
       router.replace(redirectTo);
     }
-  }, [hasSession, loading, router, redirectTo]);
+  }, [mounted, shouldCheckAuth, loading, hasSession, router, redirectTo]);
 
-  return { user, loading, isAuthenticated: hasSession };
+  // Only block the page when there is a token to verify or an active session to redirect.
+  const showLoader = !mounted || (shouldCheckAuth && (loading || hasSession));
+
+  return { user, loading, isAuthenticated: hasSession, showLoader, mounted };
 }
 
 export function AuthRedirectGate({ children, redirectTo = '/dashboard' }) {
-  const { loading, isAuthenticated } = useRedirectIfAuthenticated(redirectTo);
+  const { showLoader } = useRedirectIfAuthenticated(redirectTo);
 
-  if (loading || isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <Loader2 className="animate-spin text-[#25D366]" size={32} />
-      </div>
-    );
+  if (showLoader) {
+    return <AuthGateLoader />;
   }
 
   return children;

@@ -149,51 +149,74 @@ export default function GroupsPage() {
     }
   };
 
-  const handleWhatsAppChatSelect = (chat) => {
-    const normalized = normalizePhoneNumber(chat.phone);
-    if (!normalized) {
-      toast.error('This chat does not have a valid phone number');
-      return;
-    }
-
-    setContactName(chat.name || normalized.displayNumber);
-    setContactPhone(normalized.nationalNumber);
-    setContactCountry(normalized.country || DEFAULT_PHONE_COUNTRY);
-    setAddContactMode('manual');
-    toast.success('Contact details filled from WhatsApp');
-  };
-
   const resetAddContactForm = () => {
     setContactName('');
     setContactPhone('');
     setAddTags([]);
-    setAddContactMode('manual');
+    setAddContactMode(waStatus === 'connected' ? 'whatsapp' : 'manual');
   };
 
-  const handleAddContact = async () => {
-    if (!contactName.trim() || !contactPhone.trim()) {
+  const openAddContactModal = () => {
+    setAddContactMode(waStatus === 'connected' ? 'whatsapp' : 'manual');
+    setShowAddModal(true);
+  };
+
+  const saveContact = async ({ name, phone, country = contactCountry, tags = addTags }) => {
+    if (!name?.trim() || !phone?.trim()) {
       toast.error('Enter name and phone');
-      return;
+      return false;
     }
 
-    const normalized = normalizePhoneNumber(contactPhone, contactCountry);
+    const normalized = normalizePhoneNumber(phone, country);
     if (!normalized) {
       toast.error('Enter a valid phone number');
-      return;
+      return false;
     }
 
     if (!generalGroupId) {
       toast.error('No contact group available');
-      return;
+      return false;
     }
 
+    await groupsAPI.addNumber(generalGroupId, {
+      name: name.trim(),
+      phone: normalized.e164,
+      tags
+    });
+    return true;
+  };
+
+  const handleQuickAddFromWhatsApp = async ({ name, phone }) => {
+    try {
+      const saved = await saveContact({ name, phone });
+      if (!saved) return;
+
+      toast.success(`${name} added to contacts`);
+      setShowAddModal(false);
+      resetAddContactForm();
+      await fetchOverview();
+    } catch (err) {
+      const message = err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Failed to add contact';
+      if (/already exists/i.test(message)) {
+        toast.error('This contact is already in your list');
+      } else {
+        toast.error(message);
+      }
+      throw err;
+    }
+  };
+
+  const handleAddContact = async () => {
     setAddingContact(true);
     try {
-      await groupsAPI.addNumber(generalGroupId, {
-        name: contactName.trim(),
-        phone: normalized.e164,
+      const saved = await saveContact({
+        name: contactName,
+        phone: contactPhone,
+        country: contactCountry,
         tags: addTags
       });
+      if (!saved) return;
+
       toast.success('Contact added');
       setShowAddModal(false);
       resetAddContactForm();
@@ -312,7 +335,7 @@ export default function GroupsPage() {
             </button>
             <button
               type="button"
-              onClick={() => setShowAddModal(true)}
+              onClick={openAddContactModal}
               className="bg-[#25D366] hover:bg-[#1ebe5d] text-black text-sm font-semibold px-4 py-2 rounded-xl flex items-center gap-2"
             >
               <UserPlus size={16} /> Add Contact
@@ -433,7 +456,7 @@ export default function GroupsPage() {
       {showAddModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#111] border border-white/10 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center justify-between mb-2">
               <h3 className="font-bold text-lg">Add Contact</h3>
               <button
                 type="button"
@@ -441,21 +464,28 @@ export default function GroupsPage() {
                   setShowAddModal(false);
                   resetAddContactForm();
                 }}
+                className="text-gray-400 hover:text-white"
+                aria-label="Close"
               >
                 <X size={16} />
               </button>
             </div>
+            <p className="text-sm text-gray-400 mb-5">
+              {addContactMode === 'whatsapp'
+                ? 'Pick someone from your WhatsApp chats — one tap to add.'
+                : 'Enter contact details manually.'}
+            </p>
 
-            <div className="inline-flex p-1 rounded-xl bg-[#0a0a0a] border border-white/10 gap-1 mb-5">
+            <div className="inline-flex p-1 rounded-xl bg-[#0a0a0a] border border-white/10 gap-1 mb-5 w-full">
               {[
-                { id: 'manual', label: 'Manual Entry' },
-                { id: 'whatsapp', label: 'WhatsApp Chats' }
+                { id: 'whatsapp', label: 'From WhatsApp' },
+                { id: 'manual', label: 'Type manually' }
               ].map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => setAddContactMode(item.id)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                     addContactMode === item.id
                       ? 'bg-[#25D366] text-black'
                       : 'text-gray-400 hover:text-white hover:bg-white/5'
@@ -466,55 +496,95 @@ export default function GroupsPage() {
               ))}
             </div>
 
-            <div className="space-y-4">
-              {addContactMode === 'whatsapp' ? (
-                <>
-                  <p className="text-sm text-gray-400">
-                    Pick a WhatsApp chat to fill the name and phone number below.
-                  </p>
-                  <WhatsAppChatPicker
-                    waConnected={waStatus === 'connected'}
-                    selectedPhone={contactPhone}
-                    onSelect={handleWhatsAppChatSelect}
+            {addContactMode === 'whatsapp' ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-xs">
+                  <span
+                    className={`inline-block w-2 h-2 rounded-full ${
+                      waStatus === 'connected' ? 'bg-[#25D366]' : 'bg-red-500'
+                    }`}
                   />
-                </>
-              ) : null}
+                  <span className={waStatus === 'connected' ? 'text-gray-300' : 'text-amber-400'}>
+                    {waStatus === 'connected'
+                      ? 'WhatsApp connected — your chats will load automatically'
+                      : 'Connect WhatsApp from the top bar first'}
+                  </span>
+                </div>
 
-              <input
-                value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                placeholder="Full name"
-                className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm"
-              />
-              <InternationalPhoneInput
-                value={contactPhone}
-                defaultCountry={contactCountry}
-                onChange={(phone, meta) => {
-                  setContactPhone(phone);
-                  setContactCountry(meta?.country?.iso2?.toUpperCase() || contactCountry);
-                }}
-                onCountryChange={setContactCountry}
-                placeholder="Phone number"
-              />
+                <WhatsAppChatPicker
+                  active={showAddModal && addContactMode === 'whatsapp'}
+                  waConnected={waStatus === 'connected'}
+                  onQuickAdd={handleQuickAddFromWhatsApp}
+                />
 
-              <SegmentTagPicker
-                tagLibrary={tagLibrary}
-                selectedTags={addTags}
-                onSelectedChange={setAddTags}
-                onCreateTag={(name) => handleCreateTag(name, 'add')}
-                creatingTag={creatingTag}
-              />
+                <button
+                  type="button"
+                  onClick={() => setAddContactMode('manual')}
+                  className="w-full text-sm text-gray-400 hover:text-white py-2"
+                >
+                  Or type the number manually instead
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-200 mb-1.5">Name</label>
+                  <input
+                    value={contactName}
+                    onChange={(e) => setContactName(e.target.value)}
+                    placeholder="e.g. John Smith"
+                    className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/10 rounded-xl text-sm outline-none focus:border-[#25D366]/40"
+                  />
+                </div>
 
-              <button
-                type="button"
-                disabled={addingContact}
-                onClick={handleAddContact}
-                className="w-full bg-[#25D366] text-black font-semibold py-2.5 rounded-xl disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {addingContact ? <Loader2 size={16} className="animate-spin" /> : null}
-                Save Contact
-              </button>
-            </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-200 mb-1.5">Phone number</label>
+                  <InternationalPhoneInput
+                    value={contactPhone}
+                    defaultCountry={contactCountry}
+                    onChange={(phone, meta) => {
+                      setContactPhone(phone);
+                      setContactCountry(meta?.country?.iso2?.toUpperCase() || contactCountry);
+                    }}
+                    onCountryChange={setContactCountry}
+                    placeholder="Phone number"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-200 mb-1.5">
+                    Tags <span className="text-gray-500 font-normal">(optional)</span>
+                  </label>
+                  <SegmentTagPicker
+                    tagLibrary={tagLibrary}
+                    selectedTags={addTags}
+                    onSelectedChange={setAddTags}
+                    onCreateTag={(name) => handleCreateTag(name, 'add')}
+                    creatingTag={creatingTag}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  disabled={addingContact}
+                  onClick={handleAddContact}
+                  className="w-full bg-[#25D366] text-black font-semibold py-3 rounded-xl disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {addingContact ? <Loader2 size={16} className="animate-spin" /> : null}
+                  Save Contact
+                </button>
+
+                {waStatus === 'connected' ? (
+                  <button
+                    type="button"
+                    onClick={() => setAddContactMode('whatsapp')}
+                    className="w-full text-sm text-gray-400 hover:text-white py-2"
+                  >
+                    Pick from WhatsApp chats instead
+                  </button>
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
       )}

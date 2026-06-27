@@ -1,7 +1,7 @@
 const express = require('express');
 require('dotenv').config();
-const fs = require('fs');
 const http = require('http');           // needed to share server with WebSocket
+const mongoose = require('mongoose');
 const cors = require('cors');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
@@ -31,6 +31,36 @@ const PORT = process.env.PORT || 5000;
 
 // ─── CONNECT DATABASE ─────────────────────────────────────────
 connectDB();
+
+const waitForMongoConnection = (timeoutMs = 20000) => {
+  if (mongoose.connection.readyState === 1) {
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const cleanup = () => {
+      mongoose.connection.off('connected', onConnected);
+      mongoose.connection.off('error', onError);
+    };
+
+    const done = (connected) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(connected);
+    };
+
+    const onConnected = () => done(true);
+    const onError = () => done(false);
+
+    mongoose.connection.once('connected', onConnected);
+    mongoose.connection.once('error', onError);
+
+    setTimeout(() => done(mongoose.connection.readyState === 1), timeoutMs);
+  });
+};
 
 // ─── RATE LIMITING ────────────────────────────────────────────
 const limiter = rateLimit({
@@ -66,8 +96,6 @@ app.use('/api/keys', require('./routes/keys'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/scheduled', require('./routes/scheduled'));
 app.use('/api/templates', require('./routes/templates'));
-app.use('/api/ai-templates', require('./routes/aiTemplates'));
-app.use('/api/auto-reply', require('./routes/autoReply'));
 app.use('/api/business-profile', require('./routes/businessProfile'));
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────
@@ -75,6 +103,7 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     message: 'WA Sender API is running',
+    db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     timestamp: new Date().toISOString()
   });
 });
@@ -137,10 +166,16 @@ server.listen(PORT, () => {
       ? 5000
       : 2000;
 
-  setTimeout(() => {
+  setTimeout(async () => {
+    const mongoReady = await waitForMongoConnection(30000);
+    if (!mongoReady) {
+      console.warn('⚠️ MongoDB not connected yet; skipping session recovery and scheduler startup for now.');
+      return;
+    }
+
     recoverSessions(sendToUser);
 
-    // Start campaign scheduler after clientManager is ready
+    // Start campaign scheduler after MongoDB is connected
     startScheduler(sendMessages, clientManager);
     console.log('📅 Campaign scheduler started');
   }, recoveryDelayMs);

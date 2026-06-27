@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+.baileys_auth
+.puppeteer-cache
+.git
+.gitignore
+*.md
+nodemon.json

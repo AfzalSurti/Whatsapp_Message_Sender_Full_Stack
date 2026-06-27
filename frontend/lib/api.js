@@ -58,6 +58,10 @@ export const whatsappAPI = {
   getStatus: () => api.get('/api/whatsapp/status'),
   disconnect: () => api.post('/api/whatsapp/disconnect'),
   send: (data) => api.post('/api/whatsapp/send', data),
+  getWhatsAppContacts: (options = {}) => api.get('/api/whatsapp/contacts', {
+    timeout: 60000,
+    params: options.force ? { refresh: '1' } : undefined
+  }),
 };
 
 // ─── AI ───────────────────────────────────────────────────────
@@ -125,41 +129,6 @@ export const templatesAPI = {
   createTemplate: (data) => api.post('/api/templates', data),
   updateTemplate: (id, data) => api.put(`/api/templates/${id}`, data),
   deleteTemplate: (id) => api.delete(`/api/templates/${id}`),
-};
-
-// ─── AI TEMPLATES (INTENT + WORKFLOW) ──────────────────────────
-export const aiTemplateAPI = {
-  getTemplates: () => api.get('/api/ai-templates'),
-  getStarterTemplates: () => api.get('/api/ai-templates/starters'),
-  getExampleTemplate: (slug = 'welcome') => api.get(`/api/ai-templates/example/${slug}`),
-  addStarterTemplate: (slug) => api.post(`/api/ai-templates/starters/${slug}`),
-  createTemplate: (data) => api.post('/api/ai-templates', data),
-  updateTemplate: (id, data) => api.put(`/api/ai-templates/${id}`, data),
-  deleteTemplate: (id) => api.delete(`/api/ai-templates/${id}`),
-  toggleTemplate: (id) => api.patch(`/api/ai-templates/${id}/toggle`),
-  getConversations: (params) => api.get('/api/ai-templates/conversations', { params }),
-  getConversation: (id) => api.get(`/api/ai-templates/conversations/${id}`),
-  deleteConversation: (id) => api.delete(`/api/ai-templates/conversations/${id}`),
-  getLeads: (params) => api.get('/api/ai-templates/leads', { params }),
-};
-
-// Backward-compatible alias
-export const templateAPI = aiTemplateAPI;
-
-// ─── AUTO REPLY ────────────────────────────────────────────────
-export const autoReplyAPI = {
-  getConfig: () => api.get('/api/auto-reply/config'),
-  updateConfig: (data) => api.put('/api/auto-reply/config', data),
-  getWhatsAppContacts: (options = {}) => api.get('/api/auto-reply/whatsapp-contacts', {
-    timeout: 60000,
-    params: options.force ? { refresh: '1' } : undefined
-  }),
-  getLogs: (params) => api.get('/api/auto-reply/logs', { params }),
-  getContacts: () => api.get('/api/auto-reply/contacts'),
-  deleteLog: (id) => api.delete(`/api/auto-reply/logs/${id}`),
-  deleteContactLogs: (contactPhone) =>
-    api.delete('/api/auto-reply/contacts', { params: { contactPhone } }),
-  clearLogs: () => api.delete('/api/auto-reply/logs'),
 };
 
 // ─── BUSINESS PROFILE ──────────────────────────────────────────

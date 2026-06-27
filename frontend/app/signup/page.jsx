@@ -11,7 +11,7 @@ import { validateEmail, validateName, validatePassword } from '@/lib/validation'
 export default function SignupPage() {
   const { signup } = useAuth();
   const router = useRouter();
-  const { loading: authLoading, isAuthenticated } = useRedirectIfAuthenticated();
+  const { showLoader } = useRedirectIfAuthenticated();
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -48,7 +48,7 @@ export default function SignupPage() {
     }
   };
 
-  if (authLoading || isAuthenticated) {
+  if (showLoader) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
         <Loader2 className="animate-spin text-[#25D366]" size={32} />
