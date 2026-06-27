@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { getCachedUser, getToken } from '@/lib/auth';
 import { Loader2 } from 'lucide-react';
@@ -33,10 +33,11 @@ export function useRedirectIfAuthenticated(redirectTo = '/dashboard') {
   const cachedUser = mounted ? getCachedUser() : null;
   const hasSession = Boolean(user || (token && cachedUser));
   const shouldCheckAuth = Boolean(token);
+  const pathname = usePathname()
 
   useEffect(() => {
     if (!mounted) return;
-    if (shouldCheckAuth && !loading && hasSession) {
+    if (shouldCheckAuth && !loading && hasSession && pathname != "/") {
       router.replace(redirectTo);
     }
   }, [mounted, shouldCheckAuth, loading, hasSession, router, redirectTo]);

@@ -91,6 +91,7 @@ export const keysAPI = {
   getFullKey: (id) => api.get(`/api/keys/${id}/full`),
   getKeyStats: (id) => api.get(`/api/keys/${id}/stats`),
   deleteKey: (id) => api.delete(`/api/keys/${id}`),
+  whatsappTest: (id) => api.get(`whatsapp/send-via-api/${id}`),
 };
 
 // ─── CONTACT GROUPS ────────────────────────────────────────────

@@ -8,6 +8,7 @@ import {
   Copy, Eye, Trash2, Plus, Loader2, X, Check,
   Key, Code, TrendingUp, Zap
 } from 'lucide-react';
+import axios from 'axios';
 
 export default function ApiKeysPage() {
   const { user, loading } = useAuth();
@@ -111,6 +112,30 @@ export default function ApiKeysPage() {
       toast.error('Failed to delete key');
     }
   };
+
+ const handleSendMessage = async () => {
+  try {
+    const response = await axios.post(
+      "http://localhost:6001/api/whatsapp/send-via-api",
+      {
+        numbers: ["+917359813419"],
+        message: "Hello from API",
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": "wsa_live_1da615e2332a563d56b132074ef6879a", // Replace with your actual API key
+        },
+      }
+    );
+    console.log("Message sent:", response.data);
+  } catch (error) {
+    console.error(
+      "Failed to send message:",
+      error.response?.data || error.message
+    );
+  }
+};
 
   if (loading) {
     return (
@@ -475,7 +500,7 @@ export default function ApiKeysPage() {
           <div className="bg-[#111] border border-[#25D366]/20 rounded-2xl p-6 space-y-4">
             <h3 className="font-semibold text-base flex items-center gap-2">
               <Code size={16} className="text-[#25D366]" />
-              How to Use Your API Key
+              How to Use Your API Key <button onClick={handleSendMessage}>check api key</button>
             </h3>
 
             <div className="space-y-3">
