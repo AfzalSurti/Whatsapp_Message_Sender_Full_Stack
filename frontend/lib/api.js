@@ -59,8 +59,8 @@ export const whatsappAPI = {
   disconnect: () => api.post('/api/whatsapp/disconnect'),
   send: (data) => api.post('/api/whatsapp/send', data),
   getWhatsAppContacts: (options = {}) => api.get('/api/whatsapp/contacts', {
-    timeout: 60000,
-    params: options.force ? { refresh: '1' } : undefined
+    timeout: options.force ? 180000 : 120000,
+    params: options.force ? { refresh: '1', _: Date.now() } : { _: Date.now() }
   }),
 };
 

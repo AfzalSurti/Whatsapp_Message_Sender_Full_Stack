@@ -91,8 +91,8 @@ export const autoReplyAPI = {
   getConfig: () => api.get('/api/auto-reply/config'),
   updateConfig: (data) => api.put('/api/auto-reply/config', data),
   getWhatsAppContacts: (options = {}) => api.get('/api/auto-reply/whatsapp-contacts', {
-    timeout: 60000,
-    params: options.force ? { refresh: '1' } : undefined
+    timeout: options.force ? 180000 : 120000,
+    params: options.force ? { refresh: '1', _: Date.now() } : { _: Date.now() }
   }),
   getLogs: (params) => api.get('/api/auto-reply/logs', { params }),
   getContacts: () => api.get('/api/auto-reply/contacts'),

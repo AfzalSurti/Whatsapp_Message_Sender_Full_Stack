@@ -219,7 +219,7 @@ const getWhatsAppContacts = async (req, res) => {
     const forceRefresh = req.query.refresh === '1';
 
     const contacts = await clientManager.getPickerContacts(userId, {
-      limit: 200,
+      limit: 500,
       forceRefresh
     });
 

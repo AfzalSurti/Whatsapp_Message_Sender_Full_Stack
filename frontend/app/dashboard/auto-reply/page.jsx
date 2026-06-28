@@ -17,7 +17,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { aiTemplateAPI, autoReplyAPI, groupsAPI } from '@/lib/api';
 import { formatPhoneNumber } from '@/lib/phone';
-import { cachedRequest } from '@/lib/requestCache';
+import { cachedRequest, invalidateCachedRequest } from '@/lib/requestCache';
 import { useDashboardShell } from '../DashboardShellContext';
 
 const statusConfig = {
@@ -157,6 +157,10 @@ export default function AutoReplyPage() {
     whatsappFetchInFlightRef.current = true;
     setContactsLoading(true);
     setContactsError('');
+
+    if (force) {
+      invalidateCachedRequest('whatsapp-picker-contacts');
+    }
 
     try {
       const contacts = await cachedRequest(

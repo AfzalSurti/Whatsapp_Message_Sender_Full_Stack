@@ -8,6 +8,7 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
+const { makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys/lib/Utils/auth-utils');
 const Session = require('../models/Session');
 const {
   AUTH_DATA_PATH,
@@ -23,7 +24,6 @@ const {
   upsertChatRecord,
   upsertContactRecord,
   getChatsForPicker,
-  hasPickerCandidates,
   normalizeJid,
   buildLidPhoneMap,
   resolveLidPhonesViaUsync,
@@ -33,6 +33,14 @@ const {
 
 const clients = new Map();
 const clientsBeingCreated = new Set();
+const ALL_WA_PATCH_NAMES = [
+  'critical_block',
+  'critical_unblock_low',
+  'regular_high',
+  'regular_low',
+  'regular'
+];
+const MIN_EXPECTED_CONTACTS = 50;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -42,12 +50,26 @@ const releaseBufferedBaileysEvents = async (entry) => {
   if (!entry?.sock?.ev?.flush) return;
 
   try {
-    entry.sock.ev.flush(true);
-    await sleep(300);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const isBuffering = entry.sock.ev.isBuffering?.() ?? false;
+      entry.sock.ev.flush(true);
+      await sleep(isBuffering ? 500 : 250);
+      if (!entry.sock.ev.isBuffering?.()) break;
+    }
   } catch (err) {
     console.warn(`Baileys event flush failed: ${err.message}`);
   }
 };
+
+const countContactEntries = (entry) => {
+  if (!entry) return 0;
+  return Math.max(entry.contactMap?.size || 0, entry.chatMap?.size || 0);
+};
+
+const needsFullContactSync = (
+  entry,
+  { minExpected = MIN_EXPECTED_CONTACTS } = {}
+) => countContactEntries(entry) < minExpected;
 
 const getQrTimeoutMs = (isRecovery = false) => (isRecovery ? 180000 : 120000);
 
@@ -176,7 +198,12 @@ const bindSocketEvents = ({
   });
 
   sock.ev.on('messaging-history.set', ({ chats = [], contacts = [] }) => {
-    if (chats.length > 0 || contacts.length > 0) entry.pickerDirty = true;
+    if (chats.length > 0 || contacts.length > 0) {
+      entry.pickerDirty = true;
+      console.log(
+        `messaging-history.set for ${userIdStr}: ${chats.length} chats, ${contacts.length} contacts`
+      );
+    }
     chats.forEach((chat) => upsertChatRecord(entry.chatMap, chat));
     contacts.forEach((contact) => {
       upsertContactRecord(entry.contactMap, contact);
@@ -229,7 +256,7 @@ const bindSocketEvents = ({
 
       setTimeout(() => {
         releaseBufferedBaileysEvents(entry).catch(() => {});
-        prewarmPickerCache(userId);
+        loadContactsAfterConnect(entry, userId, userIdStr);
       }, 2500);
     }
 
@@ -346,7 +373,10 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
 
   const sock = makeWASocket({
     version,
-    auth: state,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, silentLogger)
+    },
     printQRInTerminal: false,
     logger: silentLogger,
     browser: ['WA Auto Reply', 'Chrome', '1.0.0'],
@@ -491,11 +521,11 @@ const withPickerTimeout = async (promise, ms, label = 'picker task') => {
 
 const waitForChatHydration = async (entry, maxMs = 2000) => {
   if (!entry) return false;
-  if (hasPickerCandidates(entry.chatMap, entry.contactMap)) return true;
+  if (countContactEntries(entry) >= MIN_EXPECTED_CONTACTS) return true;
 
   return new Promise((resolve) => {
     const onHydrate = () => {
-      if (hasPickerCandidates(entry.chatMap, entry.contactMap)) {
+      if (countContactEntries(entry) >= MIN_EXPECTED_CONTACTS) {
         cleanup();
         resolve(true);
       }
@@ -503,7 +533,7 @@ const waitForChatHydration = async (entry, maxMs = 2000) => {
 
     const timer = setTimeout(() => {
       cleanup();
-      resolve(hasPickerCandidates(entry.chatMap, entry.contactMap));
+      resolve(countContactEntries(entry) > 0);
     }, maxMs);
 
     const cleanup = () => {
@@ -511,6 +541,7 @@ const waitForChatHydration = async (entry, maxMs = 2000) => {
       entry.sock?.ev?.off('chats.upsert', onHydrate);
       entry.sock?.ev?.off('chats.update', onHydrate);
       entry.sock?.ev?.off('messaging-history.set', onHydrate);
+      entry.sock?.ev?.off('contacts.set', onHydrate);
       entry.sock?.ev?.off('contacts.upsert', onHydrate);
       entry.sock?.ev?.off('contacts.update', onHydrate);
     };
@@ -518,37 +549,136 @@ const waitForChatHydration = async (entry, maxMs = 2000) => {
     entry.sock?.ev?.on('chats.upsert', onHydrate);
     entry.sock?.ev?.on('chats.update', onHydrate);
     entry.sock?.ev?.on('messaging-history.set', onHydrate);
+    entry.sock?.ev?.on('contacts.set', onHydrate);
     entry.sock?.ev?.on('contacts.upsert', onHydrate);
     entry.sock?.ev?.on('contacts.update', onHydrate);
   });
+};
+
+const requestOnDemandHistorySync = async (entry, { maxWaitMs = 45000, rounds = 5 } = {}) => {
+  const sock = entry?.sock;
+  if (!sock?.fetchMessageHistory) return false;
+
+  const creds = sock.authState?.creds;
+  const anchors = (creds?.processedHistoryMessages || []).slice(0, rounds);
+  if (anchors.length === 0) {
+    console.warn('On-demand history sync skipped: no history anchors in session');
+    return false;
+  }
+
+  let batchCount = 0;
+  const historyPromise = new Promise((resolve) => {
+    const onHistory = (payload) => {
+      const chatCount = payload?.chats?.length || 0;
+      const contactCount = payload?.contacts?.length || 0;
+      if (chatCount + contactCount > 0) {
+        batchCount += 1;
+        console.log(
+          `History batch ${batchCount}: +${chatCount} chats, +${contactCount} contacts (maps=${countContactEntries(entry)})`
+        );
+      }
+    };
+
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(batchCount > 0);
+    }, maxWaitMs);
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      sock.ev?.off('messaging-history.set', onHistory);
+    };
+
+    sock.ev?.on('messaging-history.set', onHistory);
+  });
+
+  try {
+    console.log(`Requesting on-demand history sync (${anchors.length} anchor(s))...`);
+    for (let i = 0; i < anchors.length; i += 1) {
+      const anchor = anchors[i];
+      if (!anchor?.key) continue;
+      try {
+        await sock.fetchMessageHistory(500, anchor.key, anchor.messageTimestamp);
+        await releaseBufferedBaileysEvents(entry);
+        if (i < anchors.length - 1) await sleep(1500);
+      } catch (err) {
+        console.warn(`History sync anchor ${i + 1} failed: ${err.message}`);
+      }
+    }
+    const received = await historyPromise;
+    await releaseBufferedBaileysEvents(entry);
+    return received;
+  } catch (err) {
+    console.warn(`On-demand history sync failed: ${err.message}`);
+    return false;
+  }
+};
+
+const forceSyncWhatsAppContacts = async (
+  entry,
+  { maxWaitMs = 30000, force = false, minExpected = MIN_EXPECTED_CONTACTS } = {}
+) => {
+  if (!entry?.sock || entry.status !== 'connected') return false;
+
+  await releaseBufferedBaileysEvents(entry);
+  if (!needsFullContactSync(entry, { minExpected })) return true;
+
+  if (typeof entry.sock.resyncAppState === 'function') {
+    try {
+      if (force && entry.sock.authState?.keys?.set) {
+        console.log('Resetting app-state sync versions for full contact snapshot...');
+        for (const name of ALL_WA_PATCH_NAMES) {
+          await entry.sock.authState.keys.set({ 'app-state-sync-version': { [name]: null } });
+        }
+      }
+      const keyId = entry.sock.authState?.creds?.myAppStateKeyId || 'missing';
+      console.log(`Running app-state resync (force=${force}, keyId=${keyId})...`);
+      await withPickerTimeout(
+        entry.sock.resyncAppState(ALL_WA_PATCH_NAMES, force),
+        force ? 35000 : 25000,
+        'app-state resync'
+      );
+      await releaseBufferedBaileysEvents(entry);
+    } catch (err) {
+      console.warn(`App-state resync failed: ${err.message}`);
+    }
+  }
+
+  if (needsFullContactSync(entry, { minExpected })) {
+    await requestOnDemandHistorySync(entry, {
+      maxWaitMs,
+      rounds: force ? 10 : 6
+    });
+  }
+
+  if (needsFullContactSync(entry, { minExpected: 5 })) {
+    await waitForChatHydration(entry, maxWaitMs);
+    await releaseBufferedBaileysEvents(entry);
+  }
+
+  console.log(
+    `Contact sync done: contacts=${entry.contactMap.size}, chats=${entry.chatMap.size}`
+  );
+
+  return countContactEntries(entry) > 0;
 };
 
 const hydratePickerMaps = async (entry, { maxWaitMs = 2000, allowResync = false } = {}) => {
   if (!entry) return;
 
   await releaseBufferedBaileysEvents(entry);
-  if (hasPickerCandidates(entry.chatMap, entry.contactMap)) return;
+  if (!needsFullContactSync(entry)) return;
 
-  if (
-    allowResync &&
-    entry.chatMap.size === 0 &&
-    entry.contactMap.size === 0 &&
-    typeof entry.sock?.resyncAppState === 'function'
-  ) {
-    try {
-      const { ALL_WA_PATCH_NAMES } = require('@whiskeysockets/baileys/lib/Types/Chat');
-      await withPickerTimeout(
-        entry.sock.resyncAppState(ALL_WA_PATCH_NAMES, false),
-        8000,
-        'app-state resync'
-      );
-      await releaseBufferedBaileysEvents(entry);
-    } catch (err) {
-      console.warn(`Baileys app-state resync skipped: ${err.message}`);
-    }
+  if (allowResync) {
+    await forceSyncWhatsAppContacts(entry, {
+      maxWaitMs: Math.max(maxWaitMs, 45000),
+      force: true,
+      minExpected: MIN_EXPECTED_CONTACTS
+    });
+    return;
   }
 
-  if (!hasPickerCandidates(entry.chatMap, entry.contactMap)) {
+  if (needsFullContactSync(entry)) {
     await waitForChatHydration(entry, maxWaitMs);
     await releaseBufferedBaileysEvents(entry);
   }
@@ -559,8 +689,25 @@ const PICKER_CACHE_TTL_MS = 120000;
 let prewarmPickerCache = () => {};
 
 const { getRecentChatsFromDb } = require('../utils/whatsappChat');
+const { loadPickerContactCache, savePickerContactCache } = require('../utils/pickerContactCache');
 
-const getPickerContacts = async (userId, { limit = 200, forceRefresh = false } = {}) => {
+const loadContactsAfterConnect = async (entry, userId, userIdStr) => {
+  if (!entry || entry.status !== 'connected') return;
+
+  await forceSyncWhatsAppContacts(entry, {
+    maxWaitMs: 60000,
+    force: false,
+    minExpected: MIN_EXPECTED_CONTACTS
+  });
+
+  console.log(
+    `WhatsApp maps for ${userIdStr}: contacts=${entry.contactMap.size}, chats=${entry.chatMap.size}`
+  );
+
+  prewarmPickerCache(userId);
+};
+
+const getPickerContacts = async (userId, { limit = 500, forceRefresh = false } = {}) => {
   const userIdStr = userId.toString();
   const cacheKey = `${userIdStr}:${limit}`;
   const started = Date.now();
@@ -592,12 +739,14 @@ const getPickerContacts = async (userId, { limit = 200, forceRefresh = false } =
 
   await releaseBufferedBaileysEvents(entry);
 
-  const hasInMemoryData = entry.chatMap.size > 0 || entry.contactMap.size > 0;
-  if (!hasInMemoryData || forceRefresh) {
-    await hydratePickerMaps(entry, {
-      maxWaitMs: forceRefresh ? 5000 : 2000,
-      allowResync: forceRefresh
+  if (needsFullContactSync(entry, { minExpected: MIN_EXPECTED_CONTACTS })) {
+    await forceSyncWhatsAppContacts(entry, {
+      maxWaitMs: forceRefresh ? 90000 : 45000,
+      force: forceRefresh,
+      minExpected: MIN_EXPECTED_CONTACTS
     });
+  } else {
+    await releaseBufferedBaileysEvents(entry);
   }
 
   let lidPhoneMap = buildLidPhoneMap(entry.contactMap, entry.lidPhoneMap);
@@ -612,8 +761,13 @@ const getPickerContacts = async (userId, { limit = 200, forceRefresh = false } =
 
   let contacts = buildContacts();
 
-  const maxLidLookup = forceRefresh ? 80 : 40;
-  const unresolvedLids = collectRecentUnresolvedLids(entry.chatMap, lidPhoneMap, maxLidLookup);
+  const maxLidLookup = forceRefresh ? 200 : 120;
+  const unresolvedLids = collectRecentUnresolvedLids(
+    entry.chatMap,
+    lidPhoneMap,
+    maxLidLookup,
+    entry.contactMap
+  );
 
   if (unresolvedLids.length > 0 && entry.sock) {
     try {
@@ -639,9 +793,22 @@ const getPickerContacts = async (userId, { limit = 200, forceRefresh = false } =
     `Picker maps for ${userIdStr}: chats=${entry.chatMap.size}, contacts=${entry.contactMap.size}, lidMap=${lidPhoneMap.size}, picked=${contacts.length} in ${Date.now() - started}ms`
   );
 
+  if (contacts.length < MIN_EXPECTED_CONTACTS) {
+    const diskCached = loadPickerContactCache(userIdStr);
+    if (diskCached.length > contacts.length) {
+      const { mergePickerRows, sortPickerContacts } = require('../utils/whatsappChat');
+      contacts = sortPickerContacts(mergePickerRows([...contacts, ...diskCached])).slice(0, limit);
+      console.log(`Picker disk cache merged for ${userIdStr}: ${contacts.length} contacts`);
+    }
+  }
+
   if (contacts.length === 0) {
     contacts = await getRecentChatsFromDb(userId, { limit });
     console.log(`Picker DB fallback for ${userIdStr}: ${contacts.length} contacts`);
+  }
+
+  if (contacts.length >= 20) {
+    savePickerContactCache(userIdStr, contacts);
   }
 
   if (contacts.length > 0) {
@@ -652,7 +819,9 @@ const getPickerContacts = async (userId, { limit = 200, forceRefresh = false } =
 };
 
 prewarmPickerCache = (userId) => {
-  getPickerContacts(userId, { limit: 200, forceRefresh: false }).catch(() => {});
+  setTimeout(() => {
+    getPickerContacts(userId, { limit: 500, forceRefresh: false }).catch(() => {});
+  }, 8000);
 };
 
 const recoverSessions = async (sendToUser) => {
