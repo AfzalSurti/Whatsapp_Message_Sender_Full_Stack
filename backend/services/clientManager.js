@@ -513,6 +513,10 @@ const bindSocketEvents = ({
         const wrapped = wrapIncomingMessage(sock, waMessage, entry.contactMap);
         if (!isAutoReplyEligibleMessage(wrapped)) continue;
 
+        const { handleSchedulerReply } = require('./schedulerReplyService');
+        const handledByScheduler = await handleSchedulerReply(current.client, userId, wrapped);
+        if (handledByScheduler) continue;
+
         const { handleIncomingMessage } = require('./autoReplyService');
         await handleIncomingMessage(current.client, userId, wrapped);
       } catch (err) {

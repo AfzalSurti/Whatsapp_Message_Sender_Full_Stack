@@ -2,10 +2,9 @@ const ScheduledCampaign = require('../models/ScheduledCampaign');
 const ContactGroup = require('../models/ContactGroup');
 const { buildRecipientMessage } = require('../utils/template');
 const {
-  resolveSchedulerAlertPhone,
-  buildReminderMessage,
-  sendSchedulerReminder
+  resolveSchedulerAlertPhone
 } = require('../utils/schedulerReminder');
+const { sendSchedulerReminderBundle } = require('../services/schedulerReplyService');
 
 const stripNumber = (num) => num.replace(/\D/g, '');
 
@@ -46,8 +45,7 @@ const processDueReminders = async (clientManager) => {
         continue;
       }
 
-      const text = buildReminderMessage(campaign, minutesBefore);
-      await sendSchedulerReminder(client, campaign.userId, alertPhone, text);
+      await sendSchedulerReminderBundle(client, campaign.userId, alertPhone, campaign, minutesBefore);
 
       await ScheduledCampaign.findByIdAndUpdate(campaign._id, {
         reminderSentAt: new Date()
