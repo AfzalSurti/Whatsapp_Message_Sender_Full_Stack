@@ -9,8 +9,9 @@ let closeGraceTimeout = null;
 let reconnectAttempts = 0;
 let shouldReconnect = true;
 let intentionalClose = false;
+let connectEnabled = false;
 
-const maxReconnectAttempts = 5;
+const maxReconnectAttempts = 8;
 const baseReconnectDelay = 2000;
 const CLOSE_GRACE_MS = 150;
 
@@ -25,7 +26,7 @@ const notifySubscribers = (data) => {
 };
 
 const scheduleReconnect = () => {
-  if (!shouldReconnect || reconnectAttempts >= maxReconnectAttempts) return;
+  if (!shouldReconnect || !connectEnabled || reconnectAttempts >= maxReconnectAttempts) return;
 
   const delay = baseReconnectDelay * Math.pow(2, reconnectAttempts);
   reconnectTimeout = setTimeout(() => {
@@ -38,7 +39,13 @@ const openSocket = () => {
   const token = getToken();
   const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL;
 
-  if (!token || !wsBaseUrl) return;
+  if (!connectEnabled || !token) return;
+
+  if (!wsBaseUrl) {
+    console.warn('NEXT_PUBLIC_WS_URL is not set. WebSocket disabled.');
+    return;
+  }
+
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
   if (ws) {
@@ -52,6 +59,9 @@ const openSocket = () => {
 
     ws.onopen = () => {
       reconnectAttempts = 0;
+      if (process.env.NODE_ENV === 'development') {
+        console.log('WebSocket connected');
+      }
     };
 
     ws.onmessage = (event) => {
@@ -69,7 +79,7 @@ const openSocket = () => {
         return;
       }
 
-      if (subscriberCount > 0) {
+      if (subscriberCount > 0 && connectEnabled) {
         scheduleReconnect();
       }
     };
@@ -95,6 +105,20 @@ const closeSocket = () => {
   }
 };
 
+const setConnectEnabled = (enabled) => {
+  connectEnabled = enabled;
+  if (enabled) {
+    shouldReconnect = true;
+    reconnectAttempts = 0;
+    if (subscriberCount > 0) {
+      openSocket();
+    }
+    return;
+  }
+
+  closeSocket();
+};
+
 const subscribe = (handler) => {
   if (closeGraceTimeout) {
     clearTimeout(closeGraceTimeout);
@@ -104,7 +128,10 @@ const subscribe = (handler) => {
   subscribers.add(handler);
   subscriberCount += 1;
   shouldReconnect = true;
-  openSocket();
+
+  if (connectEnabled) {
+    openSocket();
+  }
 
   return () => {
     subscribers.delete(handler);
@@ -120,12 +147,16 @@ const subscribe = (handler) => {
   };
 };
 
-const useWebSocket = (onMessage) => {
+const useWebSocket = (onMessage, enabled = true) => {
   const onMessageRef = useRef(onMessage);
 
   useEffect(() => {
     onMessageRef.current = onMessage;
   }, [onMessage]);
+
+  useEffect(() => {
+    setConnectEnabled(enabled);
+  }, [enabled]);
 
   useEffect(() => {
     const handler = (data) => onMessageRef.current?.(data);

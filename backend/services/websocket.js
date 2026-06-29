@@ -5,7 +5,7 @@ const pendingByUser = new Map();
 const latestQrByUser = new Map();
 const flushRetryTimers = new Map();
 
-const BUFFERABLE_TYPES = new Set(['qr', 'ready', 'disconnected']);
+const BUFFERABLE_TYPES = new Set(['qr', 'ready', 'disconnected', 'progress', 'sendingComplete', 'sendingError']);
 const FLUSH_RETRY_MS = 1000;
 const FLUSH_RETRY_MAX = 30;
 
@@ -154,6 +154,10 @@ const sendToUser = (userId, data) => {
   }
 
   if (data.type === 'disconnected') {
+    pendingByUser.delete(key);
+  }
+
+  if (data.type === 'sendingComplete' || data.type === 'sendingError') {
     pendingByUser.delete(key);
   }
 

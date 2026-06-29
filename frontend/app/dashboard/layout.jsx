@@ -10,6 +10,7 @@ import { Activity, BarChart3, Bot, ClipboardList, History, Key, Layers, Loader2,
 import { useAuth } from '@/context/AuthContext';
 import { getToken } from '@/lib/auth';
 import { whatsappAPI } from '@/lib/api';
+import { formatPhoneNumber } from '@/lib/phone';
 import useWebSocket from '@/hooks/useWebSocket';
 import { DashboardShellProvider } from './DashboardShellContext';
 
@@ -37,6 +38,7 @@ export default function DashboardLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const [waStatus, setWaStatus] = useState('disconnected');
+  const [connectedPhone, setConnectedPhone] = useState(null);
   const [qrImage, setQrImage] = useState(null);
   const [showQR, setShowQR] = useState(false);
   const [qrStatusText, setQrStatusText] = useState('Waiting for QR code...');
@@ -68,6 +70,9 @@ export default function DashboardLayout({ children }) {
         setWaStatus('connected');
         setShowQR(false);
         setQrImage(null);
+        if (res.data.phoneNumber) {
+          setConnectedPhone(res.data.phoneNumber);
+        }
       } else if (status === 'pending') {
         setWaStatus('pending');
         if (res.data.restoring) {
@@ -75,6 +80,7 @@ export default function DashboardLayout({ children }) {
         }
       } else {
         setWaStatus('disconnected');
+        setConnectedPhone(null);
       }
 
       return res.data;
@@ -119,12 +125,18 @@ export default function DashboardLayout({ children }) {
       setConnectError('');
       setSending(false);
       setProgress(null);
+      if (data.phoneNumber) {
+        setConnectedPhone(data.phoneNumber);
+      } else {
+        fetchStatus();
+      }
       toast.success('WhatsApp connected!');
     }
     if (data.type === 'disconnected') {
       setConnectError(data.reason || 'WhatsApp disconnected');
       setQrStatusText('Connection failed. Try again or use Re-generate QR.');
       setSending(false);
+      setConnectedPhone(null);
       setWaStatus((status) => (status === 'pending' ? 'pending' : 'disconnected'));
       toast.error(data.reason || 'WhatsApp disconnected');
     }
@@ -137,9 +149,10 @@ export default function DashboardLayout({ children }) {
       setSending(false);
       toast.error(`Sending failed: ${data.error}`);
     }
-  }, []);
+  }, [fetchStatus]);
 
-  useWebSocket(handleWsMessage);
+  const wsEnabled = mounted && Boolean(user) && Boolean(getToken());
+  useWebSocket(handleWsMessage, wsEnabled);
 
   const handleConnect = async (options = {}) => {
     const { silent = false, restoreOnly = false } = options;
@@ -163,6 +176,9 @@ export default function DashboardLayout({ children }) {
         setShowQR(false);
         setQrImage(null);
         setQrStatusText('WhatsApp connected successfully.');
+        if (res.data.phoneNumber) {
+          setConnectedPhone(res.data.phoneNumber);
+        }
         if (!silent) toast.success('WhatsApp connected!');
         return;
       }
@@ -192,6 +208,7 @@ export default function DashboardLayout({ children }) {
     try {
       await whatsappAPI.disconnect();
       setWaStatus('disconnected');
+      setConnectedPhone(null);
       setShowQR(false);
       setQrImage(null);
       setQrStatusText('Connection closed.');
@@ -316,7 +333,13 @@ export default function DashboardLayout({ children }) {
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border border-white/5">
                   <span className={`w-2 h-2 rounded-full ${waStatus === 'connected' ? 'bg-[#25D366]' : 'bg-red-500'}`} />
-                  {waStatus === 'connected' ? 'Connected' : waStatus === 'pending' ? 'Restoring...' : 'Disconnected'}
+                  <span>
+                    {waStatus === 'connected'
+                      ? (connectedPhone ? `Connected · ${formatPhoneNumber(connectedPhone)}` : 'Connected')
+                      : waStatus === 'pending'
+                        ? 'Restoring...'
+                        : 'Disconnected'}
+                  </span>
                 </span>
                 {waStatus === 'connected' ? (
                   <button onClick={handleDisconnect} className="hidden sm:flex items-center gap-2 text-xs border border-white/10 hover:border-red-400/40 hover:text-red-400 px-3 py-2 rounded-xl transition-colors"><WifiOff size={14} /> Disconnect</button>
