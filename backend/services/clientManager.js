@@ -34,6 +34,8 @@ const {
   upsertContactPickerRecord,
   contactsFromPickerStore
 } = require('../utils/contactPickerStore');
+const { parseConnectedPhoneFromJid } = require('../utils/whatsappChat');
+const { ensureDefaultSchedulerAlertPhone } = require('../utils/schedulerReminder');
 
 const clients = new Map();
 const clientsBeingCreated = new Set();
@@ -266,11 +268,9 @@ const getStatus = (userId) => {
 };
 
 const getConnectedPhoneNumber = (userId) => {
-  const client = getClient(userId);
-  const userPart = client?.info?.wid?.user;
-  if (!userPart) return null;
-  const digits = String(userPart).replace(/\D/g, '');
-  return digits ? `+${digits}` : null;
+  const entry = clients.get(userId.toString());
+  const jid = entry?.sock?.user?.id;
+  return parseConnectedPhoneFromJid(jid);
 };
 
 const markSessionLinked = async (userId, phoneNumber = null) => {
@@ -431,8 +431,13 @@ const bindSocketEvents = ({
       reconnectAttemptsByUser.delete(userIdStr);
       if (entry.qrTimeoutHandle) clearTimeout(entry.qrTimeoutHandle);
 
-      const phone = sock.user?.id ? `+${String(sock.user.id).split('@')[0]}` : null;
+      const phone = parseConnectedPhoneFromJid(sock.user?.id);
       await markSessionLinked(userId, phone);
+      if (phone) {
+        ensureDefaultSchedulerAlertPhone(userId, phone).catch((err) => {
+          console.warn(`Failed to set default scheduler alert phone for ${userIdStr}: ${err.message}`);
+        });
+      }
       onReady();
 
       setTimeout(() => {

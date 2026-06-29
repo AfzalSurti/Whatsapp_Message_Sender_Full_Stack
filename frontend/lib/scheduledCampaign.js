@@ -75,6 +75,16 @@ export const SENDING_SPEEDS = [
   { id: 'fast', label: 'Fast (5–15s delay)', description: 'Faster delivery with shorter delays. Use with caution.' }
 ];
 
+export const DEFAULT_REMINDER_MINUTES = 5;
+
+export const REMINDER_MINUTES_OPTIONS = [
+  { value: 5, label: '5 minutes before' },
+  { value: 10, label: '10 minutes before' },
+  { value: 15, label: '15 minutes before' },
+  { value: 30, label: '30 minutes before' },
+  { value: 60, label: '1 hour before' }
+];
+
 export const formatCampaignDate = (dateStr) => {
   const date = new Date(dateStr);
   const today = new Date();

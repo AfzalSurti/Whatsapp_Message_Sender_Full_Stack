@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
-const { validationResult } = require('express-validator');
 const User = require('../models/User');
+const { validationResult } = require('express-validator');
 const { getSafeErrorMessage } = require('../utils/safeError');
+const { normalizeAlertPhone } = require('../utils/schedulerReminder');
 
 // ─── GENERATE JWT TOKEN ────────────────────────────────────────
 const generateToken = (id) => {
@@ -95,7 +96,7 @@ const updateProfile = async (req, res) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { messageFooter, messageFooterEnabled } = req.body;
+    const { messageFooter, messageFooterEnabled, schedulerAlertPhone } = req.body;
     const updates = {};
 
     if (messageFooter !== undefined) {
@@ -104,6 +105,14 @@ const updateProfile = async (req, res) => {
 
     if (messageFooterEnabled !== undefined) {
       updates.messageFooterEnabled = Boolean(messageFooterEnabled);
+    }
+
+    if (schedulerAlertPhone !== undefined) {
+      const normalized = normalizeAlertPhone(schedulerAlertPhone);
+      if (!normalized) {
+        return res.status(400).json({ error: 'Enter a valid scheduler alert phone number' });
+      }
+      updates.schedulerAlertPhone = normalized;
     }
 
     if (Object.keys(updates).length === 0) {

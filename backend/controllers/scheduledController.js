@@ -6,6 +6,7 @@ const { validateScheduleVariables } = require('../utils/template');
 const { normalizePhoneNumber, getPhoneValidationError } = require('../utils/phone');
 const { collectContactsByTags } = require('../utils/contactSegments');
 const { getSafeErrorMessage } = require('../utils/safeError');
+const { normalizeAlertPhone } = require('../utils/schedulerReminder');
 
 const stripNumber = (num) => num.replace(/\D/g, '');
 
@@ -133,7 +134,10 @@ const createCampaign = async (req, res) => {
       sendingSpeed,
       recurrencePattern,
       recurrenceStartDate,
-      recurrenceEndDate
+      recurrenceEndDate,
+      reminderEnabled,
+      reminderMinutesBefore,
+      reminderPhone
     } = req.body;
 
     const scheduleTime = new Date(scheduledAt);
@@ -184,6 +188,19 @@ const createCampaign = async (req, res) => {
       return res.status(400).json({ error: variableCheck.error });
     }
 
+    const resolvedReminderPhone = normalizeAlertPhone(reminderPhone);
+    const wantsReminder = reminderEnabled !== false;
+    const resolvedReminderMinutes = Number(reminderMinutesBefore) || 5;
+
+    if (wantsReminder) {
+      const minutesUntilStart = (scheduleTime.getTime() - now.getTime()) / 60000;
+      if (minutesUntilStart < resolvedReminderMinutes + 1) {
+        return res.status(400).json({
+          error: `Schedule must be at least ${resolvedReminderMinutes + 1} minutes ahead to send a ${resolvedReminderMinutes}-minute reminder`
+        });
+      }
+    }
+
     const campaign = await ScheduledCampaign.create({
       userId: req.user._id,
       name: name || 'Untitled Campaign',
@@ -204,7 +221,11 @@ const createCampaign = async (req, res) => {
       recurrenceEndDate:
         recurrencePattern && recurrencePattern !== 'none' && recurrenceEndDate
           ? new Date(recurrenceEndDate)
-          : null
+          : null,
+      reminderEnabled: wantsReminder,
+      reminderMinutesBefore: resolvedReminderMinutes,
+      reminderPhone: resolvedReminderPhone,
+      reminderSentAt: null
     });
 
     res.status(201).json({ campaign });
@@ -278,7 +299,10 @@ const updateCampaign = async (req, res) => {
       sendingSpeed,
       recurrencePattern,
       recurrenceStartDate,
-      recurrenceEndDate
+      recurrenceEndDate,
+      reminderEnabled,
+      reminderMinutesBefore,
+      reminderPhone
     } = req.body;
 
     const scheduleTime = new Date(scheduledAt);
@@ -321,6 +345,19 @@ const updateCampaign = async (req, res) => {
       return res.status(400).json({ error: variableCheck.error });
     }
 
+    const resolvedReminderPhone = normalizeAlertPhone(reminderPhone);
+    const wantsReminder = reminderEnabled !== false;
+    const resolvedReminderMinutes = Number(reminderMinutesBefore) || campaign.reminderMinutesBefore || 5;
+
+    if (wantsReminder) {
+      const minutesUntilStart = (scheduleTime.getTime() - now.getTime()) / 60000;
+      if (minutesUntilStart < resolvedReminderMinutes + 1) {
+        return res.status(400).json({
+          error: `Schedule must be at least ${resolvedReminderMinutes + 1} minutes ahead to send a ${resolvedReminderMinutes}-minute reminder`
+        });
+      }
+    }
+
     campaign.name = name || 'Untitled Campaign';
     campaign.message = resolvedMessage;
     campaign.templateId = resolvedTemplateId;
@@ -341,6 +378,10 @@ const updateCampaign = async (req, res) => {
       recurrencePattern && recurrencePattern !== 'none' && recurrenceEndDate
         ? new Date(recurrenceEndDate)
         : null;
+    campaign.reminderEnabled = wantsReminder;
+    campaign.reminderMinutesBefore = resolvedReminderMinutes;
+    campaign.reminderPhone = resolvedReminderPhone;
+    campaign.reminderSentAt = null;
 
     await campaign.save();
     await campaign.populate('templateId', 'name icon category');

@@ -6,11 +6,11 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import ConfirmModal from '@/components/dashboard/ConfirmModal';
-import { Activity, BarChart3, Bot, ClipboardList, History, Key, Layers, Loader2, LogOut, MessageSquare, Send, Settings2, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { Activity, BarChart3, Bell, Bot, ClipboardList, History, Key, Layers, Loader2, LogOut, MessageSquare, Pencil, Send, Settings2, Users, Wifi, WifiOff, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getToken } from '@/lib/auth';
 import { whatsappAPI } from '@/lib/api';
-import { formatPhoneNumber } from '@/lib/phone';
+import { formatPhoneNumber, normalizePhoneNumber } from '@/lib/phone';
 import useWebSocket from '@/hooks/useWebSocket';
 import { DashboardShellProvider } from './DashboardShellContext';
 
@@ -34,11 +34,15 @@ const settingsNavItem = { href: '/dashboard/settings', label: 'Settings', icon: 
 const navItems = [...mainNavItems, ...manageNavItems, settingsNavItem];
 
 export default function DashboardLayout({ children }) {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, updateProfile } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [waStatus, setWaStatus] = useState('disconnected');
   const [connectedPhone, setConnectedPhone] = useState(null);
+  const [schedulerAlertPhone, setSchedulerAlertPhone] = useState(null);
+  const [editingAlertPhone, setEditingAlertPhone] = useState(false);
+  const [alertPhoneDraft, setAlertPhoneDraft] = useState('');
+  const [savingAlertPhone, setSavingAlertPhone] = useState(false);
   const [qrImage, setQrImage] = useState(null);
   const [showQR, setShowQR] = useState(false);
   const [qrStatusText, setQrStatusText] = useState('Waiting for QR code...');
@@ -73,6 +77,9 @@ export default function DashboardLayout({ children }) {
         if (res.data.phoneNumber) {
           setConnectedPhone(res.data.phoneNumber);
         }
+        if (res.data.schedulerAlertPhone) {
+          setSchedulerAlertPhone(res.data.schedulerAlertPhone);
+        }
       } else if (status === 'pending') {
         setWaStatus('pending');
         if (res.data.restoring) {
@@ -81,6 +88,7 @@ export default function DashboardLayout({ children }) {
       } else {
         setWaStatus('disconnected');
         setConnectedPhone(null);
+        setSchedulerAlertPhone(null);
       }
 
       return res.data;
@@ -127,9 +135,8 @@ export default function DashboardLayout({ children }) {
       setProgress(null);
       if (data.phoneNumber) {
         setConnectedPhone(data.phoneNumber);
-      } else {
-        fetchStatus();
       }
+      fetchStatus();
       toast.success('WhatsApp connected!');
     }
     if (data.type === 'disconnected') {
@@ -150,6 +157,28 @@ export default function DashboardLayout({ children }) {
       toast.error(`Sending failed: ${data.error}`);
     }
   }, [fetchStatus]);
+
+  const handleSaveAlertPhone = async () => {
+    const normalized = normalizePhoneNumber(alertPhoneDraft);
+    if (!normalized?.e164) {
+      toast.error('Enter a valid alert phone number');
+      return;
+    }
+
+    setSavingAlertPhone(true);
+    try {
+      await updateProfile({ schedulerAlertPhone: normalized.e164 });
+      setSchedulerAlertPhone(normalized.e164);
+      setEditingAlertPhone(false);
+      toast.success('Scheduler alert number updated');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update alert number');
+    } finally {
+      setSavingAlertPhone(false);
+    }
+  };
+
+  const displayAlertPhone = schedulerAlertPhone || connectedPhone;
 
   const wsEnabled = mounted && Boolean(user) && Boolean(getToken());
   useWebSocket(handleWsMessage, wsEnabled);
@@ -330,7 +359,7 @@ export default function DashboardLayout({ children }) {
             </div>
             <div className="flex items-center gap-3 md:gap-4">
               {sessionLoading && <span className="hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400"><Loader2 size={13} className="animate-spin" /> Syncing</span>}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <span className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border border-white/5">
                   <span className={`w-2 h-2 rounded-full ${waStatus === 'connected' ? 'bg-[#25D366]' : 'bg-red-500'}`} />
                   <span>
@@ -341,6 +370,50 @@ export default function DashboardLayout({ children }) {
                         : 'Disconnected'}
                   </span>
                 </span>
+
+                {waStatus === 'connected' && displayAlertPhone && !editingAlertPhone && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAlertPhoneDraft(displayAlertPhone);
+                      setEditingAlertPhone(true);
+                    }}
+                    className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-200 hover:border-amber-400/40 transition-colors"
+                    title="Number that receives scheduler reminders"
+                  >
+                    <Bell size={12} />
+                    Alerts · {formatPhoneNumber(displayAlertPhone)}
+                    <Pencil size={11} className="opacity-70" />
+                  </button>
+                )}
+
+                {editingAlertPhone && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="tel"
+                      value={alertPhoneDraft}
+                      onChange={(e) => setAlertPhoneDraft(e.target.value)}
+                      className="w-36 sm:w-44 px-3 py-1.5 rounded-xl bg-[#111] border border-white/10 text-xs"
+                      placeholder="+91XXXXXXXXXX"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveAlertPhone}
+                      disabled={savingAlertPhone}
+                      className="text-xs px-3 py-1.5 rounded-xl bg-[#25D366] text-black font-semibold disabled:opacity-50"
+                    >
+                      {savingAlertPhone ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingAlertPhone(false)}
+                      className="text-xs px-2 py-1.5 text-gray-400 hover:text-white"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+
                 {waStatus === 'connected' ? (
                   <button onClick={handleDisconnect} className="hidden sm:flex items-center gap-2 text-xs border border-white/10 hover:border-red-400/40 hover:text-red-400 px-3 py-2 rounded-xl transition-colors"><WifiOff size={14} /> Disconnect</button>
                 ) : (

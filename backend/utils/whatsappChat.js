@@ -1,4 +1,5 @@
 const { normalizePhoneNumber } = require('./phone');
+const { jidDecode } = require('@whiskeysockets/baileys');
 
 const PERSONAL_CHAT_SERVERS = new Set(['c.us', 's.whatsapp.net', 'lid']);
 const BLOCKED_CHAT_SERVERS = new Set(['g.us', 'newsletter', 'broadcast']);
@@ -8,6 +9,18 @@ const getChatServer = (chatId = '') => String(chatId).split('@')[1] || '';
 const isChatId = (value = '') => /@(c\.us|s\.whatsapp\.net|lid)$/.test(String(value).trim());
 
 const extractDigits = (value = '') => String(value).replace(/\D/g, '');
+
+/** Phone from Baileys user JID — strips device suffix (e.g. 916355209044:30 → +916355209044). */
+const parseConnectedPhoneFromJid = (jid) => {
+  if (!jid) return null;
+
+  const raw = typeof jid === 'string' ? jid : String(jid.id || jid._serialized || jid);
+  const decoded = jidDecode(raw);
+  const userPart = decoded?.user || raw.split('@')[0]?.split(':')[0] || '';
+  if (!userPart) return null;
+
+  return normalizePhoneValue(userPart) || null;
+};
 
 const looksLikePhoneDigits = (value = '') => {
   const digits = extractDigits(value);
@@ -525,6 +538,7 @@ module.exports = {
   getRecentChatsFromDb,
   getChatTimestamp,
   normalizePhoneValue,
+  parseConnectedPhoneFromJid,
   resolvePhoneFromChatId,
   extractDigits,
   isPhoneLikeDisplayName,

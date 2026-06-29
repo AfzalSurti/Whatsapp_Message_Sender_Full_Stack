@@ -6,9 +6,12 @@ import {
   getMinScheduleDate,
   getMinScheduleTime,
   getRecurrenceOptions,
+  REMINDER_MINUTES_OPTIONS,
   SCHEDULE_MODES,
   SENDING_SPEEDS
 } from '@/lib/scheduledCampaign';
+import { formatPhoneNumber } from '@/lib/phone';
+import { Bell } from 'lucide-react';
 
 const MODE_ICONS = {
   send: Send,
@@ -29,7 +32,14 @@ export default function Step4Schedule({
   recurrenceEndDate,
   setRecurrenceEndDate,
   sendingSpeed,
-  setSendingSpeed
+  setSendingSpeed,
+  reminderEnabled,
+  setReminderEnabled,
+  reminderMinutesBefore,
+  setReminderMinutesBefore,
+  reminderPhone,
+  setReminderPhone,
+  defaultAlertPhone
 }) {
   const minDate = useMemo(() => getMinScheduleDate(), []);
   const minTime = useMemo(() => getMinScheduleTime(scheduleDate), [scheduleDate]);
@@ -175,6 +185,59 @@ export default function Step4Schedule({
               </p>
             </div>
           )}
+
+          <div className="pt-2 border-t border-[#25D366]/20 space-y-3">
+            <div className="flex items-start gap-3">
+              <input
+                id="reminder-enabled"
+                type="checkbox"
+                checked={reminderEnabled}
+                onChange={(e) => setReminderEnabled(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-white/20 bg-[#0a0f0d] text-[#25D366] focus:ring-[#25D366]"
+              />
+              <label htmlFor="reminder-enabled" className="flex-1 cursor-pointer">
+                <div className="flex items-center gap-2 text-sm font-medium text-white">
+                  <Bell size={14} className="text-[#25D366]" />
+                  WhatsApp reminder before campaign
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Sends an alert to your notification number before the campaign starts.
+                </p>
+              </label>
+            </div>
+
+            {reminderEnabled && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-7">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-2">Send reminder</label>
+                  <select
+                    value={reminderMinutesBefore}
+                    onChange={(e) => setReminderMinutesBefore(Number(e.target.value))}
+                    className="w-full px-4 py-2.5 bg-[#0a0f0d] border border-white/10 rounded-xl text-sm [color-scheme:dark]"
+                  >
+                    {REMINDER_MINUTES_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-2">Alert number (optional)</label>
+                  <input
+                    type="tel"
+                    value={reminderPhone}
+                    onChange={(e) => setReminderPhone(e.target.value)}
+                    placeholder={defaultAlertPhone ? formatPhoneNumber(defaultAlertPhone) : '+91XXXXXXXXXX'}
+                    className="w-full px-4 py-2.5 bg-[#0a0f0d] border border-white/10 rounded-xl text-sm"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Default: {defaultAlertPhone ? formatPhoneNumber(defaultAlertPhone) : 'your connected WhatsApp number'}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

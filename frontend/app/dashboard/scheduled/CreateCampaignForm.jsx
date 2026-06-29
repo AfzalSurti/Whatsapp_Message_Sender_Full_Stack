@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/context/AuthContext';
-import { scheduledAPI, groupsAPI, aiAPI, templatesAPI } from '@/lib/api';
+import { scheduledAPI, groupsAPI, aiAPI, templatesAPI, whatsappAPI } from '@/lib/api';
 import CampaignWizardStepper from '@/components/dashboard/campaign/CampaignWizardStepper';
 import Step1CampaignType from '@/components/dashboard/campaign/Step1CampaignType';
 import Step2Audience from '@/components/dashboard/campaign/Step2Audience';
@@ -15,7 +15,8 @@ import Step5Review from '@/components/dashboard/campaign/Step5Review';
 import {
   WIZARD_STEPS,
   getMinScheduleDate,
-  getMinScheduleTime
+  getMinScheduleTime,
+  DEFAULT_REMINDER_MINUTES
 } from '@/lib/scheduledCampaign';
 import {
   getMissingScheduleVariables,
@@ -70,6 +71,10 @@ export default function CreateCampaignForm() {
   const [recurrenceStartDate, setRecurrenceStartDate] = useState('');
   const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
   const [sendingSpeed, setSendingSpeed] = useState('safe');
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [reminderMinutesBefore, setReminderMinutesBefore] = useState(DEFAULT_REMINDER_MINUTES);
+  const [reminderPhone, setReminderPhone] = useState('');
+  const [defaultAlertPhone, setDefaultAlertPhone] = useState(null);
 
   const [aiSectionOpen, setAiSectionOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
@@ -110,6 +115,13 @@ export default function CreateCampaignForm() {
     if (user) {
       fetchContactsOverview();
       fetchTemplates();
+      whatsappAPI.getStatus()
+        .then((res) => {
+          setDefaultAlertPhone(
+            res.data.schedulerAlertPhone || res.data.phoneNumber || user.schedulerAlertPhone || null
+          );
+        })
+        .catch(() => {});
     }
   }, [user, fetchContactsOverview, fetchTemplates]);
 
@@ -199,6 +211,9 @@ export default function CreateCampaignForm() {
     setScheduleTime(
       `${String(scheduled.getHours()).padStart(2, '0')}:${String(scheduled.getMinutes()).padStart(2, '0')}`
     );
+    setReminderEnabled(campaign.reminderEnabled !== false);
+    setReminderMinutesBefore(campaign.reminderMinutesBefore || DEFAULT_REMINDER_MINUTES);
+    setReminderPhone(campaign.reminderPhone || '');
   }, [allContacts, applyTemplateSelection, router, templates]);
 
   useEffect(() => {
@@ -506,7 +521,10 @@ export default function CreateCampaignForm() {
         recurrenceEndDate:
           recurrencePattern !== 'none' && recurrenceEndDate
             ? new Date(`${recurrenceEndDate}T23:59:59`).toISOString()
-            : undefined
+            : undefined,
+        reminderEnabled: scheduleMode === 'later' ? reminderEnabled : false,
+        reminderMinutesBefore,
+        reminderPhone: reminderPhone.trim() || undefined
       };
 
       if (editCampaignId) {
@@ -637,6 +655,13 @@ export default function CreateCampaignForm() {
             setRecurrenceEndDate={setRecurrenceEndDate}
             sendingSpeed={sendingSpeed}
             setSendingSpeed={setSendingSpeed}
+            reminderEnabled={reminderEnabled}
+            setReminderEnabled={setReminderEnabled}
+            reminderMinutesBefore={reminderMinutesBefore}
+            setReminderMinutesBefore={setReminderMinutesBefore}
+            reminderPhone={reminderPhone}
+            setReminderPhone={setReminderPhone}
+            defaultAlertPhone={defaultAlertPhone}
           />
         )}
         {step === 5 && (
@@ -652,6 +677,10 @@ export default function CreateCampaignForm() {
             recurrenceEndDate={recurrenceEndDate}
             sendingSpeed={sendingSpeed}
             message={message}
+            reminderEnabled={reminderEnabled}
+            reminderMinutesBefore={reminderMinutesBefore}
+            reminderPhone={reminderPhone}
+            defaultAlertPhone={defaultAlertPhone}
           />
                     )}
                   </div>

@@ -56,6 +56,12 @@ const UserSchema = new mongoose.Schema(
     messageFooterEnabled: {
       type: Boolean,
       default: false
+    },
+
+    schedulerAlertPhone: {
+      type: String,
+      default: null,
+      trim: true
     }
   },
   {
