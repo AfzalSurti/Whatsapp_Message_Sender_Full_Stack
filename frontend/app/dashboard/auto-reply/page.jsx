@@ -17,7 +17,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { aiTemplateAPI, autoReplyAPI, groupsAPI } from '@/lib/api';
 import { formatPhoneNumber } from '@/lib/phone';
-import { cachedRequest } from '@/lib/requestCache';
+import { cachedRequest, invalidateCachedRequest } from '@/lib/requestCache';
 import { useDashboardShell } from '../DashboardShellContext';
 
 const statusConfig = {
@@ -53,6 +53,7 @@ export default function AutoReplyPage() {
   const [configLoading, setConfigLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [clearing, setClearing] = useState(false);
 
   const [isEnabled, setIsEnabled] = useState(false);
@@ -157,6 +158,10 @@ export default function AutoReplyPage() {
     whatsappFetchInFlightRef.current = true;
     setContactsLoading(true);
     setContactsError('');
+
+    if (force) {
+      invalidateCachedRequest('whatsapp-picker-contacts');
+    }
 
     try {
       const contacts = await cachedRequest(
@@ -371,6 +376,23 @@ export default function AutoReplyPage() {
     );
   };
 
+  const handleToggleEnabled = async () => {
+    const nextEnabled = !isEnabled;
+    setIsEnabled(nextEnabled);
+    setTogglingEnabled(true);
+
+    try {
+      const res = await autoReplyAPI.updateConfig({ isEnabled: nextEnabled });
+      setIsEnabled(Boolean(res.data.config?.isEnabled));
+      toast.success(nextEnabled ? 'Bot turned on' : 'Bot turned off');
+    } catch (err) {
+      setIsEnabled(!nextEnabled);
+      toast.error(err.response?.data?.error || 'Failed to update bot status');
+    } finally {
+      setTogglingEnabled(false);
+    }
+  };
+
   const handleSave = async () => {
     if (activeAiTemplates.length > 0 && enabledTemplateIds.length === 0) {
       toast.error('Select at least one AI template for auto-reply');
@@ -484,8 +506,9 @@ export default function AutoReplyPage() {
             </div>
             <button
               type="button"
-              onClick={() => setIsEnabled((prev) => !prev)}
-              className={`relative w-14 h-8 rounded-full transition-colors shrink-0 ${isEnabled ? 'bg-[#25D366]' : 'bg-zinc-700'}`}
+              onClick={handleToggleEnabled}
+              disabled={togglingEnabled || configLoading}
+              className={`relative w-14 h-8 rounded-full transition-colors shrink-0 disabled:opacity-60 ${isEnabled ? 'bg-[#25D366]' : 'bg-zinc-700'}`}
               aria-label="Toggle auto-reply bot"
             >
               <span

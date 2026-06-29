@@ -242,18 +242,29 @@ const resolveLidPhonesViaUsync = async (sock, lidJids, { batchSize = 8, maxLids 
   return map;
 };
 
-const collectRecentUnresolvedLids = (chatMap, lidPhoneMap, max = 40) => {
+const collectRecentUnresolvedLids = (chatMap, lidPhoneMap, max = 40, contactMap = null) => {
   const lids = [];
   const seen = new Set();
 
+  const register = (rawId) => {
+    const chatId = normalizeJid(rawId);
+    if (!chatId.endsWith('@lid') || lidPhoneMap.has(chatId) || seen.has(chatId)) return;
+    seen.add(chatId);
+    lids.push(chatId);
+  };
+
   Array.from(chatMap.values())
     .sort((a, b) => (Number(b.conversationTimestamp) || 0) - (Number(a.conversationTimestamp) || 0))
-    .forEach((chat) => {
-      const chatId = normalizeJid(chat?.id);
-      if (!chatId.endsWith('@lid') || lidPhoneMap.has(chatId) || seen.has(chatId)) return;
-      seen.add(chatId);
-      lids.push(chatId);
+    .forEach((chat) => register(chat?.id));
+
+  if (contactMap) {
+    contactMap.forEach((contact) => {
+      register(contact?.id);
+      if (contact?.lid) {
+        register(String(contact.lid).includes('@') ? contact.lid : `${contact.lid}@lid`);
+      }
     });
+  }
 
   return lids.slice(0, max);
 };
@@ -417,22 +428,17 @@ const getChatsForPicker = (
     });
   };
 
-  const recentChats = Array.from(chatMap.values()).sort(
-    (a, b) => (Number(b.conversationTimestamp) || 0) - (Number(a.conversationTimestamp) || 0)
-  );
-
-  // Recent chats first — avoids scanning thousands of stale address-book entries
-  recentChats.slice(0, Math.max(limit * 4, 600)).forEach((chat) => {
-    const chatId = normalizeJid(chat.id);
-    const contactRecord = resolveContactRecord(chatId, { contactMap, lidMap, contactIndex });
-    buildRow(chat.id, chat, contactRecord);
+  // Full address-book + chat list (not just recent subset)
+  Array.from(contactMap.values()).forEach((contact) => {
+    buildRow(contact.id, enrichChatForPicker({}, contact), contact);
   });
 
-  // Saved phone-book contacts (have a saved name)
-  Array.from(contactMap.values())
-    .filter((contact) => String(contact?.name || '').trim())
-    .forEach((contact) => {
-      buildRow(contact.id, enrichChatForPicker({}, contact), contact);
+  Array.from(chatMap.values())
+    .sort((a, b) => (Number(b.conversationTimestamp) || 0) - (Number(a.conversationTimestamp) || 0))
+    .forEach((chat) => {
+      const chatId = normalizeJid(chat.id);
+      const contactRecord = resolveContactRecord(chatId, { contactMap, lidMap, contactIndex });
+      buildRow(chat.id, chat, contactRecord);
     });
 
   const merged = mergePickerRows(rawRows);
@@ -442,11 +448,9 @@ const getChatsForPicker = (
     return extractDigits(row.phoneNumber || '') === selfDigits;
   };
 
-  // Contact picker needs a dialable number — keep named rows even if phone missing
-  const withPhone = merged.filter((row) => row.phoneNumber && !isSelfNumber(row));
-  const withoutPhone = merged.filter(
-    (row) => !row.phoneNumber && (row.isSaved || row.hasDisplayName || row.name) && !isSelfNumber(row)
-  );
+  const filtered = merged.filter((row) => !isSelfNumber(row));
+  const withPhone = filtered.filter((row) => row.phoneNumber);
+  const withoutPhone = filtered.filter((row) => !row.phoneNumber);
 
   return sortPickerContacts([...withPhone, ...withoutPhone]).slice(0, limit);
 };

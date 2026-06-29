@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Search, UserPlus } from 'lucide-react';
 import { whatsappAPI } from '@/lib/api';
 import { formatPhoneNumber } from '@/lib/phone';
-import { cachedRequest } from '@/lib/requestCache';
+import { cachedRequest, invalidateCachedRequest } from '@/lib/requestCache';
 
 export default function WhatsAppChatPicker({
   waConnected,
@@ -34,6 +34,10 @@ export default function WhatsAppChatPicker({
     fetchInFlightRef.current = true;
     setLoading(true);
     setError('');
+
+    if (force) {
+      invalidateCachedRequest('whatsapp-picker-contacts');
+    }
 
     try {
       const nextContacts = await cachedRequest(

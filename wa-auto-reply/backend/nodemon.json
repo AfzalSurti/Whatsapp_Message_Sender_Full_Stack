@@ -1,9 +1,0 @@
-{
-  "ignore": [
-    ".baileys_auth/**",
-    ".wwebjs_auth/**",
-    ".wwebjs_cache/**",
-    ".puppeteer-cache/**",
-    "*.zip"
-  ]
-}
