@@ -24,7 +24,7 @@ const validateApiKey = async (req, res, next) => {
     if (apiKey.monthlyUsage >= apiKey.monthlyLimit) {
       return res.status(429).json({
         error: 'Monthly usage limit exceeded',
-        limit: apiKey.monthlyLimit,
+        limit: apiKey.monthlyLimit,    
         used: apiKey.monthlyUsage
       });
     }

@@ -128,6 +128,7 @@ const getWhatsAppContacts = async (req, res) => {
       forceRefresh
     });
 
+    res.set('Cache-Control', 'no-store');
     res.json({ contacts });
   } catch (err) {
     console.error('Get WhatsApp contacts failed:', err.message);

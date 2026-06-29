@@ -5,15 +5,24 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { Loader2, Settings2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { businessProfileAPI } from '@/lib/api';
+import { autoReplyAPI, businessProfileAPI } from '@/lib/api';
+
+const DEFAULT_SYSTEM_PROMPT =
+  'You are a helpful WhatsApp assistant. Reply naturally and concisely.';
 
 export default function SettingsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
   const [profileLoading, setProfileLoading] = useState(true);
+  const [aiLoading, setAiLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [savingAi, setSavingAi] = useState(false);
+
   const [businessName, setBusinessName] = useState('');
+
+  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
+  const [delay, setDelay] = useState(2000);
 
   const fetchProfile = useCallback(async () => {
     setProfileLoading(true);
@@ -28,6 +37,20 @@ export default function SettingsPage() {
     }
   }, [user?.name]);
 
+  const fetchAiSettings = useCallback(async () => {
+    setAiLoading(true);
+    try {
+      const res = await autoReplyAPI.getConfig();
+      const config = res.data.config;
+      setSystemPrompt(config.systemPrompt || DEFAULT_SYSTEM_PROMPT);
+      setDelay(config.delay || 2000);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to load AI settings');
+    } finally {
+      setAiLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!loading && !user) router.push('/login');
   }, [user, loading, router]);
@@ -35,8 +58,9 @@ export default function SettingsPage() {
   useEffect(() => {
     if (user) {
       fetchProfile();
+      fetchAiSettings();
     }
-  }, [user, fetchProfile]);
+  }, [user, fetchProfile, fetchAiSettings]);
 
   const handleSaveProfile = async () => {
     setSavingProfile(true);
@@ -55,7 +79,25 @@ export default function SettingsPage() {
     }
   };
 
-  if (loading || profileLoading) {
+  const handleSaveAi = async () => {
+    setSavingAi(true);
+    try {
+      const res = await autoReplyAPI.updateConfig({
+        systemPrompt,
+        delay
+      });
+      const config = res.data.config;
+      setSystemPrompt(config.systemPrompt || systemPrompt);
+      setDelay(config.delay || delay);
+      toast.success('AI personality saved');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to save AI settings');
+    } finally {
+      setSavingAi(false);
+    }
+  };
+
+  if (loading || profileLoading || aiLoading) {
     return (
       <div className="p-8 flex items-center justify-center min-h-[50vh]">
         <Loader2 className="animate-spin text-[#25D366]" size={32} />
@@ -73,7 +115,7 @@ export default function SettingsPage() {
           <div>
             <h1 className="text-2xl font-bold">Settings</h1>
             <p className="text-sm text-gray-400 mt-0.5">
-              Business profile and account preferences
+              Business profile and AI personality
             </p>
           </div>
         </div>
@@ -107,6 +149,56 @@ export default function SettingsPage() {
         >
           {savingProfile ? <Loader2 size={18} className="animate-spin" /> : null}
           Save Business Profile
+        </button>
+      </section>
+
+      <section className="bg-[#111] border border-white/10 rounded-2xl p-6 space-y-6">
+        <div>
+          <h2 className="text-lg font-semibold">AI Personality</h2>
+          <p className="text-sm text-gray-400 mt-1">
+            Used by auto-reply when no AI template matches, or no templates are selected.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-sm font-medium text-gray-200">System Prompt</label>
+          <textarea
+            value={systemPrompt}
+            onChange={(e) => setSystemPrompt(e.target.value)}
+            rows={6}
+            placeholder="You are a helpful assistant..."
+            className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-3 text-sm leading-relaxed outline-none focus:border-[#25D366]/40 resize-none"
+          />
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium text-gray-200">Response Delay</span>
+            <span className="text-[#25D366] font-semibold">{(delay / 1000).toFixed(1)}s</span>
+          </div>
+          <input
+            type="range"
+            min={1000}
+            max={10000}
+            step={500}
+            value={delay}
+            onChange={(e) => setDelay(Number(e.target.value))}
+            className="w-full accent-[#25D366]"
+          />
+          <div className="flex justify-between text-xs text-gray-500">
+            <span>1s</span>
+            <span>10s</span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSaveAi}
+          disabled={savingAi}
+          className="w-full bg-[#25D366] hover:bg-[#1ebe5d] disabled:opacity-60 text-black font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
+        >
+          {savingAi ? <Loader2 size={18} className="animate-spin" /> : null}
+          Save AI Personality
         </button>
       </section>
     </div>

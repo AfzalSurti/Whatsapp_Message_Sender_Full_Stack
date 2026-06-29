@@ -66,7 +66,7 @@ export default function InternationalPhoneInput({
         forceDialCode
         disableDialCodePrefill={false}
         hideDropdown={false}
-        inputClassName={`!w-full !h-11 !rounded-xl !rounded-tl-none !rounded-bl-none !border !border-white/10 !bg-[#0a0a0a] !px-4 !py-2.5 !text-sm !text-white !placeholder-gray-600 !outline-none focus:!border-[#25D366] ${inputClassName}`}
+        inputClassName={`!w-full !h-11 !rounded-xl !border !border-white/10 !bg-[#0a0a0a] !px-4 !py-2.5 !text-sm !text-white !placeholder-gray-600 !outline-none focus:!border-[#25D366] ${inputClassName}`}
         countrySelectorStyleProps={{
           buttonClassName: '!rounded-l-xl !border-white/10 !bg-[#0a0a0a] !text-white',
           dropdownStyle: { zIndex: 60 },

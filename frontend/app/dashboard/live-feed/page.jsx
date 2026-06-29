@@ -112,7 +112,7 @@ export default function LiveFeedPage() {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[#0a0a0a] px-4 py-6 md:px-8 md:py-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="space-y-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-[#25D366]">

@@ -310,7 +310,7 @@ export default function GroupsPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
-      <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+      <div className=" px-6 py-8 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">Contacts & Segments</h1>

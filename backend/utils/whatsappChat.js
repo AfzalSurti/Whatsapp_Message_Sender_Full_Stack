@@ -174,20 +174,47 @@ const looksLikeFormattedPhone = (value = '') => {
   return digits.length >= 7 && /^[\d\s+\-().]+$/.test(raw);
 };
 
+const isPhoneLikeDisplayName = (name = '', phoneNumber = '') => {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return true;
+  if (looksLikeFormattedPhone(trimmed)) return true;
+
+  const phoneDigits = extractDigits(phoneNumber || '');
+  const nameDigits = extractDigits(trimmed);
+  if (phoneDigits && nameDigits && phoneDigits === nameDigits) return true;
+  if (!phoneDigits && nameDigits.length >= 10 && /^\d+$/.test(trimmed.replace(/\s/g, ''))) return true;
+
+  return false;
+};
+
+const pickBetterDisplayName = (left = '', right = '', phoneNumber = '') => {
+  const leftBad = isPhoneLikeDisplayName(left, phoneNumber);
+  const rightBad = isPhoneLikeDisplayName(right, phoneNumber);
+
+  if (leftBad && !rightBad) return right;
+  if (rightBad && !leftBad) return left;
+  if (!leftBad) return left;
+  if (!rightBad) return right;
+  return left || right;
+};
+
 const pickContactDisplayName = (contact, chat, fallback) => {
   const savedName = String(contact?.name || '').trim();
   const pushName = String(contact?.pushname || contact?.notify || '').trim();
   const shortName = String(contact?.shortName || '').trim();
   const verifiedName = String(contact?.verifiedName || '').trim();
-  const chatName = String(chat?.name || chat?.pushName || '').trim();
+  const chatName = String(chat?.name || chat?.pushName || chat?.subject || '').trim();
 
-  if (savedName) return savedName;
-  if (pushName && !looksLikeFormattedPhone(pushName)) return pushName;
-  if (shortName && !looksLikeFormattedPhone(shortName)) return shortName;
-  if (verifiedName && !looksLikeFormattedPhone(verifiedName)) return verifiedName;
-  if (chatName && !looksLikeFormattedPhone(chatName)) return chatName;
+  if (savedName && !isPhoneLikeDisplayName(savedName)) return savedName;
+  if (pushName && !isPhoneLikeDisplayName(pushName)) return pushName;
+  if (shortName && !isPhoneLikeDisplayName(shortName)) return shortName;
+  if (verifiedName && !isPhoneLikeDisplayName(verifiedName)) return verifiedName;
+  if (chatName && !isPhoneLikeDisplayName(chatName)) return chatName;
 
-  return pushName || chatName || fallback;
+  const fallbackStr = String(fallback || '').trim();
+  if (fallbackStr && !isPhoneLikeDisplayName(fallbackStr)) return fallbackStr;
+
+  return savedName || pushName || chatName || verifiedName || shortName || '';
 };
 
 const baileysContactToPickerShape = (contact = null) => {
@@ -244,8 +271,7 @@ const classifyPickerContact = (name, contact = null, phoneNumber = '') => {
   const isSaved = Boolean(savedName);
   const hasDisplayName =
     Boolean(displayName) &&
-    !looksLikeFormattedPhone(displayName) &&
-    extractDigits(displayName) !== phoneDigits;
+    !isPhoneLikeDisplayName(displayName, phoneNumber);
 
   let sortRank = 2;
   if (isSaved) sortRank = 0;
@@ -277,7 +303,7 @@ const mergePickerRows = (rows = []) => {
       ...loser,
       ...winner,
       chatId: winner.chatId || loser.chatId,
-      name: winner.name || loser.name,
+      name: pickBetterDisplayName(winner.name, loser.name, winner.phoneNumber || loser.phoneNumber),
       phoneNumber: winner.phoneNumber || loser.phoneNumber,
       isSaved: winner.isSaved || loser.isSaved,
       hasDisplayName: winner.hasDisplayName || loser.hasDisplayName,
@@ -501,6 +527,8 @@ module.exports = {
   normalizePhoneValue,
   resolvePhoneFromChatId,
   extractDigits,
+  isPhoneLikeDisplayName,
+  pickBetterDisplayName,
   baileysContactToPickerShape,
   resolvePickerPhone,
   classifyPickerContact,

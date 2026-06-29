@@ -350,13 +350,27 @@ export default function Dashboard() {
   const activeCampaignsCount = campaigns.filter(
     (c) => c.status === 'running' || c.status === 'pending'
   ).length;
+  function getGreeting() {
+  const hour = new Date().getHours();
+
+  if (hour >= 5 && hour < 12) {
+    return "Good Morning";
+  } else if (hour >= 12 && hour < 17) {
+    return "Good Afternoon";
+  } else if (hour >= 17 && hour < 21) {
+    return "Good Evening";
+  } else {
+    return "Good Night";
+  }
+}
+
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto space-y-8">
+      <div className=" space-y-8">
         {/* ═══ GREETING ═══ */}
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold text-white">Good morning, {user?.name?.split(' ')[0] || 'Admin'} 👋</h1>
+          <h1 className="text-3xl font-bold text-white ">{getGreeting()}, {user?.name?.split(' ')[0] || 'Admin'} 👋</h1>
           <p className="text-sm text-gray-500">Here's what's happening with your campaigns today.</p>
         </div>
 
@@ -571,6 +585,7 @@ export default function Dashboard() {
                 onCountryChange={setSelectedCountry}
                 placeholder="Phone number"
                 label={null}
+                className='input-nav '
               />
               <button
                 onClick={() => addNumber(numberInput)}

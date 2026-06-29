@@ -76,7 +76,12 @@
 }
 
 /* Optional scroll animation — content stays visible even before JS runs */
-.pop-up {
+input.react-international-phone-input {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+}
+
+.pop-up { 
   opacity: 1;
   transform: translateY(0) scale(1);
 }
@@ -94,4 +99,8 @@
 .react-international-phone-country-selector-button,
 .react-international-phone-country-selector-button:hover {
   cursor: pointer;
+}
+
+.react-international-phone-country-selector-button{
+  padding: 14px !important;
 }

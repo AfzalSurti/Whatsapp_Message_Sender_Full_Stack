@@ -610,7 +610,11 @@ export default function AutoReplyPage() {
                     </div>
                   ) : filteredContacts.length === 0 ? (
                     <p className="text-sm text-gray-500 py-4 text-center">
-                      No saved contacts yet. Add numbers on the Contacts page first.
+                      No saved contacts yet.{' '}
+                      <Link href="/dashboard/contacts" className="text-[#25D366] hover:underline">
+                        Add numbers on the Contacts page
+                      </Link>{' '}
+                      first.
                     </p>
                   ) : (
                     filteredContacts.map((contact) => (

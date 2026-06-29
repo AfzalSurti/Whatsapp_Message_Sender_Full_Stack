@@ -219,12 +219,13 @@ const getWhatsAppContacts = async (req, res) => {
     const forceRefresh = req.query.refresh === '1';
 
     const contacts = await clientManager.getPickerContacts(userId, {
-      limit: 100,
+      limit: 200,
       forceRefresh
     });
 
     console.log(`Loaded ${contacts.length} WhatsApp chats for auto-reply picker`);
 
+    res.set('Cache-Control', 'no-store');
     res.json({ contacts });
   } catch (err) {
     console.error('Get WhatsApp contacts failed:', err.message);

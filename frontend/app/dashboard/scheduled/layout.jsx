@@ -24,7 +24,7 @@ export default function ScheduledLayout({ children }) {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
-      <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+      <div className="px-6 py-8 space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Scheduler</h1>
           <p className="text-sm text-gray-400 mt-1">
