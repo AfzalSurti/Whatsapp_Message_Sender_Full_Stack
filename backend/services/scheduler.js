@@ -17,7 +17,10 @@ const startScheduler = (sendMessages, clientManager) => {
         try {
           await ScheduledCampaign.findByIdAndUpdate(campaign._id, { status: 'running' });
 
-          const client = clientManager.getClient(campaign.userId);
+          const client = await clientManager.getOrRestoreReadyClient(campaign.userId, {
+            maxWaitMs: 60000
+          });
+
           if (!client || !client.info) {
             await ScheduledCampaign.findByIdAndUpdate(campaign._id, {
               status: 'failed',

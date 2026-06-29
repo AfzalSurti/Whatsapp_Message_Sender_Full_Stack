@@ -141,15 +141,10 @@ const googleCallback = (req, res) => {
 };
 
 // ─── LOGOUT ───────────────────────────────────────────────────
-// Disconnects WhatsApp and clears session on server
+// Web logout only — does NOT disconnect WhatsApp or delete Baileys session.
+// Scheduled campaigns keep using the server-side WhatsApp connection.
 const logout = async (req, res) => {
   try {
-    const clientManager = require('../services/clientManager');
-    const userId = req.user._id;
-
-    // Disconnect WhatsApp client and clear session
-    await clientManager.clearWhatsAppSession(userId);
-
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     res.status(500).json({ error: getSafeErrorMessage(error) });

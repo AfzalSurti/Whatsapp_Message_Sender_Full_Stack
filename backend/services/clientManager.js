@@ -225,6 +225,29 @@ const waitForClientReady = async (userId, maxMs = 20000) => {
   return null;
 };
 
+const getOrRestoreReadyClient = async (userId, { maxWaitMs = 45000 } = {}) => {
+  const userIdStr = userId.toString();
+
+  if (isClientReady(userId)) {
+    return getClient(userId);
+  }
+
+  if (!(await canRecoverSession(userId))) {
+    return null;
+  }
+
+  if (!isClientPending(userId)) {
+    try {
+      const { sendToUser } = require('./websocket');
+      await ensureClientConnected(userId, sendToUser);
+    } catch (err) {
+      console.warn(`Scheduler session restore failed for ${userIdStr}: ${err.message}`);
+    }
+  }
+
+  return waitForClientReady(userId, maxWaitMs);
+};
+
 const getClient = (id) => {
   const entry = clients.get(id.toString());
   return entry ? entry.client : null;
@@ -958,6 +981,7 @@ module.exports = {
   isClientReady,
   isClientPending,
   waitForClientReady,
+  getOrRestoreReadyClient,
   getPickerContacts,
   ensureClientConnected,
   abortPendingClient,

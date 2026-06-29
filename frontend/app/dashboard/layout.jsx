@@ -329,7 +329,7 @@ export default function DashboardLayout({ children }) {
           open={showLogoutConfirm}
           onClose={() => setShowLogoutConfirm(false)}
           title="Are you sure you want to logout?"
-          message="Your current dashboard session will close and you will need to sign in again."
+          message="Your dashboard session will close. WhatsApp stays connected on the server so scheduled campaigns can still send."
           confirmLabel="Yes, Logout"
           onConfirm={async () => {
             setShowLogoutConfirm(false);
