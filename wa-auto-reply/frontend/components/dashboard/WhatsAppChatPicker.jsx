@@ -47,7 +47,11 @@ export default function WhatsAppChatPicker({
       setContacts(nextContacts);
       loadedRef.current = true;
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Failed to load WhatsApp chats');
+      setError(
+        err.code === 'ECONNABORTED'
+          ? 'Loading contacts is taking longer than usual. Please wait and try Refresh again.'
+          : (err.response?.data?.error || err.message || 'Failed to load WhatsApp chats')
+      );
       setContacts([]);
     } finally {
       fetchInFlightRef.current = false;

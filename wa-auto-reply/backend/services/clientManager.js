@@ -4,7 +4,6 @@ const pino = require('pino');
 const qrcode = require('qrcode');
 const {
   makeWASocket,
-  useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
@@ -15,9 +14,13 @@ const {
   canRecoverSession,
   cleanupLocalAuthArtifacts,
   deleteStoredRemoteSession,
-  listLocalSessionUserIds,
-  getLocalSessionDir
+  listStoredSessionUserIds,
+  getLegacyLocalSessionDir
 } = require('../utils/whatsappSession');
+const {
+  useMongoDBAuthState,
+  migrateLocalSessionToMongo
+} = require('../utils/baileysMongoAuth');
 const {
   createBaileysClientAdapter,
   wrapIncomingMessage,
@@ -360,11 +363,11 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
 
   clientsBeingCreated.add(userIdStr);
 
-  const sessionDir = getLocalSessionDir(userId);
-  fs.mkdirSync(sessionDir, { recursive: true });
-  console.log(`Using Baileys session storage: ${sessionDir}`);
+  const legacySessionDir = getLegacyLocalSessionDir(userId);
+  await migrateLocalSessionToMongo(userId, legacySessionDir);
+  console.log(`Using Baileys MongoDB session storage for user ${userIdStr}`);
 
-  const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+  const { state, saveCreds } = await useMongoDBAuthState(userId);
   const { version } = await fetchLatestBaileysVersion();
 
   const chatMap = new Map();
@@ -832,10 +835,10 @@ const recoverSessions = async (sendToUser) => {
     }
 
     const activeSessions = await Session.find({ isActive: true }).select('userId').lean();
-    const localUserIds = listLocalSessionUserIds();
+    const storedUserIds = await listStoredSessionUserIds();
     const userIds = new Set([
       ...activeSessions.map((session) => session.userId.toString()),
-      ...localUserIds
+      ...storedUserIds
     ]);
 
     if (userIds.size === 0) {

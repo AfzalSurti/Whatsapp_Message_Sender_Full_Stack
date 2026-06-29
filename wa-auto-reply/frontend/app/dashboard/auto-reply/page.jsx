@@ -169,7 +169,9 @@ export default function AutoReplyPage() {
       setWhatsappContacts(contacts);
       whatsappLoadedRef.current = true;
     } catch (err) {
-      const message = err.response?.data?.error || err.message || 'Failed to load WhatsApp contacts';
+      const message = err.code === 'ECONNABORTED'
+        ? 'Loading contacts is taking longer than usual. Please wait and try Refresh again.'
+        : (err.response?.data?.error || err.message || 'Failed to load WhatsApp contacts');
       setContactsError(message);
       setWhatsappContacts([]);
     } finally {

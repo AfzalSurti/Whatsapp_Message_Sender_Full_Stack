@@ -1,5 +1,11 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const {
+  hasMongoAuthSession,
+  listMongoAuthUserIds,
+  deleteMongoAuthSession
+} = require('./baileysMongoAuth');
 
 const AUTH_DATA_PATH = process.env.WHATSAPP_AUTH_PATH
   || path.join(__dirname, '..', '.baileys_auth');
@@ -14,12 +20,15 @@ const ensureAuthDir = () => {
 
 ensureAuthDir();
 
-const getLocalSessionDir = (userId) =>
+const getLegacyLocalSessionDir = (userId) =>
   path.join(AUTH_DATA_PATH, `session-${userId.toString()}`);
+
+const getLocalSessionDir = (userId) =>
+  path.join(os.tmpdir(), 'wa-picker-cache', userId.toString());
 
 const hasStoredLocalSession = (userId) => {
   try {
-    const sessionDir = getLocalSessionDir(userId);
+    const sessionDir = getLegacyLocalSessionDir(userId);
     if (!fs.existsSync(sessionDir)) return false;
 
     const credsPath = path.join(sessionDir, 'creds.json');
@@ -34,7 +43,10 @@ const hasStoredLocalSession = (userId) => {
   }
 };
 
-const canRecoverSession = async (userId) => hasStoredLocalSession(userId);
+const canRecoverSession = async (userId) => {
+  if (await hasMongoAuthSession(userId)) return true;
+  return hasStoredLocalSession(userId);
+};
 
 const listLocalSessionUserIds = () => {
   try {
@@ -50,8 +62,14 @@ const listLocalSessionUserIds = () => {
   }
 };
 
+const listStoredSessionUserIds = async () => {
+  const mongoUserIds = await listMongoAuthUserIds();
+  const localUserIds = listLocalSessionUserIds();
+  return [...new Set([...mongoUserIds, ...localUserIds])];
+};
+
 const cleanupLocalAuthArtifacts = async (userId, { maxAttempts = 6 } = {}) => {
-  const sessionDir = getLocalSessionDir(userId);
+  const sessionDir = getLegacyLocalSessionDir(userId);
   if (!fs.existsSync(sessionDir)) return true;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -62,12 +80,12 @@ const cleanupLocalAuthArtifacts = async (userId, { maxAttempts = 6 } = {}) => {
         maxRetries: 3,
         retryDelay: 500
       });
-      console.log(`Deleted Baileys session folder: ${sessionDir}`);
+      console.log(`Deleted legacy Baileys session folder: ${sessionDir}`);
       return true;
     } catch (err) {
       const retriable = ['EBUSY', 'EPERM', 'EACCES'].includes(err.code);
       if (!retriable || attempt === maxAttempts) {
-        console.warn(`Failed to remove Baileys session: ${err.message}`);
+        console.warn(`Failed to remove legacy Baileys session: ${err.message}`);
         return false;
       }
       await sleep(750 * attempt);
@@ -78,6 +96,10 @@ const cleanupLocalAuthArtifacts = async (userId, { maxAttempts = 6 } = {}) => {
 };
 
 const deleteStoredRemoteSession = async (userId) => {
+  const deletedKeys = await deleteMongoAuthSession(userId);
+  if (deletedKeys > 0) {
+    console.log(`Deleted ${deletedKeys} Baileys auth key(s) from MongoDB for user ${userId}`);
+  }
   await cleanupLocalAuthArtifacts(userId);
 };
 
@@ -102,15 +124,17 @@ const purgeAllLocalSessions = async () => {
     }
   }
 
-  console.log(`Purged ${removed} item(s) from ${AUTH_DATA_PATH}`);
+  console.log(`Purged ${removed} legacy item(s) from ${AUTH_DATA_PATH}`);
   return removed;
 };
 
 module.exports = {
   AUTH_DATA_PATH,
+  getLegacyLocalSessionDir,
   getLocalSessionDir,
   hasStoredLocalSession,
   listLocalSessionUserIds,
+  listStoredSessionUserIds,
   canRecoverSession,
   cleanupLocalAuthArtifacts,
   deleteStoredRemoteSession,
