@@ -1,7 +1,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const { migrateLocalSessionToMongo } = require('../utils/baileysMongoAuth');
-const { getLegacyLocalSessionDir } = require('../utils/whatsappSession');
+const { getLegacyLocalSessionDir } = require('../utils/baileysSessionPaths');
 
 const userId = process.argv[2];
 

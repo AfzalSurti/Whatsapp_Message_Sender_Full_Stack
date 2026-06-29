@@ -7,7 +7,8 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "check-mongo-auth": "node scripts/check-mongo-auth.js",
-    "migrate-local-auth": "node scripts/migrate-local-auth-to-mongo.js"
+    "migrate-local-auth": "node scripts/migrate-local-auth-to-mongo.js",
+    "repair-whatsapp-auth": "node scripts/repair-whatsapp-auth.js"
   },
   "license": "ISC",
   "dependencies": {
