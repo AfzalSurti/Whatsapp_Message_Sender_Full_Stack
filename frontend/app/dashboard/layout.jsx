@@ -45,7 +45,12 @@ export default function DashboardLayout({ children }) {
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const statusInitRef = useRef(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -222,17 +227,17 @@ export default function DashboardLayout({ children }) {
     setProgress,
   }), [progress, sending, waStatus]);
 
-  if (loading && !user) {
+  if (!mounted || loading || !user) {
+    if (mounted && !loading && !user && !getToken()) {
+      return null;
+    }
+
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center gap-3">
         <Loader2 className="animate-spin text-[#25D366]" size={32} />
         <p className="text-sm text-gray-500">Loading dashboard...</p>
       </div>
     );
-  }
-
-  if (!user) {
-    return null;
   }
 
   return (
