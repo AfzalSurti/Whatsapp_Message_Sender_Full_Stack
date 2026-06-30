@@ -81,7 +81,7 @@ const updateConfig = async (req, res) => {
       const ids = enabledTemplateIds
         .map((id) => String(id || '').trim())
         .filter(Boolean);
-
+        console.log(ids)
       for (const id of ids) {
         if (!mongoose.Types.ObjectId.isValid(id)) {
           return res.status(400).json({ error: `Invalid template id: ${id}` });
@@ -95,11 +95,12 @@ const updateConfig = async (req, res) => {
           isActive: true
         });
 
-        if (count !== ids.length) {
-          return res.status(400).json({
-            error: 'One or more selected templates are invalid or turned off'
-          });
-        }
+        // console.log(count,ids ,AITemplate)
+        // if (count !== ids.length) {
+        //   return res.status(400).json({
+        //     error: 'One or more selected templates are invalid or turned off'
+        //   });
+        // }
       }
 
       updates.enabledTemplateIds = ids;

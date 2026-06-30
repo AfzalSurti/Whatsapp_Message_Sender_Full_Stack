@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { validationResult } = require('express-validator');
+const { GoogleGenAI } = require("@google/genai");
 
 const LANGUAGE_RANGES = {
   Gujarati: /[\u0A80-\u0AFF]/,
@@ -95,27 +96,59 @@ const buildUserPrompt = ({
   return `Generate one WhatsApp message only.\n\n${contextLines}`;
 };
 
-const requestAIMessage = async ({ systemPrompt, userPrompt }) => {
-  const response = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    {
-      model: process.env.MODEL_NAME,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      max_tokens: 220
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    }
-  );
-  console.log(response?.data)
+const ai = new GoogleGenAI({
+  apiKey: process.env.GOOGLE_API_KEY,
+});
 
-  return response.data.choices[0].message.content.trim();
+// const requestAIMessage = async ({ systemPrompt, userPrompt }) => {
+//   const response = await axios.post(
+//     'https://openrouter.ai/api/v1/chat/completions',
+//     {
+//       model: process.env.MODEL_NAME,
+//       messages: [
+//         { role: 'system', content: systemPrompt },
+//         { role: 'user', content: userPrompt }
+//       ],
+//       max_tokens: 220
+//     },
+//     {
+//       headers: {
+//         Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+//         'Content-Type': 'application/json'
+//       }
+//     }
+//   );
+//   console.log(response)
+
+//   return response.data.choices[0].message.content.trim();
+// };
+
+const requestAIMessage = async ({ systemPrompt, userPrompt }) => {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `${systemPrompt}\n\n${userPrompt}`,
+            },
+          ],
+        },
+      ],
+      // config: {
+      //   maxOutputTokens: 220,
+      // },
+    });
+
+    console.log(response);
+
+    return response.text.trim();
+  } catch (err) {
+    console.error(err);
+    throw err;
+  }
 };
 
 const generateAIMessage = async (req, res) => {

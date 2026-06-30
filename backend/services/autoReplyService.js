@@ -25,6 +25,12 @@ const {
   findExampleMatch,
   matchTemplateLocally
 } = require('../utils/aiTemplateHelpers');
+const { GoogleGenAI } = require("@google/genai");
+
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.GOOGLE_API_KEY,
+});
 
 const DEFAULT_SYSTEM_PROMPT =
   'You are a helpful WhatsApp assistant. Reply naturally and concisely.';
@@ -66,26 +72,47 @@ const callOpenRouter = async (userPrompt, { systemPrompt = 'You are a helpful as
     throw new Error('AI model name is not configured');
   }
 
-  const response = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    {
-      model: process.env.MODEL_NAME,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      max_tokens: maxTokens
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000
-    }
-  );
+  // const response = await axios.post(
+  //   'https://openrouter.ai/api/v1/chat/completions',
+  //   {
+  //     model: process.env.MODEL_NAME,
+  //     messages: [
+  //       { role: 'system', content: systemPrompt },
+  //       { role: 'user', content: userPrompt }
+  //     ],
+  //     max_tokens: maxTokens
+  //   },
+  //   {
+  //     headers: {
+  //       Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+  //       'Content-Type': 'application/json'
+  //     },
+  //     timeout: 30000
+  //   }
+  // );
 
-  const content = response.data?.choices?.[0]?.message?.content;
+  // const content = response.data?.choices?.[0]?.message?.content;
+   const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+
+    config: {
+      systemInstruction: systemPrompt,
+      maxOutputTokens: maxTokens,
+    },
+
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: userPrompt,
+          },
+        ],
+      },
+    ],
+  });
+
+  const content = response.text;
   if (!content) {
     throw new Error('AI returned an empty response');
   }
@@ -303,6 +330,7 @@ Use placeholders only if their values are already known.`;
   return applyPlaceholders(reply, placeholderMap);
 };
 
+
 const generatePersonalityResponse = async (message, state, config) => {
   const systemPrompt = resolveSystemPrompt(config);
   const historyMessages = state.conversationHistory
@@ -314,23 +342,45 @@ const generatePersonalityResponse = async (message, state, config) => {
 
   historyMessages.push({ role: 'user', content: message });
 
-  const response = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    {
-      model: process.env.MODEL_NAME,
-      messages: [{ role: 'system', content: systemPrompt }, ...historyMessages],
-      max_tokens: 300
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      timeout: 30000
-    }
-  );
+  // const response = await axios.post(
+  //   'https://openrouter.ai/api/v1/chat/completions',
+  //   {
+  //     model: process.env.MODEL_NAME,
+  //     messages: [{ role: 'system', content: systemPrompt }, ...historyMessages],
+  //     max_tokens: 300
+  //   },
+  //   {
+  //     headers: {
+  //       Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+  //       'Content-Type': 'application/json'
+  //     },
+  //     timeout: 30000
+  //   }
+  // );
 
-  const content = response.data?.choices?.[0]?.message?.content;
+  // const content = response.data?.choices?.[0]?.message?.content;
+
+  const response = await ai.models.generateContent({
+    model: process.env.MODEL_NAME || "gemini-2.5-flash",
+
+    config: {
+      systemInstruction: systemPrompt,
+      maxOutputTokens: 300,
+    },
+
+    contents: historyMessages.map(msg => ({
+      role: msg.role, // "user" | "model"
+      parts: [
+        {
+          text: msg.content,
+        },
+      ],
+    })),
+  });
+
+  console.log(content)
+  const content = response.text;
+  
   if (!content) {
     throw new Error('AI returned an empty response');
   }
