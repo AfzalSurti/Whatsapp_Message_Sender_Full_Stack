@@ -47,7 +47,9 @@ const resolveAutoReplyAccess = ({ config, chatId, contactPhone, savedPhones }) =
   const isSelected = isContactSelected(config?.selectedContacts || [], chatId, contactPhone);
   const isUnknown = !isInSavedContacts(contactPhone, chatId, savedPhones);
 
-  if (config?.mode === 'selected') {
+  // Selected-only mode: reply only to explicitly selected contacts/chats.
+  // "smart" is treated as selected for backward compatibility.
+  if (config?.mode === 'selected' || config?.mode === 'smart' || !config?.mode) {
     return {
       allowed: isSelected,
       isSelected,
@@ -67,15 +69,12 @@ const resolveAutoReplyAccess = ({ config, chatId, contactPhone, savedPhones }) =
     };
   }
 
-  // smart (default): new numbers + selected WhatsApp chats
-  const allowed = isUnknown || isSelected;
-
   return {
-    allowed,
+    allowed: false,
     isSelected,
     isUnknown,
-    useAllTemplates: isUnknown,
-    reason: allowed ? (isUnknown ? 'unknown_number' : 'selected_chat') : 'saved_contact_not_selected'
+    useAllTemplates: false,
+    reason: 'saved_contact_not_selected'
   };
 };
 
