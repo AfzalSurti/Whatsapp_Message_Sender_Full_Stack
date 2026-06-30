@@ -58,6 +58,7 @@ export default function AutoReplyPage() {
 
   const [isEnabled, setIsEnabled] = useState(false);
   const [mode, setMode] = useState('smart');
+  const [replyAllIncoming, setReplyAllIncoming] = useState(false);
   const [selectedContacts, setSelectedContacts] = useState([]);
   const [aiTemplates, setAiTemplates] = useState([]);
   const [enabledTemplateIds, setEnabledTemplateIds] = useState([]);
@@ -104,7 +105,9 @@ export default function AutoReplyPage() {
       const config = res.data.config;
       console.log(res)
       setIsEnabled(Boolean(config.isEnabled));
-      setMode(config.mode === 'all' || config.mode === 'selected' ? 'smart' : config.mode || 'smart');
+      const resolvedMode = config.mode || 'selected';
+      setMode(resolvedMode);
+      setReplyAllIncoming(resolvedMode === 'all');
       setSelectedContacts(config.selectedContacts || []);
       setEnabledTemplateIds((config.enabledTemplateIds || []).map((id) => String(id)));
     } catch (err) {
@@ -426,13 +429,15 @@ export default function AutoReplyPage() {
     try {
       const res = await autoReplyAPI.updateConfig({
         isEnabled,
-        mode: 'smart',
+        mode: replyAllIncoming ? 'all' : 'selected',
         selectedContacts,
         enabledTemplateIds
       });
       const config = res.data.config;
       setIsEnabled(Boolean(config.isEnabled));
-      setMode(config.mode === 'all' || config.mode === 'selected' ? 'smart' : config.mode || 'smart');
+      const resolvedMode = config.mode || 'selected';
+      setMode(resolvedMode);
+      setReplyAllIncoming(resolvedMode === 'all');
       setSelectedContacts(config.selectedContacts || []);
       setEnabledTemplateIds((config.enabledTemplateIds || []).map((id) => String(id)));
       toast.success('Auto-reply settings saved');
@@ -552,17 +557,29 @@ export default function AutoReplyPage() {
             <div className="text-sm font-semibold text-[#25D366]">Who gets auto-replies</div>
             <ul className="text-sm text-gray-300 space-y-1.5 list-disc list-inside">
               <li>
-                <strong className="text-white">New numbers</strong> — anyone not in your saved contacts gets
-                replies using <strong className="text-white">all active AI templates</strong>
-              </li>
-              <li>
                 <strong className="text-white">Selected chats</strong> — WhatsApp chats you pick below also get
-                auto-reply (uses templates you enable)
+                auto-reply
               </li>
-              <li>
-                Saved contacts are skipped unless you add them from WhatsApp Chats
-              </li>
+              <li>Everything else is skipped unless you enable "Reply all incoming messages"</li>
             </ul>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-[#0a0a0a] p-4 space-y-2">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={replyAllIncoming}
+                onChange={(e) => setReplyAllIncoming(e.target.checked)}
+                className="mt-1 accent-[#25D366] w-4 h-4"
+              />
+              <div>
+                <div className="text-sm font-semibold text-white">Bot active for all incoming messages</div>
+                <p className="text-xs text-gray-500 mt-1">
+                  When enabled, the bot replies to every personal incoming WhatsApp message. When disabled,
+                  only selected chats receive replies.
+                </p>
+              </div>
+            </label>
           </div>
 
           <div className="space-y-4 border border-white/10 rounded-2xl p-4 bg-[#0a0a0a]">

@@ -48,8 +48,9 @@ const resolveAutoReplyAccess = ({ config, chatId, contactPhone, savedPhones }) =
   // const isUnknown = !isInSavedContacts(contactPhone, chatId, savedPhones);
   let isUnknown = false
 
-  
-  if (config?.mode === 'selected') {
+  // Selected-only mode: reply only to explicitly selected contacts/chats.
+  // "smart" is treated as selected for backward compatibility.
+  if (config?.mode === 'selected' || config?.mode === 'smart' || !config?.mode) {
     return {
       allowed: isSelected,
       isSelected,
@@ -73,11 +74,11 @@ const resolveAutoReplyAccess = ({ config, chatId, contactPhone, savedPhones }) =
   const allowed = isSelected;
 
   return {
-    allowed,
+    allowed: false,
     isSelected,
     isUnknown,
-    useAllTemplates: isUnknown,
-    reason: allowed ? (isUnknown ? 'unknown_number' : 'selected_chat') : 'saved_contact_not_selected'
+    useAllTemplates: false,
+    reason: 'saved_contact_not_selected'
   };
 };
 

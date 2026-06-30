@@ -14,8 +14,8 @@ const AutoReplyConfigSchema = new mongoose.Schema(
     },
     mode: {
       type: String,
-      enum: ["smart", "all", "selected"],
-      default: "smart",
+      enum: ['smart', 'all', 'selected'],
+      default: 'selected'
     },
     selectedContacts: {
       type: [

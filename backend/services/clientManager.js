@@ -84,6 +84,7 @@ const ingestContacts = (entry, contacts = []) => {
 };
 
 const MIN_EXPECTED_CONTACTS = 50;
+const DEFAULT_TARGET_CONTACTS = 180;
 
 const countContactEntries = (entry) => {
   if (!entry) return 0;
@@ -794,11 +795,12 @@ const hydratePickerMaps = async (entry, { maxWaitMs = 2000, allowResync = false 
 
 const loadContactsAfterConnect = async (entry, userId, userIdStr) => {
   if (!entry || entry.status !== 'connected') return;
+  const targetMinExpected = getPickerMinExpected(userId, { limit: 500 });
 
   await forceSyncWhatsAppContacts(entry, {
     maxWaitMs: 60000,
     force: false,
-    minExpected: MIN_EXPECTED_CONTACTS
+    minExpected: targetMinExpected
   });
 
   console.log(
@@ -837,6 +839,16 @@ const isPickerCacheUsable = (cached, entry, limit) => {
 
 const { getRecentChatsFromDb } = require('../utils/whatsappChat');
 const { loadPickerContactCache, savePickerContactCache } = require('../utils/pickerContactCache');
+
+const getPickerMinExpected = (userId, { limit = 500 } = {}) => {
+  const diskCached = loadPickerContactCache(userId.toString());
+  const cachedCount = Array.isArray(diskCached) ? diskCached.length : 0;
+  const targetFromCache = cachedCount > 0
+    ? Math.max(MIN_EXPECTED_CONTACTS, Math.floor(cachedCount * 0.75))
+    : 0;
+
+  return Math.min(limit, Math.max(DEFAULT_TARGET_CONTACTS, targetFromCache));
+};
 
 const getPickerContacts = async (userId, { limit = 500, forceRefresh = false } = {}) => {
   const userIdStr = userId.toString();
@@ -880,11 +892,12 @@ const getPickerContacts = async (userId, { limit = 500, forceRefresh = false } =
 
   await releaseBufferedBaileysEvents(entry);
 
-  if (needsFullContactSync(entry, { minExpected: MIN_EXPECTED_CONTACTS })) {
+  const targetMinExpected = getPickerMinExpected(userId, { limit });
+  if (needsFullContactSync(entry, { minExpected: targetMinExpected })) {
     await forceSyncWhatsAppContacts(entry, {
       maxWaitMs: forceRefresh ? 90000 : 45000,
       force: forceRefresh,
-      minExpected: MIN_EXPECTED_CONTACTS
+      minExpected: targetMinExpected
     });
   } else {
     await releaseBufferedBaileysEvents(entry);
