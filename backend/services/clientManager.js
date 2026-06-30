@@ -34,9 +34,14 @@ const {
   upsertContactPickerRecord,
   contactsFromPickerStore
 } = require('../utils/contactPickerStore');
+const { parseConnectedPhoneFromJid } = require('../utils/whatsappChat');
+const { ensureDefaultSchedulerAlertPhone } = require('../utils/schedulerReminder');
 
 const clients = new Map();
 const clientsBeingCreated = new Set();
+const reconnectAttemptsByUser = new Map();
+const pendingAutoReconnect = new Set();
+const MAX_AUTO_RECONNECTS = 12;
 const ALL_WA_PATCH_NAMES = [
   'critical_block',
   'critical_unblock_low',
@@ -204,7 +209,7 @@ const forceSyncWhatsAppContacts = async (
   return countContactEntries(entry) > 0;
 };
 
-const getQrTimeoutMs = (isRecovery = false) => (isRecovery ? 180000 : 120000);
+const getQrTimeoutMs = (isRecovery = false) => (isRecovery ? 300000 : 120000);
 
 const isClientReady = (userId) => {
   const entry = clients.get(userId.toString());
@@ -212,8 +217,11 @@ const isClientReady = (userId) => {
 };
 
 const isClientPending = (userId) => {
-  const entry = clients.get(userId.toString());
-  return Boolean(entry && (entry.status === 'pending' || clientsBeingCreated.has(userId.toString())));
+  const userIdStr = userId.toString();
+  const entry = clients.get(userIdStr);
+  return Boolean(
+    entry && (entry.status === 'pending' || clientsBeingCreated.has(userIdStr))
+  ) || pendingAutoReconnect.has(userIdStr);
 };
 
 const waitForClientReady = async (userId, maxMs = 20000) => {
@@ -225,6 +233,29 @@ const waitForClientReady = async (userId, maxMs = 20000) => {
   return null;
 };
 
+const getOrRestoreReadyClient = async (userId, { maxWaitMs = 45000 } = {}) => {
+  const userIdStr = userId.toString();
+
+  if (isClientReady(userId)) {
+    return getClient(userId);
+  }
+
+  if (!(await canRecoverSession(userId))) {
+    return null;
+  }
+
+  if (!isClientPending(userId)) {
+    try {
+      const { sendToUser } = require('./websocket');
+      await ensureClientConnected(userId, sendToUser);
+    } catch (err) {
+      console.warn(`Scheduler session restore failed for ${userIdStr}: ${err.message}`);
+    }
+  }
+
+  return waitForClientReady(userId, maxWaitMs);
+};
+
 const getClient = (id) => {
   const entry = clients.get(id.toString());
   return entry ? entry.client : null;
@@ -234,6 +265,12 @@ const getStatus = (userId) => {
   const entry = clients.get(userId.toString());
   if (!entry) return 'disconnected';
   return entry.status;
+};
+
+const getConnectedPhoneNumber = (userId) => {
+  const entry = clients.get(userId.toString());
+  const jid = entry?.sock?.user?.id;
+  return parseConnectedPhoneFromJid(jid);
 };
 
 const markSessionLinked = async (userId, phoneNumber = null) => {
@@ -391,10 +428,16 @@ const bindSocketEvents = ({
     if (connection === 'open') {
       entry.status = 'connected';
       entry.pendingStartTime = null;
+      reconnectAttemptsByUser.delete(userIdStr);
       if (entry.qrTimeoutHandle) clearTimeout(entry.qrTimeoutHandle);
 
-      const phone = sock.user?.id ? `+${String(sock.user.id).split('@')[0]}` : null;
+      const phone = parseConnectedPhoneFromJid(sock.user?.id);
       await markSessionLinked(userId, phone);
+      if (phone) {
+        ensureDefaultSchedulerAlertPhone(userId, phone).catch((err) => {
+          console.warn(`Failed to set default scheduler alert phone for ${userIdStr}: ${err.message}`);
+        });
+      }
       onReady();
 
       setTimeout(() => {
@@ -409,6 +452,11 @@ const bindSocketEvents = ({
       const loggedOut = statusCode === DisconnectReason.loggedOut;
       const reason = lastDisconnect?.error?.message || 'Connection closed';
 
+      if (entry.qrTimeoutHandle) {
+        clearTimeout(entry.qrTimeoutHandle);
+        entry.qrTimeoutHandle = null;
+      }
+
       clients.delete(userIdStr);
       clientsBeingCreated.delete(userIdStr);
 
@@ -418,8 +466,19 @@ const bindSocketEvents = ({
       }
 
       if (!entry.shouldStayClosed && !loggedOut && entry.allowReconnect) {
-        console.log(`Baileys reconnecting user ${userIdStr}...`);
+        const attempts = (reconnectAttemptsByUser.get(userIdStr) || 0) + 1;
+        reconnectAttemptsByUser.set(userIdStr, attempts);
+
+        if (attempts > MAX_AUTO_RECONNECTS) {
+          console.warn(`Baileys reconnect limit reached for ${userIdStr}, stopping auto-reconnect`);
+          onDisconnected('WhatsApp connection unstable. Click Connect to retry.');
+          return;
+        }
+
+        console.log(`Baileys reconnecting user ${userIdStr} (attempt ${attempts}/${MAX_AUTO_RECONNECTS})...`);
+        pendingAutoReconnect.add(userIdStr);
         setTimeout(() => {
+          pendingAutoReconnect.delete(userIdStr);
           createClient(userId, onQR, onReady, onDisconnected, {
             suppressQrNotification: entry.suppressQrNotification,
             freshAuth: false
@@ -428,6 +487,7 @@ const bindSocketEvents = ({
         return;
       }
 
+      reconnectAttemptsByUser.delete(userIdStr);
       onDisconnected(reason);
     }
   });
@@ -452,6 +512,10 @@ const bindSocketEvents = ({
         const { isAutoReplyEligibleMessage } = require('../utils/whatsappChat');
         const wrapped = wrapIncomingMessage(sock, waMessage, entry.contactMap);
         if (!isAutoReplyEligibleMessage(wrapped)) continue;
+
+        const { handleSchedulerReply } = require('./schedulerReplyService');
+        const handledByScheduler = await handleSchedulerReply(current.client, userId, wrapped);
+        if (handledByScheduler) continue;
 
         const { handleIncomingMessage } = require('./autoReplyService');
         await handleIncomingMessage(current.client, userId, wrapped);
@@ -558,8 +622,9 @@ const createClient = async (userId, onQR, onReady, onDisconnected, options = {})
     console.warn(`QR timeout for user ${userIdStr}`);
 
     if (entry.suppressQrNotification) {
-      await clearStaleStoredSession(userId);
+      // Keep session files on disk — only stop this restore attempt.
       await abortPendingClient(userId, 'Recovery timed out waiting for session restore');
+      onDisconnected('Session restore timed out. Click Connect to try again.');
       return;
     }
 
@@ -641,12 +706,16 @@ const ensureClientConnected = async (userId, sendToUser) => {
 
   if (isClientReady(userId)) return getClient(userId);
   if (clientsBeingCreated.has(userIdStr) || getStatus(userId) === 'pending') return null;
+  if (pendingAutoReconnect.has(userIdStr)) return null;
   if (!(await canRecoverSession(userId))) return null;
 
   return createClient(
     userId,
     (qrImage) => sendToUser?.(userIdStr, { type: 'qr', qr: qrImage }),
-    () => sendToUser?.(userIdStr, { type: 'ready' }),
+    () => {
+      const phoneNumber = getConnectedPhoneNumber(userId);
+      sendToUser?.(userIdStr, { type: 'ready', phoneNumber });
+    },
     (reason) => sendToUser?.(userIdStr, { type: 'disconnected', reason }),
     { suppressQrNotification: true }
   );
@@ -955,9 +1024,11 @@ module.exports = {
   createClient,
   getClient,
   getStatus,
+  getConnectedPhoneNumber,
   isClientReady,
   isClientPending,
   waitForClientReady,
+  getOrRestoreReadyClient,
   getPickerContacts,
   ensureClientConnected,
   abortPendingClient,

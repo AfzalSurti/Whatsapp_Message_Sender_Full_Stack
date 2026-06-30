@@ -24,7 +24,10 @@ const createValidation = [
   body('sendingSpeed').optional().trim(),
   body('recurrencePattern').optional().trim(),
   body('recurrenceStartDate').optional().isISO8601(),
-  body('recurrenceEndDate').optional().isISO8601()
+  body('recurrenceEndDate').optional().isISO8601(),
+  body('reminderEnabled').optional().isBoolean(),
+  body('reminderMinutesBefore').optional().isInt({ min: 1, max: 120 }),
+  body('reminderPhone').optional().trim()
 ];
 
 router.post('/', protect, createValidation, createCampaign);

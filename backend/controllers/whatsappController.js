@@ -1,8 +1,27 @@
 const clientManager = require('../services/clientManager');
 const { sendMessages } = require('../services/sender');
 const Session = require('../models/Session');
+const User = require('../models/User');
 const { trackUsage } = require('./keysController');
 const { getLatestQr, clearLatestQr } = require('../services/websocket');
+const { parseConnectedPhoneFromJid } = require('../utils/whatsappChat');
+
+const normalizeSessionPhone = (phone) => {
+  if (!phone) return null;
+
+  if (phone.includes(':')) {
+    const userPart = phone.replace(/^\+/, '').split(':')[0];
+    return parseConnectedPhoneFromJid(`${userPart}@s.whatsapp.net`) || phone.split(':')[0];
+  }
+
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('91') && digits.length > 12) {
+    const trimmed = parseConnectedPhoneFromJid(`${digits.slice(0, 12)}@s.whatsapp.net`);
+    if (trimmed) return trimmed;
+  }
+
+  return phone;
+};
 
 const connectWhatsApp = async (req, res) => {
   try {
@@ -13,7 +32,14 @@ const connectWhatsApp = async (req, res) => {
     const explicitFresh = req.body?.fresh === true;
 
     if (status === 'connected') {
-      return res.json({ message: 'Already connected', status: 'connected' });
+      const session = await Session.findOne({ userId }).select('phoneNumber').lean();
+      return res.json({
+        message: 'Already connected',
+        status: 'connected',
+        phoneNumber: clientManager.getConnectedPhoneNumber(userId)
+          || normalizeSessionPhone(session?.phoneNumber)
+          || null
+      });
     }
 
     if (status === 'pending' && explicitFresh) {
@@ -44,7 +70,8 @@ const connectWhatsApp = async (req, res) => {
       },
       () => {
         console.log(`📨 Sending ready status to user ${userIdStr}`);
-        sendToUser(userIdStr, { type: 'ready' });
+        const phoneNumber = clientManager.getConnectedPhoneNumber(userId);
+        sendToUser(userIdStr, { type: 'ready', phoneNumber });
       },
       (reason) => {
         console.log(`📨 Sending disconnected status to user ${userIdStr}: ${reason}`);
@@ -75,6 +102,7 @@ const getWhatsAppStatus = async (req, res) => {
     const userId = req.user._id;
     let status = clientManager.getStatus(userId);
     const session = await Session.findOne({ userId });
+    const user = await User.findById(userId).select('schedulerAlertPhone').lean();
     const recoverable = await clientManager.canRecoverSession(userId);
 
     if (status === 'disconnected' && recoverable && !clientManager.isClientPending(userId)) {
@@ -93,6 +121,12 @@ const getWhatsAppStatus = async (req, res) => {
     }
 
     const qr = status === 'pending' ? getLatestQr(userId) : null;
+    const livePhone = clientReady ? clientManager.getConnectedPhoneNumber(userId) : null;
+    const schedulerAlertPhone =
+      user?.schedulerAlertPhone
+      || livePhone
+      || normalizeSessionPhone(session?.phoneNumber)
+      || null;
 
     res.json({
       status: clientReady ? 'connected' : status,
@@ -100,6 +134,8 @@ const getWhatsAppStatus = async (req, res) => {
       hasStoredSession: recoverable,
       restoring: status === 'pending' && recoverable,
       lastSeen: session?.lastSeen || null,
+      phoneNumber: livePhone || normalizeSessionPhone(session?.phoneNumber) || null,
+      schedulerAlertPhone,
       clientReady,
       qr: qr || null
     });

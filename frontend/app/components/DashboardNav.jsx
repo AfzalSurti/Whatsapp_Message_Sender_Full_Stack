@@ -1,11 +1,16 @@
 import ConfirmModal from "@/components/dashboard/ConfirmModal";
 import { useAuth } from "@/context/AuthContext";
-import { mainNavItems, manageNavItems, settingsNavItem } from "@/lib/dashRoutes";
+import {
+  mainNavItems,
+  manageNavItems,
+  settingsNavItem,
+} from "@/lib/dashRoutes";
 import {
   Activity,
   BarChart3,
   Bot,
   ClipboardList,
+  Globe,
   History,
   Key,
   Layers,
@@ -19,8 +24,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React, { useState } from "react";
 
-
-
 const DashboardNav = () => {
   const pathname = usePathname();
   const { user, logout } = useAuth();
@@ -29,14 +32,14 @@ const DashboardNav = () => {
     <div>
       <div className="lg:w-72"></div>
       <aside className="fixed  lg:h-screen lg:w-72 border-r border-[#1f1f1f] bg-[#111] flex flex-col flex-1">
-        <div className="h-16 px-5 flex items-center gap-3 border-b border-white/5">
-          <div className="w-9 h-9 rounded-xl bg-[#25D366] flex items-center justify-center">
-            <MessageSquare size={17} className="text-black" />
+        <div className="h-20 px-5 flex items-center gap-3 border-b border-white/5">
+          <div>
+            <img src="/assets/images/Asset 10.png" alt="Logo" width={40} />
           </div>
           <div>
-            <div className="font-bold leading-none">WA Sender</div>
-            <div className="text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1">
-              Campaigns
+            <div className="font-bold leading-none">WhatsApp Auto</div>
+            <div className="text-[10px] uppercase tracking-[0.1em] text-gray-500 mt-1">
+              Produt by <a className="text-primary bold">GoMindz</a>
             </div>
           </div>
         </div>
@@ -75,6 +78,13 @@ const DashboardNav = () => {
                 </Link>
               );
             })}
+            <a
+              href={"/"}
+              target="_blank"
+              className={`flex items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm transition-colors text-gray-400 hover:bg-white/5 hover:text-white`}
+            >
+              <Globe size={17} /> Website
+            </a>
           </div>
         </nav>
 

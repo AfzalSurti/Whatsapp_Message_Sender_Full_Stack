@@ -336,7 +336,7 @@ const generatePersonalityResponse = async (message, state, config) => {
   const historyMessages = state.conversationHistory
     .slice(-10)
     .map((entry) => ({
-      role: entry.role === 'assistant' ? 'assistant' : 'user',
+      role: entry.role === 'assistant' ? 'model' : 'user',
       content: entry.content
     }));
 
@@ -359,9 +359,8 @@ const generatePersonalityResponse = async (message, state, config) => {
   // );
 
   // const content = response.data?.choices?.[0]?.message?.content;
-
   const response = await ai.models.generateContent({
-    model: process.env.MODEL_NAME || "gemini-2.5-flash",
+    model: "antigravity",
 
     config: {
       systemInstruction: systemPrompt,
@@ -378,8 +377,8 @@ const generatePersonalityResponse = async (message, state, config) => {
     })),
   });
 
-  console.log(content)
   const content = response.text;
+  console.log(response)
   
   if (!content) {
     throw new Error('AI returned an empty response');
@@ -426,6 +425,7 @@ const handleIncomingMessage = async (client, userId, msg) => {
       contactPhone,
       savedPhones
     });
+    console.log(access)
 
     if (!access.allowed) {
       await AutoReplyLog.create({

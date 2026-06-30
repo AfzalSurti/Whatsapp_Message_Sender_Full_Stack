@@ -1,46 +1,53 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const AutoReplyConfigSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
-      unique: true
+      unique: true,
     },
     isEnabled: {
       type: Boolean,
-      default: false
+      default: false,
     },
     mode: {
       type: String,
-      enum: ['smart', 'all', 'selected'],
-      default: 'smart'
+      enum: ["smart", "all", "selected"],
+      default: "smart",
     },
     selectedContacts: {
-      type: [String],
-      default: []
+      type: [
+        {
+          _id: false,
+          phoneNumber: { type: String, default: "" },
+          chatId: { type: String, default: "" },
+        },
+      ],
+      default: [],
     },
     systemPrompt: {
       type: String,
-      default: 'You are a helpful WhatsApp assistant. Reply naturally and concisely.',
+      default:
+        "You are a helpful WhatsApp assistant. Reply naturally and concisely.",
       trim: true,
-      maxlength: 2000
+      maxlength: 2000,
     },
     delay: {
       type: Number,
       default: 2000,
       min: 1000,
-      max: 10000
+      max: 10000,
     },
     enabledTemplateIds: {
-      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'AITemplate' }],
-      default: []
-    }
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "AITemplate" }],
+      default: [],
+    },
   },
   {
-    timestamps: { createdAt: true, updatedAt: true }
-  }
+    timestamps: { createdAt: true, updatedAt: true },
+  },
 );
 
-module.exports = mongoose.model('AutoReplyConfig', AutoReplyConfigSchema);
+module.exports = mongoose.model("AutoReplyConfig", AutoReplyConfigSchema);

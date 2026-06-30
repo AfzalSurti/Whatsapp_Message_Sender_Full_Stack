@@ -1,13 +1,10 @@
-const mongoose = require('mongoose');
-const { validationResult } = require('express-validator');
-const AutoReplyConfig = require('../models/AutoReplyConfig');
-const AITemplate = require('../models/AITemplate');
-const AutoReplyLog = require('../models/AutoReplyLog');
-const clientManager = require('../services/clientManager');
-const {
-  isChatId,
-  normalizePhoneValue
-} = require('../utils/whatsappChat');
+const mongoose = require("mongoose");
+const { validationResult } = require("express-validator");
+const AutoReplyConfig = require("../models/AutoReplyConfig");
+const AITemplate = require("../models/AITemplate");
+const AutoReplyLog = require("../models/AutoReplyLog");
+const clientManager = require("../services/clientManager");
+const { isChatId, normalizePhoneValue } = require("../utils/whatsappChat");
 
 const getOrCreateConfig = async (userId) => {
   let config = await AutoReplyConfig.findOne({ userId });
@@ -21,31 +18,71 @@ const getOrCreateConfig = async (userId) => {
 
 const normalizeSelectedContacts = (contacts = []) => {
   if (!Array.isArray(contacts)) {
-    return { valid: false, error: 'selectedContacts must be an array' };
+    return { valid: false, error: "selectedContacts must be an array" };
   }
 
   const normalized = [];
+  const seen = new Set();
 
   for (const raw of contacts) {
-    const value = String(raw || '').trim();
-    if (!value) continue;
+    if (!raw || typeof raw !== "object") {
+      return {
+        valid: false,
+        error: "Each selected contact must be an object.",
+      };
+    }
 
-    if (isChatId(value)) {
-      if (!normalized.includes(value)) normalized.push(value);
+    let { phoneNumber = "", chatId = "" } = raw;
+
+    phoneNumber = String(phoneNumber).trim();
+    chatId = String(chatId).trim();
+
+    // At least one identifier is required
+    if (!phoneNumber && !chatId) {
       continue;
     }
 
-    const parsed = normalizePhoneValue(value);
-    if (!parsed) {
-      return { valid: false, error: `Invalid phone number: ${value}` };
+    // Validate phone number
+    if (phoneNumber) {
+      const parsed = normalizePhoneValue(phoneNumber);
+
+      if (!parsed) {
+        return {
+          valid: false,
+          error: `Invalid phone number: ${phoneNumber}`,
+        };
+      }
+
+      phoneNumber = parsed;
     }
 
-    if (!normalized.includes(parsed)) {
-      normalized.push(parsed);
+    // Validate chatId
+    if (chatId && !isChatId(chatId)) {
+      return {
+        valid: false,
+        error: `Invalid chatId: ${chatId}`,
+      };
     }
+
+    // Prevent duplicates
+    const key = chatId || phoneNumber;
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+
+    normalized.push({
+      phoneNumber,
+      chatId,
+    });
   }
 
-  return { valid: true, contacts: normalized };
+  return {
+    valid: true,
+    contacts: normalized,
+  };
 };
 
 const getConfig = async (req, res) => {
@@ -53,8 +90,8 @@ const getConfig = async (req, res) => {
     const config = await getOrCreateConfig(req.user._id);
     res.json({ config });
   } catch (err) {
-    console.error('Get auto-reply config failed:', err.message);
-    res.status(500).json({ error: 'Failed to load auto-reply settings' });
+    console.error("Get auto-reply config failed:", err.message);
+    res.status(500).json({ error: "Failed to load auto-reply settings" });
   }
 };
 
@@ -65,23 +102,32 @@ const updateConfig = async (req, res) => {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { isEnabled, mode, selectedContacts, systemPrompt, delay, enabledTemplateIds } = req.body;
+    const {
+      isEnabled,
+      mode,
+      selectedContacts,
+      systemPrompt,
+      delay,
+      enabledTemplateIds,
+    } = req.body;
     const updates = {};
 
-    if (typeof isEnabled === 'boolean') updates.isEnabled = isEnabled;
+    if (typeof isEnabled === "boolean") updates.isEnabled = isEnabled;
     if (mode !== undefined) updates.mode = mode;
     if (systemPrompt !== undefined) updates.systemPrompt = systemPrompt;
     if (delay !== undefined) updates.delay = delay;
 
     if (enabledTemplateIds !== undefined) {
       if (!Array.isArray(enabledTemplateIds)) {
-        return res.status(400).json({ error: 'enabledTemplateIds must be an array' });
+        return res
+          .status(400)
+          .json({ error: "enabledTemplateIds must be an array" });
       }
 
       const ids = enabledTemplateIds
-        .map((id) => String(id || '').trim())
+        .map((id) => String(id || "").trim())
         .filter(Boolean);
-        console.log(ids)
+      console.log(ids);
       for (const id of ids) {
         if (!mongoose.Types.ObjectId.isValid(id)) {
           return res.status(400).json({ error: `Invalid template id: ${id}` });
@@ -92,7 +138,7 @@ const updateConfig = async (req, res) => {
         const count = await AITemplate.countDocuments({
           userId: req.user._id,
           _id: { $in: ids },
-          isActive: true
+          isActive: true,
         });
 
         // console.log(count,ids ,AITemplate)
@@ -108,29 +154,36 @@ const updateConfig = async (req, res) => {
 
     if (selectedContacts !== undefined) {
       const normalized = normalizeSelectedContacts(selectedContacts);
+
       if (!normalized.valid) {
-        return res.status(400).json({ error: normalized.error });
+        return res.status(400).json({
+          error: normalized.error,
+        });
       }
+
       updates.selectedContacts = normalized.contacts;
     }
 
     const config = await AutoReplyConfig.findOneAndUpdate(
       { userId: req.user._id },
       { $set: updates },
-      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: "after", setDefaultsOnInsert: true },
     );
 
     res.json({ config });
   } catch (err) {
-    console.error('Update auto-reply config failed:', err.message);
-    res.status(500).json({ error: 'Failed to update auto-reply settings' });
+    console.error("Update auto-reply config failed:", err.message);
+    res.status(500).json({ error: "Failed to update auto-reply settings" });
   }
 };
 
 const getLogs = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 20, 1),
+      100,
+    );
     const skip = (page - 1) * limit;
 
     const filter = { userId: req.user._id };
@@ -141,7 +194,7 @@ const getLogs = async (req, res) => {
 
     const [logs, total] = await Promise.all([
       AutoReplyLog.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-      AutoReplyLog.countDocuments(filter)
+      AutoReplyLog.countDocuments(filter),
     ]);
 
     res.json({
@@ -149,11 +202,11 @@ const getLogs = async (req, res) => {
       page,
       limit,
       total,
-      pages: Math.ceil(total / limit) || 1
+      pages: Math.ceil(total / limit) || 1,
     });
   } catch (err) {
-    console.error('Get auto-reply logs failed:', err.message);
-    res.status(500).json({ error: 'Failed to load auto-reply logs' });
+    console.error("Get auto-reply logs failed:", err.message);
+    res.status(500).json({ error: "Failed to load auto-reply logs" });
   }
 };
 
@@ -163,75 +216,81 @@ const getContacts = async (req, res) => {
       { $match: { userId: req.user._id } },
       {
         $group: {
-          _id: '$contactPhone',
-          contactName: { $last: '$contactName' },
-          lastMessageAt: { $max: '$createdAt' },
-          messageCount: { $sum: 1 }
-        }
+          _id: "$contactPhone",
+          contactName: { $last: "$contactName" },
+          lastMessageAt: { $max: "$createdAt" },
+          messageCount: { $sum: 1 },
+        },
       },
       { $sort: { lastMessageAt: -1 } },
       {
         $project: {
           _id: 0,
-          contactPhone: '$_id',
+          contactPhone: "$_id",
           contactName: 1,
           lastMessageAt: 1,
-          messageCount: 1
-        }
-      }
+          messageCount: 1,
+        },
+      },
     ]);
 
     res.json({ contacts, total: contacts.length });
   } catch (err) {
-    console.error('Get auto-reply contacts failed:', err.message);
-    res.status(500).json({ error: 'Failed to load auto-reply contacts' });
+    console.error("Get auto-reply contacts failed:", err.message);
+    res.status(500).json({ error: "Failed to load auto-reply contacts" });
   }
 };
 
 const deleteContactLogs = async (req, res) => {
   try {
-    const contactPhone = String(req.query.contactPhone || '').trim();
+    const contactPhone = String(req.query.contactPhone || "").trim();
     if (!contactPhone) {
-      return res.status(400).json({ error: 'contactPhone is required' });
+      return res.status(400).json({ error: "contactPhone is required" });
     }
 
     const result = await AutoReplyLog.deleteMany({
       userId: req.user._id,
-      contactPhone
+      contactPhone,
     });
 
     if (result.deletedCount === 0) {
-      return res.status(404).json({ error: 'No conversation history found for this contact' });
+      return res
+        .status(404)
+        .json({ error: "No conversation history found for this contact" });
     }
 
     res.json({
-      message: 'Contact conversation history deleted',
-      deletedCount: result.deletedCount
+      message: "Contact conversation history deleted",
+      deletedCount: result.deletedCount,
     });
   } catch (err) {
-    console.error('Delete auto-reply contact logs failed:', err.message);
-    res.status(500).json({ error: 'Failed to delete contact history' });
+    console.error("Delete auto-reply contact logs failed:", err.message);
+    res.status(500).json({ error: "Failed to delete contact history" });
   }
 };
 
 const getWhatsAppContacts = async (req, res) => {
   try {
     const userId = req.user._id;
-    const forceRefresh = req.query.refresh === '1';
+    const forceRefresh = req.query.refresh === "1";
 
     const contacts = await clientManager.getPickerContacts(userId, {
       limit: 500,
-      forceRefresh
+      forceRefresh,
     });
 
-    console.log(`Loaded ${contacts.length} WhatsApp chats for auto-reply picker`);
+    console.log(
+      `Loaded ${contacts.length} WhatsApp chats for auto-reply picker`,
+    );
 
-    res.set('Cache-Control', 'no-store');
+    res.set("Cache-Control", "no-store");
     res.json({ contacts });
   } catch (err) {
-    console.error('Get WhatsApp contacts failed:', err.message);
+    console.error("Get WhatsApp contacts failed:", err.message);
     const status = /not connected|timed out/i.test(err.message) ? 400 : 500;
-    res.status(status).json({ error: err.message || 'Failed to load WhatsApp contacts' });
+    res
+      .status(status)
+      .json({ error: err.message || "Failed to load WhatsApp contacts" });
   }
 };
 
@@ -239,27 +298,30 @@ const deleteLog = async (req, res) => {
   try {
     const log = await AutoReplyLog.findOneAndDelete({
       _id: req.params.id,
-      userId: req.user._id
+      userId: req.user._id,
     });
 
     if (!log) {
-      return res.status(404).json({ error: 'Log entry not found' });
+      return res.status(404).json({ error: "Log entry not found" });
     }
 
-    res.json({ message: 'Log entry deleted' });
+    res.json({ message: "Log entry deleted" });
   } catch (err) {
-    console.error('Delete auto-reply log failed:', err.message);
-    res.status(500).json({ error: 'Failed to delete log entry' });
+    console.error("Delete auto-reply log failed:", err.message);
+    res.status(500).json({ error: "Failed to delete log entry" });
   }
 };
 
 const clearLogs = async (req, res) => {
   try {
     const result = await AutoReplyLog.deleteMany({ userId: req.user._id });
-    res.json({ message: 'All auto-reply logs cleared', deletedCount: result.deletedCount });
+    res.json({
+      message: "All auto-reply logs cleared",
+      deletedCount: result.deletedCount,
+    });
   } catch (err) {
-    console.error('Clear auto-reply logs failed:', err.message);
-    res.status(500).json({ error: 'Failed to clear logs' });
+    console.error("Clear auto-reply logs failed:", err.message);
+    res.status(500).json({ error: "Failed to clear logs" });
   }
 };
 
@@ -271,5 +333,5 @@ module.exports = {
   getWhatsAppContacts,
   deleteLog,
   deleteContactLogs,
-  clearLogs
+  clearLogs,
 };

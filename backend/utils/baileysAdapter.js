@@ -1,4 +1,5 @@
 const { jidNormalizedUser, isJidUser } = require('@whiskeysockets/baileys');
+const { jidDecode } = require('@whiskeysockets/baileys');
 const PERSONAL_SERVERS = new Set(['s.whatsapp.net', 'lid', 'c.us']);
 
 const normalizeJid = (value) => {
@@ -457,7 +458,9 @@ const getChatsForPicker = (
 
 const createBaileysClientAdapter = (sock, { chatMap, contactMap }) => {
   const sendMessage = createSendMessage(sock);
-  const phoneUser = String(sock?.user?.id || '').split('@')[0] || '';
+  const phoneUser = jidDecode(sock?.user?.id)?.user
+    || String(sock?.user?.id || '').split('@')[0]?.split(':')[0]
+    || '';
 
   return {
     sock,

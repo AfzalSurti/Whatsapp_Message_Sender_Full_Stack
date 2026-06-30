@@ -63,10 +63,10 @@ export default function SignupPage() {
       <div className="relative z-10 w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-6">
-            <div className="w-9 h-9 rounded-xl bg-[#25D366] flex items-center justify-center">
-              <MessageSquare size={18} className="text-black" />
+            <div>
+              <img src="/assets/images/Asset 10.png" alt="Logo" width={40} />
             </div>
-            <span className="font-bold text-xl text-white">WA Sender</span>
+            <span className="font-bold text-xl text-white">WhatsApp Auto</span>
           </Link>
           <h1 className="text-3xl font-bold text-white">Create your account</h1>
           <p className="text-gray-400 mt-1 text-sm">Start sending messages for free</p>
@@ -81,7 +81,7 @@ export default function SignupPage() {
                 <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
                 <input
                   type="text"
-                  placeholder="Afzal Surti"
+                  placeholder="Your Full Name"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   required

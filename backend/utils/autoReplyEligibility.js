@@ -45,8 +45,10 @@ const isInSavedContacts = (contactPhone, chatId, savedPhones) => {
 
 const resolveAutoReplyAccess = ({ config, chatId, contactPhone, savedPhones }) => {
   const isSelected = isContactSelected(config?.selectedContacts || [], chatId, contactPhone);
-  const isUnknown = !isInSavedContacts(contactPhone, chatId, savedPhones);
+  // const isUnknown = !isInSavedContacts(contactPhone, chatId, savedPhones);
+  let isUnknown = false
 
+  
   if (config?.mode === 'selected') {
     return {
       allowed: isSelected,
@@ -68,7 +70,7 @@ const resolveAutoReplyAccess = ({ config, chatId, contactPhone, savedPhones }) =
   }
 
   // smart (default): new numbers + selected WhatsApp chats
-  const allowed = isUnknown || isSelected;
+  const allowed = isSelected;
 
   return {
     allowed,

@@ -7,12 +7,14 @@ import toast from "react-hot-toast";
 import {
   Activity,
   BarChart3,
+  Bell,
   Bot,
   ClipboardList,
   History,
   Key,
   Layers,
   Loader2,
+  Pencil,
   Wifi,
   WifiOff,
   X,
@@ -24,15 +26,22 @@ import useWebSocket from "@/hooks/useWebSocket";
 import { DashboardShellProvider } from "./DashboardShellContext";
 import DashboardNav from "../components/DashboardNav";
 import { mainNavItems, manageNavItems, settingsNavItem } from "@/lib/dashRoutes";
+import ConfirmModal from "@/components/dashboard/ConfirmModal";
+import { formatPhoneNumber } from "@/lib/phone";
 
 
 const navItems = [...mainNavItems, ...manageNavItems, settingsNavItem];
 
 export default function DashboardLayout({ children }) {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, updateProfile } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const [waStatus, setWaStatus] = useState("disconnected");
+  const [waStatus, setWaStatus] = useState('disconnected');
+  const [connectedPhone, setConnectedPhone] = useState(null);
+  const [schedulerAlertPhone, setSchedulerAlertPhone] = useState(null);
+  const [editingAlertPhone, setEditingAlertPhone] = useState(false);
+  const [alertPhoneDraft, setAlertPhoneDraft] = useState('');
+  const [savingAlertPhone, setSavingAlertPhone] = useState(false);
   const [qrImage, setQrImage] = useState(null);
   const [showQR, setShowQR] = useState(false);
   const [qrStatusText, setQrStatusText] = useState("Waiting for QR code...");
@@ -40,7 +49,13 @@ export default function DashboardLayout({ children }) {
   const [sessionLoading, setSessionLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [progress, setProgress] = useState(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const statusInitRef = useRef(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -58,13 +73,21 @@ export default function DashboardLayout({ children }) {
         setWaStatus("connected");
         setShowQR(false);
         setQrImage(null);
-      } else if (status === "pending") {
-        setWaStatus("pending");
+        if (res.data.phoneNumber) {
+          setConnectedPhone(res.data.phoneNumber);
+        }
+        if (res.data.schedulerAlertPhone) {
+          setSchedulerAlertPhone(res.data.schedulerAlertPhone);
+        }
+      } else if (status === 'pending') {
+        setWaStatus('pending');
         if (res.data.restoring) {
           setQrStatusText("Restoring WhatsApp session...");
         }
       } else {
-        setWaStatus("disconnected");
+        setWaStatus('disconnected');
+        setConnectedPhone(null);
+        setSchedulerAlertPhone(null);
       }
 
       return res.data;
@@ -109,16 +132,19 @@ export default function DashboardLayout({ children }) {
       setConnectError("");
       setSending(false);
       setProgress(null);
-      toast.success("WhatsApp connected!");
+      if (data.phoneNumber) {
+        setConnectedPhone(data.phoneNumber);
+      }
+      fetchStatus();
+      toast.success('WhatsApp connected!');
     }
     if (data.type === "disconnected") {
       setConnectError(data.reason || "WhatsApp disconnected");
       setQrStatusText("Connection failed. Try again or use Re-generate QR.");
       setSending(false);
-      setWaStatus((status) =>
-        status === "pending" ? "pending" : "disconnected",
-      );
-      toast.error(data.reason || "WhatsApp disconnected");
+      setConnectedPhone(null);
+      setWaStatus((status) => (status === 'pending' ? 'pending' : 'disconnected'));
+      toast.error(data.reason || 'WhatsApp disconnected');
     }
     if (data.type === "progress") setProgress(data);
     if (data.type === "sendingComplete") {
@@ -129,9 +155,32 @@ export default function DashboardLayout({ children }) {
       setSending(false);
       toast.error(`Sending failed: ${data.error}`);
     }
-  }, []);
+  }, [fetchStatus]);
 
-  useWebSocket(handleWsMessage);
+  const handleSaveAlertPhone = async () => {
+    const normalized = normalizePhoneNumber(alertPhoneDraft);
+    if (!normalized?.e164) {
+      toast.error('Enter a valid alert phone number');
+      return;
+    }
+
+    setSavingAlertPhone(true);
+    try {
+      await updateProfile({ schedulerAlertPhone: normalized.e164 });
+      setSchedulerAlertPhone(normalized.e164);
+      setEditingAlertPhone(false);
+      toast.success('Scheduler alert number updated');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update alert number');
+    } finally {
+      setSavingAlertPhone(false);
+    }
+  };
+
+  const displayAlertPhone = schedulerAlertPhone || connectedPhone;
+
+  const wsEnabled = mounted && Boolean(user) && Boolean(getToken());
+  useWebSocket(handleWsMessage, wsEnabled);
 
   const handleConnect = async (options = {}) => {
     const { silent = false, restoreOnly = false } = options;
@@ -154,8 +203,11 @@ export default function DashboardLayout({ children }) {
         setWaStatus("connected");
         setShowQR(false);
         setQrImage(null);
-        setQrStatusText("WhatsApp connected successfully.");
-        if (!silent) toast.success("WhatsApp connected!");
+        setQrStatusText('WhatsApp connected successfully.');
+        if (res.data.phoneNumber) {
+          setConnectedPhone(res.data.phoneNumber);
+        }
+        if (!silent) toast.success('WhatsApp connected!');
         return;
       }
 
@@ -184,7 +236,8 @@ export default function DashboardLayout({ children }) {
   const handleDisconnect = async () => {
     try {
       await whatsappAPI.disconnect();
-      setWaStatus("disconnected");
+      setWaStatus('disconnected');
+      setConnectedPhone(null);
       setShowQR(false);
       setQrImage(null);
       setQrStatusText("Connection closed.");
@@ -223,17 +276,17 @@ export default function DashboardLayout({ children }) {
     [progress, sending, waStatus],
   );
 
-  if (loading && !user) {
+  if (!mounted || loading || !user) {
+    if (mounted && !loading && !user && !getToken()) {
+      return null;
+    }
+
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center gap-3">
         <Loader2 className="animate-spin text-[#25D366]" size={32} />
         <p className="text-sm text-gray-500">Loading dashboard...</p>
       </div>
     );
-  }
-
-  if (!user) {
-    return null;
   }
 
   return (
@@ -254,29 +307,64 @@ export default function DashboardLayout({ children }) {
               </div>
             </div>
             <div className="flex items-center gap-3 md:gap-4">
-              {sessionLoading && (
-                <span className="hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400">
-                  <Loader2 size={13} className="animate-spin" /> Syncing
-                </span>
-              )}
-              <div className="flex items-center gap-2">
+              {sessionLoading && <span className="hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400"><Loader2 size={13} className="animate-spin" /> Syncing</span>}
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <span className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border border-white/5">
-                  <span
-                    className={`w-2 h-2 rounded-full ${waStatus === "connected" ? "bg-[#25D366]" : "bg-red-500"}`}
-                  />
-                  {waStatus === "connected"
-                    ? "Connected"
-                    : waStatus === "pending"
-                      ? "Restoring..."
-                      : "Disconnected"}
+                  <span className={`w-2 h-2 rounded-full ${waStatus === 'connected' ? 'bg-[#25D366]' : 'bg-red-500'}`} />
+                  <span>
+                    {waStatus === 'connected'
+                      ? (connectedPhone ? `Connected · ${formatPhoneNumber(connectedPhone)}` : 'Connected')
+                      : waStatus === 'pending'
+                        ? 'Restoring...'
+                        : 'Disconnected'}
+                  </span>
                 </span>
-                {waStatus === "connected" ? (
+
+                {waStatus === 'connected' && displayAlertPhone && !editingAlertPhone && (
                   <button
-                    onClick={handleDisconnect}
-                    className="hidden sm:flex items-center gap-2 text-xs border border-white/10 hover:border-red-400/40 hover:text-red-400 px-3 py-2 rounded-xl transition-colors"
+                    type="button"
+                    onClick={() => {
+                      setAlertPhoneDraft(displayAlertPhone);
+                      setEditingAlertPhone(true);
+                    }}
+                    className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-200 hover:border-amber-400/40 transition-colors"
+                    title="Number that receives scheduler reminders"
                   >
-                    <WifiOff size={14} /> Disconnect
+                    <Bell size={12} />
+                    Alerts · {formatPhoneNumber(displayAlertPhone)}
+                    <Pencil size={11} className="opacity-70" />
                   </button>
+                )}
+
+                {editingAlertPhone && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="tel"
+                      value={alertPhoneDraft}
+                      onChange={(e) => setAlertPhoneDraft(e.target.value)}
+                      className="w-36 sm:w-44 px-3 py-1.5 rounded-xl bg-[#111] border border-white/10 text-xs"
+                      placeholder="+91XXXXXXXXXX"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveAlertPhone}
+                      disabled={savingAlertPhone}
+                      className="text-xs px-3 py-1.5 rounded-xl bg-[#25D366] text-black font-semibold disabled:opacity-50"
+                    >
+                      {savingAlertPhone ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingAlertPhone(false)}
+                      className="text-xs px-2 py-1.5 text-gray-400 hover:text-white"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {waStatus === 'connected' ? (
+                  <button onClick={handleDisconnect} className="hidden sm:flex items-center gap-2 text-xs border border-white/10 hover:border-red-400/40 hover:text-red-400 px-3 py-2 rounded-xl transition-colors"><WifiOff size={14} /> Disconnect</button>
                 ) : (
                   <button
                     onClick={() => handleConnect()}
@@ -292,6 +380,18 @@ export default function DashboardLayout({ children }) {
 
           <main>{children}</main>
         </div>
+
+        <ConfirmModal
+          open={showLogoutConfirm}
+          onClose={() => setShowLogoutConfirm(false)}
+          title="Are you sure you want to logout?"
+          message="Your dashboard session will close. WhatsApp stays connected on the server so scheduled campaigns can still send."
+          confirmLabel="Yes, Logout"
+          onConfirm={async () => {
+            setShowLogoutConfirm(false);
+            await logout();
+          }}
+        />
 
         {showQR && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">

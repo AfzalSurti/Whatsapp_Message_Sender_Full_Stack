@@ -46,6 +46,7 @@ router.patch(
   protect,
   body('messageFooter').optional().trim().isLength({ max: 80 }).withMessage('Footer must be 80 characters or less'),
   body('messageFooterEnabled').optional().isBoolean().withMessage('messageFooterEnabled must be true or false'),
+  body('schedulerAlertPhone').optional().trim(),
   updateProfile
 );
 router.post('/logout', protect, logout);

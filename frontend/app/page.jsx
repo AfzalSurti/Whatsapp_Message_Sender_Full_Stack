@@ -107,7 +107,7 @@ const testimonials = [
 
 export default function LandingPage() {
   useRedirectIfAuthenticated();
-
+  const currentYear = new Date().getFullYear();
   useEffect(() => {
     const els = document.querySelectorAll(".pop-up");
     if (!els || els.length === 0) return;
@@ -141,28 +141,9 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#070b09] text-white font-sans">
+    <div className="min-h-screen bg-[#070b09] text-white ">
       {/* NAVBAR */}
-      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-16 py-4 bg-[#070b09]/78 backdrop-blur-xl border-b border-white/5">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#25D366] flex items-center justify-center shadow-[0_0_30px_rgba(37,211,102,0.35)]">
-            <MessageSquare size={18} className="text-black" />
-          </div>
-          <div>
-            <span className="block font-bold text-base tracking-tight leading-none">WA Sender</span>
-            <span className="block text-[11px] uppercase tracking-[0.3em] text-white/40 mt-1">AI bulk campaigns</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 md:gap-3">
-          <Link href="/login" className="text-sm text-gray-400 hover:text-white transition-colors px-4 py-2 rounded-full">
-            Login
-          </Link>
-          <Link href="/signup" className="text-sm bg-[#25D366] hover:bg-[#1ebe5d] text-black font-semibold px-5 py-2.5 rounded-full transition-colors shadow-[0_0_24px_rgba(37,211,102,0.22)]">
-            Get Started
-          </Link>
-        </div>
-      </nav>
-      {/* <Header /> */}
+      <Header />
 
       {/* HERO */}
       <section className="pt-28 md:pt-32 pb-16 md:pb-20 px-6 md:px-16 relative overflow-x-hidden">
@@ -442,12 +423,22 @@ export default function LandingPage() {
       {/* FOOTER */}
       <footer className="border-t border-white/5 py-10 px-6 md:px-16 text-center text-white/45 text-sm">
         <div className="flex items-center justify-center gap-2 mb-3">
-          <div className="w-6 h-6 rounded-lg bg-[#25D366] flex items-center justify-center">
-            <MessageSquare size={11} className="text-black" />
+          <div>
+            <img src="/assets/images/Asset 10.png" alt="Logo" width={30} />
           </div>
-          <span className="font-semibold text-white">WA Sender</span>
+          <span className="font-semibold text-white"> WhatsApp Auto</span>
         </div>
-        <p>Built with Next.js, Node.js, Tailwind CSS, and whatsapp-web.js</p>
+        <div className="flex justify-center gap-2 flex-col">
+          <p className="mb-0">
+            Copyright {currentYear} – All Rights Reserved By WhatsApp Auto
+          </p>
+          <p className="mb-0">
+            Crafted with ❤️ by{" "}
+            <a href="https://www.gomindz.com/" className="text-primary">
+              Gomindz
+            </a>
+          </p>
+        </div>
       </footer>
     </div>
   );

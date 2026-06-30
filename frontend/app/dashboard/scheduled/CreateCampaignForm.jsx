@@ -1,22 +1,23 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
-import toast from "react-hot-toast";
-import { useAuth } from "@/context/AuthContext";
-import { scheduledAPI, groupsAPI, aiAPI, templatesAPI } from "@/lib/api";
-import CampaignWizardStepper from "@/components/dashboard/campaign/CampaignWizardStepper";
-import Step1CampaignType from "@/components/dashboard/campaign/Step1CampaignType";
-import Step2Audience from "@/components/dashboard/campaign/Step2Audience";
-import Step3Message from "@/components/dashboard/campaign/Step3Message";
-import Step4Schedule from "@/components/dashboard/campaign/Step4Schedule";
-import Step5Review from "@/components/dashboard/campaign/Step5Review";
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import toast from 'react-hot-toast';
+import { useAuth } from '@/context/AuthContext';
+import { scheduledAPI, groupsAPI, aiAPI, templatesAPI, whatsappAPI } from '@/lib/api';
+import CampaignWizardStepper from '@/components/dashboard/campaign/CampaignWizardStepper';
+import Step1CampaignType from '@/components/dashboard/campaign/Step1CampaignType';
+import Step2Audience from '@/components/dashboard/campaign/Step2Audience';
+import Step3Message from '@/components/dashboard/campaign/Step3Message';
+import Step4Schedule from '@/components/dashboard/campaign/Step4Schedule';
+import Step5Review from '@/components/dashboard/campaign/Step5Review';
 import {
   WIZARD_STEPS,
   getMinScheduleDate,
   getMinScheduleTime,
-} from "@/lib/scheduledCampaign";
+  DEFAULT_REMINDER_MINUTES
+} from '@/lib/scheduledCampaign';
 import {
   getMissingScheduleVariables,
   validateScheduleOnClient,
@@ -63,13 +64,17 @@ export default function CreateCampaignForm() {
   const [message, setMessage] = useState("");
   const [templateVariables, setTemplateVariables] = useState({});
 
-  const [scheduleMode, setScheduleMode] = useState("now");
-  const [scheduleDate, setScheduleDate] = useState("");
-  const [scheduleTime, setScheduleTime] = useState("");
-  const [recurrencePattern, setRecurrencePattern] = useState("none");
-  const [recurrenceStartDate, setRecurrenceStartDate] = useState("");
-  const [recurrenceEndDate, setRecurrenceEndDate] = useState("");
-  const [sendingSpeed, setSendingSpeed] = useState("safe");
+  const [scheduleMode, setScheduleMode] = useState('now');
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('');
+  const [recurrencePattern, setRecurrencePattern] = useState('none');
+  const [recurrenceStartDate, setRecurrenceStartDate] = useState('');
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
+  const [sendingSpeed, setSendingSpeed] = useState('safe');
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [reminderMinutesBefore, setReminderMinutesBefore] = useState(DEFAULT_REMINDER_MINUTES);
+  const [reminderPhone, setReminderPhone] = useState('');
+  const [defaultAlertPhone, setDefaultAlertPhone] = useState(null);
 
   const [aiSectionOpen, setAiSectionOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -110,6 +115,13 @@ export default function CreateCampaignForm() {
     if (user) {
       fetchContactsOverview();
       fetchTemplates();
+      whatsappAPI.getStatus()
+        .then((res) => {
+          setDefaultAlertPhone(
+            res.data.schedulerAlertPhone || res.data.phoneNumber || user.schedulerAlertPhone || null
+          );
+        })
+        .catch(() => {});
     }
   }, [user, fetchContactsOverview, fetchTemplates]);
 
@@ -188,36 +200,16 @@ export default function CreateCampaignForm() {
         setRecurrenceEndDate(end.toISOString().slice(0, 10));
       }
 
-      const phones = (campaign.individualNumbers || []).map((entry) =>
-        String(entry.phone || "").replace(/\D/g, ""),
-      );
-      setSelectedContactPhones(phones.filter(Boolean));
-
-      const contactPhoneSet = new Set(
-        allContacts.map((contact) =>
-          String(contact.phone || "").replace(/\D/g, ""),
-        ),
-      );
-      const manualOnly = (campaign.individualNumbers || [])
-        .filter(
-          (entry) =>
-            !contactPhoneSet.has(String(entry.phone || "").replace(/\D/g, "")),
-        )
-        .map((entry) => ({
-          name: entry.name || "",
-          phone: entry.phone,
-        }));
-      setManualRecipients(manualOnly);
-
-      const scheduled = new Date(campaign.scheduledAt);
-      setScheduleMode("later");
-      setScheduleDate(scheduled.toISOString().slice(0, 10));
-      setScheduleTime(
-        `${String(scheduled.getHours()).padStart(2, "0")}:${String(scheduled.getMinutes()).padStart(2, "0")}`,
-      );
-    },
-    [allContacts, applyTemplateSelection, router, templates],
-  );
+    const scheduled = new Date(campaign.scheduledAt);
+    setScheduleMode('later');
+    setScheduleDate(scheduled.toISOString().slice(0, 10));
+    setScheduleTime(
+      `${String(scheduled.getHours()).padStart(2, '0')}:${String(scheduled.getMinutes()).padStart(2, '0')}`
+    );
+    setReminderEnabled(campaign.reminderEnabled !== false);
+    setReminderMinutesBefore(campaign.reminderMinutesBefore || DEFAULT_REMINDER_MINUTES);
+    setReminderPhone(campaign.reminderPhone || '');
+  }, [allContacts, applyTemplateSelection, router, templates]);
 
   useEffect(() => {
     if (
@@ -563,6 +555,9 @@ export default function CreateCampaignForm() {
           recurrencePattern !== "none" && recurrenceEndDate
             ? new Date(`${recurrenceEndDate}T23:59:59`).toISOString()
             : undefined,
+        reminderEnabled: scheduleMode === 'later' ? reminderEnabled : false,
+        reminderMinutesBefore,
+        reminderPhone: reminderPhone.trim() || undefined
       };
 
       if (editCampaignId) {
@@ -701,6 +696,13 @@ export default function CreateCampaignForm() {
             setRecurrenceEndDate={setRecurrenceEndDate}
             sendingSpeed={sendingSpeed}
             setSendingSpeed={setSendingSpeed}
+            reminderEnabled={reminderEnabled}
+            setReminderEnabled={setReminderEnabled}
+            reminderMinutesBefore={reminderMinutesBefore}
+            setReminderMinutesBefore={setReminderMinutesBefore}
+            reminderPhone={reminderPhone}
+            setReminderPhone={setReminderPhone}
+            defaultAlertPhone={defaultAlertPhone}
           />
         )}
         {step === 5 && (
@@ -716,6 +718,10 @@ export default function CreateCampaignForm() {
             recurrenceEndDate={recurrenceEndDate}
             sendingSpeed={sendingSpeed}
             message={message}
+            reminderEnabled={reminderEnabled}
+            reminderMinutesBefore={reminderMinutesBefore}
+            reminderPhone={reminderPhone}
+            defaultAlertPhone={defaultAlertPhone}
           />
         )}
       </div>

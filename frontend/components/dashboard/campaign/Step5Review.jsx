@@ -4,8 +4,10 @@ import { Send, Shield } from 'lucide-react';
 import {
   formatCampaignDate,
   getRecurrenceLabel,
+  REMINDER_MINUTES_OPTIONS,
   SENDING_SPEEDS
 } from '@/lib/scheduledCampaign';
+import { formatPhoneNumber } from '@/lib/phone';
 
 export default function Step5Review({
   campaignName,
@@ -18,7 +20,11 @@ export default function Step5Review({
   recurrenceStartDate,
   recurrenceEndDate,
   sendingSpeed,
-  message
+  message,
+  reminderEnabled,
+  reminderMinutesBefore,
+  reminderPhone,
+  defaultAlertPhone
 }) {
   const scheduleLabel =
     scheduleMode === 'now'
@@ -49,7 +55,13 @@ export default function Step5Review({
             : [])
         ]
       : []),
-    { label: 'Sending Speed', value: speedLabel }
+    { label: 'Sending Speed', value: speedLabel },
+    ...(scheduleMode === 'later' && reminderEnabled
+      ? [{
+          label: 'Reminder',
+          value: `${REMINDER_MINUTES_OPTIONS.find((item) => item.value === reminderMinutesBefore)?.label || `${reminderMinutesBefore} min before`} → ${formatPhoneNumber(reminderPhone || defaultAlertPhone) || 'default alert number'}`
+        }]
+      : [])
   ];
 
   return (

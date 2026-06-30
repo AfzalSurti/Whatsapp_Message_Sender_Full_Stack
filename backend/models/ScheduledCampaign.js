@@ -89,6 +89,25 @@ const ScheduledCampaignSchema = new mongoose.Schema(
     recurrenceEndDate: {
       type: Date,
       default: null
+    },
+    reminderEnabled: {
+      type: Boolean,
+      default: true
+    },
+    reminderMinutesBefore: {
+      type: Number,
+      default: 5,
+      min: 1,
+      max: 120
+    },
+    reminderPhone: {
+      type: String,
+      default: null,
+      trim: true
+    },
+    reminderSentAt: {
+      type: Date,
+      default: null
     }
   },
   {

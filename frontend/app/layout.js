@@ -1,27 +1,18 @@
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import 'react-international-phone/style.css';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from '@/context/AuthContext';
+import { euclid } from "./fonts";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata = {
-  title: "WA Sender",
+  title: "WhatsApp Auto by GoMindz",
   description: "Send bulk WhatsApp messages with AI-powered message generation",
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased`} suppressHydrationWarning>
+    <html lang="en" className={`${euclid.variable} min-h-screen antialiased`} suppressHydrationWarning>
       <body className="min-h-screen bg-[#070b09] text-white overflow-x-hidden">
         <AuthProvider>
           {children}

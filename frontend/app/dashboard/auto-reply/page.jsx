@@ -325,49 +325,72 @@ export default function AutoReplyPage() {
   }, [activeContacts, contactSearch]);
 
   const isContactChecked = (contact) => {
+    console.log(contact,"first")
     const value = getContactSelectionValue(contact);
     const chatId = contact.chatId;
     return selectedContacts.includes(value) || (chatId && selectedContacts.includes(chatId));
   };
 
   const toggleContact = (contact) => {
-    const value = getContactSelectionValue(contact);
-    const chatId = contact.chatId;
-    const keys = [...new Set([value, chatId].filter(Boolean))];
+  const phone = String(contact.phoneNumber || "").trim();
+  const chatId = contact.chatId || "";
 
-    setSelectedContacts((prev) => {
-      const isSelected = keys.some((key) => prev.includes(key));
-      if (isSelected) {
-        return prev.filter((item) => !keys.includes(item));
-      }
-      return [...prev, ...keys.filter((key) => !prev.includes(key))];
-    });
-  };
+  setSelectedContacts((prev) => {
+    const index = prev.findIndex(
+      (item) =>
+        item.chatId === chatId ||
+        (phone && item.phoneNumber === phone)
+    );
+
+    if (index !== -1) {
+      // Remove if already selected
+      return prev.filter((_, i) => i !== index);
+    }
+
+    // Add new contact
+    return [
+      ...prev,
+      {
+        chatId,
+        phoneNumber: phone,
+      },
+    ];
+  });
+};
 
   const removeSelectedContact = (value) => {
     setSelectedContacts((prev) => prev.filter((item) => item !== value));
   };
 
   const selectedContactDetails = useMemo(() => {
-    return selectedContacts.map((value) => {
-      const saved = savedContacts.find(
-        (contact) => contact.phoneNumber === value || contact.chatId === value
-      );
-      const whatsapp = whatsappContacts.find(
-        (contact) => contact.phoneNumber === value || contact.chatId === value
-      );
-      const fromLog = logContacts.find((contact) => contact.contactPhone === value);
+  return selectedContacts.map((contact) => {
+    const saved = savedContacts.find(
+      (c) =>
+        c.chatId === contact.chatId ||
+        c.phoneNumber === contact.phoneNumber
+    );
 
-      return {
-        value,
-        name: saved?.name || whatsapp?.name || fromLog?.contactName || value,
-        subtitle:
-          value.includes('@') || value === saved?.name || value === whatsapp?.name
-            ? ''
-            : value
-      };
-    });
-  }, [selectedContacts, savedContacts, whatsappContacts, logContacts]);
+    const whatsapp = whatsappContacts.find(
+      (c) =>
+        c.chatId === contact.chatId ||
+        c.phoneNumber === contact.phoneNumber
+    );
+
+    const fromLog = logContacts.find(
+      (c) => c.contactPhone === contact.phoneNumber
+    );
+
+    return {
+      value: contact,
+      name:
+        saved?.name ||
+        whatsapp?.name ||
+        fromLog?.contactName ||
+        contact.phoneNumber,
+      subtitle: contact.phoneNumber,
+    };
+  });
+}, [selectedContacts, savedContacts, whatsappContacts, logContacts]);
 
   const toggleTemplateSelection = (templateId) => {
     const id = String(templateId);
@@ -468,6 +491,7 @@ export default function AutoReplyPage() {
     }
   };
 
+  console.log(selectedContactDetails)
   if (loading || configLoading) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -680,7 +704,7 @@ export default function AutoReplyPage() {
                     >
                       <input
                         type="checkbox"
-                        checked={isContactChecked(contact)}
+                        // checked={isContactChecked(contact)}
                         onChange={() => toggleContact(contact)}
                         className="mt-0.5 accent-[#25D366] w-4 h-4"
                       />
